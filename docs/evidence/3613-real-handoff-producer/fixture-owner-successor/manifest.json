@@ -1,0 +1,830 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T23:23:30.159501+00:00",
+  "source": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+  "sourceTree": "20e0b5b4741b6242d8c1765130a3b5e6ecaf6216",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "base": "e2da738ce3db11a21c250333e7a80a1ffb8347c2",
+  "selectedFile": "test/annex-v2/handoff-producer-admission.test.ts",
+  "diffStat": "test/annex-v2/handoff-producer-admission.test.ts | 673 ++++++++++++++++++-----\n 1 file changed, 530 insertions(+), 143 deletions(-)",
+  "publicationRef": "refs/heads/lane-3613-p2-routes/handoff-producer-owner-successor",
+  "design": {
+    "ref": "d642886848992bea1a8a7ac845f96578d88ebd1d",
+    "path": "docs/qa-transfer/2026-11-22/reports/producer-overlap-16991-design-review.md",
+    "blob": "610ced89454c17139479813b6e2262bea5fd48f8",
+    "bytes": 21408,
+    "sha256": "a881e0fbc3fcd18ec5c35fb6b2e6d2a59117768fe86b1733437e6c89ecc81c37"
+  },
+  "runs": [
+    {
+      "prefix": "170-owner-finite-candidate",
+      "head": "79e562d6bbd45a4e14c8293227cf59f2dd92e1d0",
+      "tree": "c229acadd738ecec8707d0453cfdd359daa35340",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'owner lifecycle|keeps overlapping cleanup|drains a real held preparation|completes actual fixture teardown|forwards actual preparation|reports actual early offer|keeps actual fixture preparation|keeps current sender authority' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/170-owner-finite-candidate-original.xml",
+      "node": "v24.22.1",
+      "exit": 0,
+      "matchingRelevantInputs": 16,
+      "cleanPrePost": true,
+      "declarations": 68,
+      "counts": {
+        "pass": 18,
+        "skip": 50
+      },
+      "failureNodes": 0
+    },
+    {
+      "prefix": "171-owner-fixture-types",
+      "head": "79e562d6bbd45a4e14c8293227cf59f2dd92e1d0",
+      "tree": "c229acadd738ecec8707d0453cfdd359daa35340",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --noEmit -p node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --listFiles",
+      "node": "v24.22.1",
+      "exit": 0,
+      "matchingRelevantInputs": 16,
+      "cleanPrePost": true,
+      "diagnostics": 0,
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "172-owner-fixture-lint",
+      "head": "79e562d6bbd45a4e14c8293227cf59f2dd92e1d0",
+      "tree": "c229acadd738ecec8707d0453cfdd359daa35340",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx eslint test/annex-v2/handoff-producer-admission.test.ts --format json --output-file node_modules/.cache/native-handoff-ingress/172-owner-fixture-lint-original.json",
+      "node": "v24.22.1",
+      "exit": 0,
+      "matchingRelevantInputs": 16,
+      "cleanPrePost": true,
+      "completeFixtureFiles": 1,
+      "errors": 0,
+      "warnings": 0
+    },
+    {
+      "prefix": "173-owner-final-finite",
+      "head": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+      "tree": "20e0b5b4741b6242d8c1765130a3b5e6ecaf6216",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t owner\\ lifecycle\\|keeps\\ overlapping\\ cleanup\\|drains\\ a\\ real\\ held\\ preparation\\|completes\\ actual\\ fixture\\ teardown\\|forwards\\ actual\\ preparation\\|reports\\ actual\\ early\\ offer\\|keeps\\ actual\\ fixture\\ preparation\\|keeps\\ current\\ sender\\ authority --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/173-owner-final-finite-original.xml ",
+      "node": "v24.22.1",
+      "exit": 0,
+      "matchingRelevantInputs": 16,
+      "cleanPrePost": true,
+      "declarations": 69,
+      "counts": {
+        "pass": 19,
+        "skip": 50
+      },
+      "failureNodes": 0
+    },
+    {
+      "prefix": "174-owner-final-types",
+      "head": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+      "tree": "20e0b5b4741b6242d8c1765130a3b5e6ecaf6216",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh lane-p2 6 -- npx tsc --noEmit -p node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --listFiles ",
+      "node": "v24.22.1",
+      "exit": 0,
+      "matchingRelevantInputs": 16,
+      "cleanPrePost": true,
+      "diagnostics": 0,
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "175-owner-final-lint",
+      "head": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+      "tree": "20e0b5b4741b6242d8c1765130a3b5e6ecaf6216",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "/Users/masonallen/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx eslint test/annex-v2/handoff-producer-admission.test.ts --format json --output-file node_modules/.cache/native-handoff-ingress/175-owner-final-lint-original.json ",
+      "node": "v24.22.1",
+      "exit": 0,
+      "matchingRelevantInputs": 16,
+      "cleanPrePost": true,
+      "completeFixtureFiles": 1,
+      "errors": 0,
+      "warnings": 0
+    }
+  ],
+  "sourceBridges": {
+    "schema": 1,
+    "base": "e2da738ce3db11a21c250333e7a80a1ffb8347c2",
+    "source": "219fca7759963de4c68a4ddf0159c6c7b1a97645",
+    "originalCallbacks": 33,
+    "currentCallbacks": 40,
+    "allCurrentCallbacksRegistered": true,
+    "preserved": [
+      {
+        "name": "'keeps overlapping cleanup behind the original actual preparation drain'",
+        "normalizedAssertions": 18,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'drains a real held preparation and completes teardown before reporting its original caller rejection (%i failures)'",
+        "normalizedAssertions": 44,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'completes actual fixture teardown when its Windows %s diagnostic throws'",
+        "normalizedAssertions": 16,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'forwards actual preparation once when its pre-forward diagnostic clock throws'",
+        "normalizedAssertions": 10,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'reports actual early offer settlement without entering an unreachable history hold'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'keeps actual fixture preparation alive until teardown settles it'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'keeps current sender authority, source bytes and durable binding through a held history queue'",
+        "normalizedAssertions": 8,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'retains original grant retirement even when Allow is restored before the queue resumes'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata'",
+        "normalizedAssertions": 4,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'ignores cosmetic binding changes during the actual target-project capture await'",
+        "normalizedAssertions": 2,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'does not adopt a replacement quick source with the same id and worktree'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'does not adopt a different registered caller worktree after preparation'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'keeps a durable original source without a live runtime and ignores display name/color changes'",
+        "normalizedAssertions": 4,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'refuses a durable source replacement with only its original createdAt changed'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'rechecks retirement during the actual positive authorization await'",
+        "normalizedAssertions": 8,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'uses a synthetic isolated exact-call approval without changing standing Ask grants'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'requires still-valid consumed approval inside the queue, not merely a stable Ask grant'",
+        "normalizedAssertions": 8,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'preserves consumed Ask approval when only the general MCP gate forgets the caller'",
+        "normalizedAssertions": 6,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'does not borrow consumed Ask approval for a changed exact approval context'",
+        "normalizedAssertions": 8,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'fences %s during real postpositive source verification'",
+        "normalizedAssertions": 46,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'keeps original recipient project and identity through postpositive verification: %s / %s'",
+        "normalizedAssertions": 44,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'verifies only the awaited source observation revision: %s'",
+        "normalizedAssertions": 20,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'does not borrow a newly retargeted alias authorization for the frozen recipient'",
+        "normalizedAssertions": 8,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'does not substitute a new same-summary preparation for the captured catalog entry'",
+        "normalizedAssertions": 10,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'prepares its own requested mode after an independently running preparation'",
+        "normalizedAssertions": 12,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'prepares its original captured source after an independently running preparation on another source'",
+        "normalizedAssertions": 14,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'owns its await of separately admitted preparation without cancelling that independent read on stop'",
+        "normalizedAssertions": 16,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'owns the original host before implicit preparation and refuses stop-time replacement'",
+        "normalizedAssertions": 12,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'finishes admitted %s save truthfully while stop waits actual work'",
+        "normalizedAssertions": 18,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'holds a dispatched POST beyond its deadline until the actual promise releases'",
+        "normalizedAssertions": 18,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'retains exact partial ids and distinguishes %s failure without retry or rollback fiction'",
+        "normalizedAssertions": 20,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'refuses original sender grant retirement before queued offer admission without adding history or binding'",
+        "normalizedAssertions": 18,
+        "originalArgumentsPreserved": true
+      },
+      {
+        "name": "'keeps explicit prepared source but refuses %s offer before handler admission'",
+        "normalizedAssertions": 14,
+        "originalArgumentsPreserved": true
+      }
+    ],
+    "limits": "Static normalized assertion/registration comparison, not unchanged whole-fixture bytes or runtime acceptance of skipped cases."
+  },
+  "compilerInventory": {
+    "observedAfterExecution": true,
+    "rows": 3959,
+    "trackedVerifiedToSourceGit": 2471,
+    "dependencyObservations": 1488,
+    "atomicOrPreExecutionSeal": false
+  },
+  "reusedBaseline": {
+    "source": "c535d031ef94617c2364e745a9765c91c2a31726",
+    "custody": "e2da738ce3db11a21c250333e7a80a1ffb8347c2",
+    "prefix": "164-overlap-original-red",
+    "counts": {
+      "fail": 1,
+      "skip": 58
+    },
+    "declarations": 59,
+    "failureNodes": 4
+  },
+  "prBeforeFreeze": {
+    "baseRefOid": "50c474b48f57e0256661244bd29b9343ec112bc4",
+    "headRefOid": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+    "number": 3779,
+    "state": "OPEN"
+  },
+  "limits": [
+    "Exact final17319PASS/50SKIP/69 declarations, not aggregate69 execution",
+    "Candidate17018PASS stays bound to79e; no source transfer",
+    "50 skipped producer cases are not newly runtime-accepted",
+    "Sentinel body/expired-waiter/admission proof is not native Vitest/Windows timeout acceptance",
+    "Original first Windows delay/all57 failures and separate Chat loader/open cause remain unknown",
+    "No production/deadline/permission/framework/Chat edit or new hosted observation",
+    "Existing independent exact source/proof review required before PR update"
+  ],
+  "archives": [
+    {
+      "file": "170-owner-finite-candidate-testcase-rows.json.gz",
+      "bytes": 24684,
+      "sha256": "d67a8f8d28444def6391715cc4299fdf5af644091c029c05e4932454abc5c415",
+      "gzipBytes": 2149,
+      "gzipSha256": "997ccace0d6fef29200bdd5158ecf6cbdb814d887f3d63e537896a40fc35cb0a"
+    },
+    {
+      "file": "170-owner-finite-candidate-after.json.gz",
+      "bytes": 4566,
+      "sha256": "ebbe5012afcb64f819b23533a4e5134130c135893ec5dfc781eb5fe45b8b2c34",
+      "gzipBytes": 1970,
+      "gzipSha256": "7de3b929f5884cd2b82d115056b6925c45c452e15add7012384cf98aef53d824"
+    },
+    {
+      "file": "170-owner-finite-candidate-before.json.gz",
+      "bytes": 4440,
+      "sha256": "b98239dad93411a64e0255c042ff1d5a04772ec973e12c6520694ce33f1580fa",
+      "gzipBytes": 1940,
+      "gzipSha256": "0c42c0e4ab590bac773b8d9974245cf40b9f27815b31ac04bc6e49476d8b48a3"
+    },
+    {
+      "file": "170-owner-finite-candidate-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "170-owner-finite-candidate-original.log.gz",
+      "bytes": 2560,
+      "sha256": "7a027d94c74d07eded10b82e889ec15e838d9e16c7424960141fa81ee8f880a5",
+      "gzipBytes": 1161,
+      "gzipSha256": "e72c5fcf7875ed6a92521efc7bdada7df40caaed1eda0b67322b45ac9ca29a17"
+    },
+    {
+      "file": "170-owner-finite-candidate-original.xml.gz",
+      "bytes": 21726,
+      "sha256": "de4d2f8df77a2b9232b108aee4ff02851eadccbc7b65daad9a9cc588dcd3fc25",
+      "gzipBytes": 2223,
+      "gzipSha256": "34e61a6b73f66ef1b149d450be73ad8b1e7ee5a832383699f9050c4758d3c6f5"
+    },
+    {
+      "file": "171-owner-fixture-types-after.json.gz",
+      "bytes": 4235,
+      "sha256": "0bfc76d56bbea8fba605d246a742611e156637ec8bf9cca67ca2a59f0fa918a0",
+      "gzipBytes": 1800,
+      "gzipSha256": "b8d2b02c4fadfccd4b51adb8efda1e5c6c0dd7981d63a09bcbd2a982a5ba7460"
+    },
+    {
+      "file": "171-owner-fixture-types-before.json.gz",
+      "bytes": 4112,
+      "sha256": "8446f5c1f8fd750cc4abbb0593598d4b5123b344a293431c7fed658b36f05cfe",
+      "gzipBytes": 1751,
+      "gzipSha256": "35fd26a74971b0df3a5fb7cf8f6effe9d91be98ab0b0686c6d47efb148fac2b9"
+    },
+    {
+      "file": "171-owner-fixture-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "171-owner-fixture-types-original.log.gz",
+      "bytes": 735016,
+      "sha256": "4232f1b60bb529144172d1533bf9b028c2469232adfed6af265b688603f93999",
+      "gzipBytes": 32743,
+      "gzipSha256": "2db498e88b8556fe385a412629745679ee8b4de0c3e849bb813b7994ecfc1a9e"
+    },
+    {
+      "file": "172-owner-fixture-lint-after.json.gz",
+      "bytes": 4282,
+      "sha256": "22c5bc4d1ab4752d58da4be14951c9b0f731eefca8b2bec16f4026be79577353",
+      "gzipBytes": 1810,
+      "gzipSha256": "e23cd62e99aeacfc82643d715e5d02e82a98be22511b35e391d02f44c57d1209"
+    },
+    {
+      "file": "172-owner-fixture-lint-before.json.gz",
+      "bytes": 4160,
+      "sha256": "ffbe68bfd1c929f00acfeaed2a470eafe53656ec1711a95e72e2d6524d1f7286",
+      "gzipBytes": 1777,
+      "gzipSha256": "1e4a52210dffb8393b22b63864f30175acfedd460ae9f727eb32cbc60168b007"
+    },
+    {
+      "file": "172-owner-fixture-lint-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "172-owner-fixture-lint-original.json.gz",
+      "bytes": 353,
+      "sha256": "44caf17c2e2975f4b267628ee08971b3fcb17b89dbd79af781619a6fc64f4b27",
+      "gzipBytes": 242,
+      "gzipSha256": "a4e9979b787e3ae7c7adfd83073debe76d359a53091df0275c599104d68e522b"
+    },
+    {
+      "file": "172-owner-fixture-lint-original.log.gz",
+      "bytes": 323,
+      "sha256": "3f98ccd6ca90f192b2da5df1d7a61fadcee865e644172ec4ddc950581c9178a3",
+      "gzipBytes": 259,
+      "gzipSha256": "1ee2287cd188ea75109c6ab7622d29e01729b3c00a05ac887c052b77cc18c676"
+    },
+    {
+      "file": "173-owner-final-finite-testcase-rows.json.gz",
+      "bytes": 25010,
+      "sha256": "191443bdc55b43c79c93674d1fc8556626f83da2c5d02a2c018ffe4aeef52106",
+      "gzipBytes": 2185,
+      "gzipSha256": "3648c88072daba82fcf552d0364e019e2e9fecce04f2f9a884124091e511dd4d"
+    },
+    {
+      "file": "173-owner-final-finite-after.json.gz",
+      "bytes": 4647,
+      "sha256": "af1d04612a17c3b05e85acc58a60d27f848c161f61bd7e5f78cf399fbe9e3b85",
+      "gzipBytes": 2002,
+      "gzipSha256": "418afcba88094daf0a2e25a090d37af3472c1fe17ccb3a39844d3d3c8b190fa1"
+    },
+    {
+      "file": "173-owner-final-finite-before.json.gz",
+      "bytes": 4525,
+      "sha256": "7eec5f1ac56171615fcab221032d6d3f96a0f68efad80ecd5fe24ae84492b636",
+      "gzipBytes": 1970,
+      "gzipSha256": "04096956fc2a328ed679a0cf3c2270e76398e668cd47efc43b194155ffe59ea9"
+    },
+    {
+      "file": "173-owner-final-finite-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "173-owner-final-finite-original.log.gz",
+      "bytes": 2552,
+      "sha256": "c93c0f81a2be214ea5dc478d280993953d509bf0e6928162235f156d0ab733fa",
+      "gzipBytes": 1150,
+      "gzipSha256": "ec2aeaa98555b57965dd9b73dad639566620449fdd27fddfbc2cceb132c58c50"
+    },
+    {
+      "file": "173-owner-final-finite-original.xml.gz",
+      "bytes": 21984,
+      "sha256": "33d1fb4599b887a13f7f30cbc4411482275544134639696226b3ce9000fdff4c",
+      "gzipBytes": 2263,
+      "gzipSha256": "0f906910404e8d6ac9d1cc790d8f611e94529146137af7673a1a9de03cb147d8"
+    },
+    {
+      "file": "174-owner-final-types-after.json.gz",
+      "bytes": 4268,
+      "sha256": "f65c869ba1098dea1e4a5141846aa083694803362a6af555c87a83f1d3019947",
+      "gzipBytes": 1817,
+      "gzipSha256": "e81aac171ee209c039c62b7152842bf04cbc207d671f9fdc4888b498f08b6fec"
+    },
+    {
+      "file": "174-owner-final-types-before.json.gz",
+      "bytes": 4147,
+      "sha256": "42b0f9e39b1b2f7fd181d10057bdfb614fd2aaec19c9edef05f199463e702cbd",
+      "gzipBytes": 1772,
+      "gzipSha256": "7531001642884d18c57150c3368e56aad22713eed2662948caf4a2e63ae0559c"
+    },
+    {
+      "file": "174-owner-final-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "174-owner-final-types-original.log.gz",
+      "bytes": 735016,
+      "sha256": "fab07de8c66471120c574db49dc8dad23896da5161fbd7808e6af2ff167bd7cc",
+      "gzipBytes": 32747,
+      "gzipSha256": "cf618ec3d95ee288d955a447bcc8a8e96870fd131295763d3d09cb7c694a6f1e"
+    },
+    {
+      "file": "175-owner-final-lint-after.json.gz",
+      "bytes": 4313,
+      "sha256": "479e945e4143e62fa8b888c70728a6438e45e5e7876c4d9d29924c6433795dbe",
+      "gzipBytes": 1831,
+      "gzipSha256": "e4b32cb95a8ad6cca1f80694405cc4884eb69accca5986e2e6e8560d91db37a6"
+    },
+    {
+      "file": "175-owner-final-lint-before.json.gz",
+      "bytes": 4193,
+      "sha256": "8997493df347f7b21f6cc04b57570a8a4eab9b369492fcb0268d16eb7028cb1d",
+      "gzipBytes": 1797,
+      "gzipSha256": "07f834d99eb1fb3623ce5825f5f8db4a42a3ace21b4ae081fab78185a7caeda9"
+    },
+    {
+      "file": "175-owner-final-lint-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "175-owner-final-lint-original.json.gz",
+      "bytes": 353,
+      "sha256": "44caf17c2e2975f4b267628ee08971b3fcb17b89dbd79af781619a6fc64f4b27",
+      "gzipBytes": 242,
+      "gzipSha256": "a4e9979b787e3ae7c7adfd83073debe76d359a53091df0275c599104d68e522b"
+    },
+    {
+      "file": "175-owner-final-lint-original.log.gz",
+      "bytes": 321,
+      "sha256": "cd7f04b8e6fdabdc2238c1aac4cd3dec7aee32da5a08a3bf9a21a2c7f75fc603",
+      "gzipBytes": 253,
+      "gzipSha256": "d1fd2021bbc18cd28c45fd2ed64248a6a706b80b46f8ab9f606582c8eb90c553"
+    },
+    {
+      "file": "164-overlap-original-red-after.json.gz",
+      "bytes": 4408,
+      "sha256": "ac38825f124dcf9c49f6aec9a313b07c72d58ba67be235b587ab0b451d2562b0",
+      "gzipBytes": 1887,
+      "gzipSha256": "5d65aef2b9dc94db82b2d2df6d8f3215165d31230f2459e4ad8f7cd1426504f9"
+    },
+    {
+      "file": "164-overlap-original-red-before.json.gz",
+      "bytes": 4284,
+      "sha256": "45255da716f8bd7c7af810fa132fad8b0c894cfe9aa7ec886326be4af60f276b",
+      "gzipBytes": 1855,
+      "gzipSha256": "bdde5b95ec34ac848817691d0c80f90e3cb619d77498057430011624566c852f"
+    },
+    {
+      "file": "164-overlap-original-red-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "164-overlap-original-red-original.log.gz",
+      "bytes": 10577,
+      "sha256": "ffebb02ed1f7070a432cd3d667170d36a5e3e469259ccb0922caf908b814118e",
+      "gzipBytes": 2716,
+      "gzipSha256": "54cbcfa29b00499df45132f257bf0f819d599ae273c800c21e5b146cb0727981"
+    },
+    {
+      "file": "164-overlap-original-red-original.xml.gz",
+      "bytes": 20721,
+      "sha256": "810d89c5941f589b958a4c54b25b974b4eb6eb75dce8cb0cfc55d975801121bd",
+      "gzipBytes": 2023,
+      "gzipSha256": "b764a564c01e336006e1588f1b3cb8b4993e5e1218b5f127c4e903acb9034aed"
+    },
+    {
+      "file": "source-e2da738ce3db11a21c250333e7a80a1ffb8347c2-fixture.test.ts.gz",
+      "bytes": 68499,
+      "sha256": "bca7d6970d7a3a4d95fb0f6fbf1e42222ae0af7e0127d9484f3548d66e059cad",
+      "gzipBytes": 12980,
+      "gzipSha256": "38e9c9d98db4827d39f8fcc4ef1054e06af2efa6a37eb500b385a0a686a838dd"
+    },
+    {
+      "file": "source-e2da738ce3db11a21c250333e7a80a1ffb8347c2-commit.txt.gz",
+      "bytes": 710,
+      "sha256": "25af567dcaec3628bde1fecd785a86279cd740f594a8390a6fc23bea507274d6",
+      "gzipBytes": 477,
+      "gzipSha256": "3209fab20d9fdab86bbd6cb546ce17f54d6b0b267c67039ff313ea82b1dfe0f3"
+    },
+    {
+      "file": "source-c535d031ef94617c2364e745a9765c91c2a31726-fixture.test.ts.gz",
+      "bytes": 68499,
+      "sha256": "bca7d6970d7a3a4d95fb0f6fbf1e42222ae0af7e0127d9484f3548d66e059cad",
+      "gzipBytes": 12980,
+      "gzipSha256": "38e9c9d98db4827d39f8fcc4ef1054e06af2efa6a37eb500b385a0a686a838dd"
+    },
+    {
+      "file": "source-c535d031ef94617c2364e745a9765c91c2a31726-commit.txt.gz",
+      "bytes": 611,
+      "sha256": "bf3fd02e070365d02b87d6c54d5320a81209924a8c6b866df5a1a74ecea2fb4f",
+      "gzipBytes": 395,
+      "gzipSha256": "54c984f70d552deacbb2e334d10f10b8b7c520a3e71d27ccb3050a430f891b63"
+    },
+    {
+      "file": "source-79e562d6bbd45a4e14c8293227cf59f2dd92e1d0-fixture.test.ts.gz",
+      "bytes": 86183,
+      "sha256": "5e5571e907a5dade066d1d8bb15ce42e64b870e4eff22eecbeca1267b52bde17",
+      "gzipBytes": 16272,
+      "gzipSha256": "8a20d3136416d606fe51920daf17501ad81a6d51c5dace073edf21d2f500eee3"
+    },
+    {
+      "file": "source-79e562d6bbd45a4e14c8293227cf59f2dd92e1d0-commit.txt.gz",
+      "bytes": 712,
+      "sha256": "8ab171bcefc87bc783b8dbf35b605c5784c7ccb9a7a2abea119f561e62c6625c",
+      "gzipBytes": 461,
+      "gzipSha256": "b3e0a513d4a5afc53230712f15baa974c7b51e6d98744052d6cbd7bbc5340edd"
+    },
+    {
+      "file": "source-219fca7759963de4c68a4ddf0159c6c7b1a97645-fixture.test.ts.gz",
+      "bytes": 87525,
+      "sha256": "d4f45587874d7dd4bbb36e74d8177cc7d332703ace739bd60e4e17d1fa6b766b",
+      "gzipBytes": 16532,
+      "gzipSha256": "57c2563e0bf9bc0297591d0c8a555fee7d1daa52b82a14affa8227ac48394c5d"
+    },
+    {
+      "file": "source-219fca7759963de4c68a4ddf0159c6c7b1a97645-commit.txt.gz",
+      "bytes": 665,
+      "sha256": "a86a6c2af02503e8f4742c8a5ae5a3984c75cb3993d33d3e592b2f7caf75c973",
+      "gzipBytes": 425,
+      "gzipSha256": "cfcd541ac4679cf6fb5c5cd7b2d74ebeeb39b1801837c00c85d5a3a1b02a42e4"
+    },
+    {
+      "file": "delta-e2da738ce3db11a21c250333e7a80a1ffb8347c2-219fca7759963de4c68a4ddf0159c6c7b1a97645.patch.gz",
+      "bytes": 64045,
+      "sha256": "1fba34f6dbb17bd820ad0953387cc1fc002748d50665e1a7574009156b0bf216",
+      "gzipBytes": 12150,
+      "gzipSha256": "df1d836281369238f4786c6980766b6d3dcc6365e1f4e650078f4c31bcc64fee"
+    },
+    {
+      "file": "delta-c535d031ef94617c2364e745a9765c91c2a31726-219fca7759963de4c68a4ddf0159c6c7b1a97645.patch.gz",
+      "bytes": 64045,
+      "sha256": "1fba34f6dbb17bd820ad0953387cc1fc002748d50665e1a7574009156b0bf216",
+      "gzipBytes": 12150,
+      "gzipSha256": "df1d836281369238f4786c6980766b6d3dcc6365e1f4e650078f4c31bcc64fee"
+    },
+    {
+      "file": "delta-79e562d6bbd45a4e14c8293227cf59f2dd92e1d0-219fca7759963de4c68a4ddf0159c6c7b1a97645.patch.gz",
+      "bytes": 4539,
+      "sha256": "6c392ce7d28f746c21a1d810e4f5959331ce6acf210473911e753de56f04ad01",
+      "gzipBytes": 1480,
+      "gzipSha256": "22f29784254a98ae05a1c490fa259dbdb3f5e2572449aa7ed33096e75bb354d1"
+    },
+    {
+      "file": "168-full-design-report-original.md.gz",
+      "bytes": 21408,
+      "sha256": "a881e0fbc3fcd18ec5c35fb6b2e6d2a59117768fe86b1733437e6c89ecc81c37",
+      "gzipBytes": 8958,
+      "gzipSha256": "c55c31156132677d1e00b131a3b3afc348ae5429b50be633f2e8747f033b2e08"
+    },
+    {
+      "file": "168-full-design-blob-original.json.gz",
+      "bytes": 29788,
+      "sha256": "646de397466b06afafef1cce4bcc0222f48ae60d83447f35b3dde69e997f93ae",
+      "gzipBytes": 13586,
+      "gzipSha256": "975ecd1bade97092977c4b7bad2227a17d71e73eb61fe99461cdaafa960613d1"
+    },
+    {
+      "file": "168-full-design-path-original.json.gz",
+      "bytes": 150,
+      "sha256": "4ac6e1d366ba2c62cde220b48e5162edf0223e75d527e0a9ea491203c16d2885",
+      "gzipBytes": 145,
+      "gzipSha256": "edf55cfebc2b80ef00f9f7c324b07714daae5e30dea19858d57a42c1f5d8f609"
+    },
+    {
+      "file": "169-wrap-fixture-callbacks.cjs.gz",
+      "bytes": 1783,
+      "sha256": "1ff7d2ebf2bd786533a19dfc5a9bcc76be67d6836709038cf03af91f8a68c48b",
+      "gzipBytes": 755,
+      "gzipSha256": "e1bfcbe94ca0e855fb8290b72f3bcdcb799d0be2cf9f5a2ccc52f103e5a19590"
+    },
+    {
+      "file": "173-run-owner-proof.sh.gz",
+      "bytes": 796,
+      "sha256": "66f1511640cd79090fb342b1d58140e407a1205bf32e9c19db720939c7a0bdf9",
+      "gzipBytes": 400,
+      "gzipSha256": "236ab7f4cfe5628b5797d429b5ddcb2450f72f2ea85c61a8989764c76d67391e"
+    },
+    {
+      "file": "176-owner-source-bridges.cjs.gz",
+      "bytes": 3351,
+      "sha256": "c06662552559c50dd921585f8432a43c273d9665828f865ec4c56c1f3e5d581b",
+      "gzipBytes": 1358,
+      "gzipSha256": "e8f259916b9008c2d3deee0e0d9328b29a4d22a9dc3c4b9f35eba3a01e332db8"
+    },
+    {
+      "file": "176-owner-source-bridges-original.json.gz",
+      "bytes": 6580,
+      "sha256": "e64c083941f654166d6972b82d584ebad9f33be1b836fc801138e91f77b7e615",
+      "gzipBytes": 1561,
+      "gzipSha256": "e1999de50bd3542c439cd05b2318bef61c421aa532a4c8b8bc824a6cb60c1207"
+    },
+    {
+      "file": "176-owner-pr-original.json.gz",
+      "bytes": 143,
+      "sha256": "cb2470cd76c19fa43e0c41dfec81e1dabdca2171d7e8fbbd9be2ee3e9564ccc9",
+      "gzipBytes": 135,
+      "gzipSha256": "bcd346a1bc8e61057f25b804388909bf154c05d340dbff5313fd2701e6cf13e6"
+    },
+    {
+      "file": "176-owner-refs-original.txt.gz",
+      "bytes": 476,
+      "sha256": "342daf22a5021eec8f75434c7c06ea8f2ddcf0e53c94ae243ac801f117598176",
+      "gzipBytes": 250,
+      "gzipSha256": "cc0e395bf27a5a9ae9733f8c10f92acb0acc8726a0bad02d36ffebdbd24ddb27"
+    },
+    {
+      "file": "176-freeze-owner-successor.py.gz",
+      "bytes": 9629,
+      "sha256": "a957ec5ed2a75538b55f3c373c2d0f1f808748de562853171baf08846520f80c",
+      "gzipBytes": 3539,
+      "gzipSha256": "b892db6eb06da313aebb0c7927d0b4407d7f3dfa055f379bb63a0294f4039e54"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-service.ts.gz",
+      "bytes": 15084,
+      "sha256": "5f151ee6789cc60fcfac6e0d8544029eb7b65acd57abd65bd8ef443be80798d9",
+      "gzipBytes": 3633,
+      "gzipSha256": "50031e964bb3a18210188bd074708a4be95a2033e73a4af20d21d8045ddadb29"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-coordinator.ts.gz",
+      "bytes": 22729,
+      "sha256": "3bc235f11a98f912bb503808cfc815dcc9bdf1c85c039f21ed8c73013ccd4de8",
+      "gzipBytes": 5546,
+      "gzipSha256": "5a0367280cc93c9e43238b089bcb32da7bd19bd6c48fa1d7973e3d9d13187ac2"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-preparations.ts.gz",
+      "bytes": 13601,
+      "sha256": "28b746174858ecceaafee4ac9fc3eebc1a4eb4c846589e5d450f4fad3b411609",
+      "gzipBytes": 3855,
+      "gzipSha256": "111867a999902eb851ebd7a75a59cbb2287609249ab5559b655f938359791b41"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-host.ts.gz",
+      "bytes": 58955,
+      "sha256": "43cc48e70f48699494b79e0b2c52c0b83876f46bcf7c99ae01b6130083f7b48a",
+      "gzipBytes": 14433,
+      "gzipSha256": "7e964ec580270593afec1d7550a8ee31be6e2e0a0f64ab6388082fe9f7d1df63"
+    },
+    {
+      "file": "bound-input-src__main__services__clubhouse-mcp__handoff-permissions.ts.gz",
+      "bytes": 3621,
+      "sha256": "70915cf5c659d378019a48e943e54808779f1a6950fae7975daed2b377d96408",
+      "gzipBytes": 1131,
+      "gzipSha256": "70dc476ba8dd7c349d1c6bec2c4ce33469e7755a748482787d1551e86ae3639a"
+    },
+    {
+      "file": "bound-input-src__main__services__clubhouse-mcp__tools__handoff-tools.ts.gz",
+      "bytes": 15690,
+      "sha256": "3b91fd7345c14c662dec3d95b3b4aacfbb0dc69843b02484442978fbaa2e02ea",
+      "gzipBytes": 4221,
+      "gzipSha256": "5327697a92bde85cc335377cb59ec643c897e51ed65cfd2988dbbcd422a5fc2d"
+    },
+    {
+      "file": "bound-input-src__main__services__clubhouse-mcp__tools__handoff-tools.test.ts.gz",
+      "bytes": 11133,
+      "sha256": "69ace356b0706fc010377a17f276fd50aec3979aa20ed97bbe159bfebeff256e",
+      "gzipBytes": 3101,
+      "gzipSha256": "4d37d24d63b1a86d7a510bd2d76843c886ffd167ff31525b6bbda3eddfdeadf2"
+    },
+    {
+      "file": "bound-input-src__main__services__prepare-handoff-skill.test.ts.gz",
+      "bytes": 13130,
+      "sha256": "960c49c3ee0234b47722805ca3c8ec071d08abc146921804965f269593a447a2",
+      "gzipBytes": 4274,
+      "gzipSha256": "8dbd6b24536d0e1e2941face35eb72610f4352b6bb4bafefdff80c8a85ff2e74"
+    },
+    {
+      "file": "bound-input-test__annex-v2__handoff-producer-admission.test.ts.gz",
+      "bytes": 87525,
+      "sha256": "d4f45587874d7dd4bbb36e74d8177cc7d332703ace739bd60e4e17d1fa6b766b",
+      "gzipBytes": 16532,
+      "gzipSha256": "57c2563e0bf9bc0297591d0c8a555fee7d1daa52b82a14affa8227ac48394c5d"
+    },
+    {
+      "file": "bound-input-docs__annex-reverse-routes.md.gz",
+      "bytes": 29212,
+      "sha256": "902a4a3ae810eed545e2e8c64b4c3c4f96e96c02110760d6b4d238f81fd5c878",
+      "gzipBytes": 11659,
+      "gzipSha256": "0a08f4140533c8d6a72b980174241c79d1466d22377c23f67a7edce055f2eef3"
+    },
+    {
+      "file": "bound-input-package.json.gz",
+      "bytes": 5782,
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "gzipBytes": 1885,
+      "gzipSha256": "a0afb77bb6f0f6367fece12494cfcd314526e0555068921c3baede877de250ae"
+    },
+    {
+      "file": "bound-input-package-lock.json.gz",
+      "bytes": 690814,
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "gzipBytes": 157625,
+      "gzipSha256": "26749b1aed123b22edc952d479c1c50ef7a05d3a30c8fe8822bb6506ef0e1835"
+    },
+    {
+      "file": "bound-input-tsconfig.json.gz",
+      "bytes": 530,
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "gzipBytes": 286,
+      "gzipSha256": "ef32588d840266b55d2b582b15e642e53f0c29b7d7efba2db848a14b4e030a56"
+    },
+    {
+      "file": "bound-input-vitest.config.ts.gz",
+      "bytes": 3220,
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "gzipBytes": 1034,
+      "gzipSha256": "57ee5bf8d659559d4777fd5983244e3f22d1f73ac56c2aa344fb2bcd1e5d842d"
+    },
+    {
+      "file": "bound-input-node_modules__.cache__native-handoff-ingress__133-producer-hosted-correction-tsconfig.json.gz",
+      "bytes": 341,
+      "sha256": "c42e7ed4d268efc9b0de0f6a5c5bac7672b16a0a2ab805a2d5379bc1c7b6a6f3",
+      "gzipBytes": 212,
+      "gzipSha256": "e08b5a7dd7d296644d8f92deefa1214f3ff103552925d33ae02f391662198f3d"
+    },
+    {
+      "file": "bound-input-node_modules__.cache__native-handoff-ingress__131-hosted-correction-command-receipt.cjs.gz",
+      "bytes": 2528,
+      "sha256": "73a357c517491c443cd4e043927f4fca9e1c384a29226fe15f03c605519b95f6",
+      "gzipBytes": 1024,
+      "gzipSha256": "56d46e3cd1653f4dc2724654889a9c457165b5943b47f95e65fdb4ca850b533d"
+    },
+    {
+      "file": "174-input-inventory-observed-after-execution.json.gz",
+      "bytes": 1875777,
+      "sha256": "5ea1542099e641e27fc8287dd2e867159d4fa7bd3dfbc456142fb2813de164a9",
+      "gzipBytes": 312570,
+      "gzipSha256": "b9f2809b7a61b5d3cc20416e8e1f52ec4d5a7e4aa402a439eef26b640d3d3a52"
+    }
+  ]
+}

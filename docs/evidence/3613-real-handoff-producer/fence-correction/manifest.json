@@ -1,0 +1,2378 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T19:57:08.160047+00:00",
+  "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+  "sourceTree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+  "srcTree": "52a10102d89a86af93f6b3ef6f64ac6a2adc384f",
+  "originalCandidate": "ef99265da9faddddf522c2c294745d86d593d78d",
+  "originalImplementation": "ad104a538772156af463f3750783fbf4cd99c39c",
+  "base": "50c474b48f57e0256661244bd29b9343ec112bc4",
+  "review": {
+    "commit": "b6aa456b1f3ea7b90d6ebfe74d36ca475fb682e3",
+    "blob": "1c2b871739e5eaec9f41fce72495a02d6d5b016a",
+    "findings": [
+      "CP1",
+      "CP2"
+    ]
+  },
+  "publishedRef": "refs/heads/lane-3613-p2-routes/handoff-producer-fences",
+  "preservedCandidateRef": "refs/heads/lane-3613-p2-routes/handoff-usable-path",
+  "preservedBoundaryRef": "refs/heads/lane-3613-p2-routes/handoff-producer-boundary",
+  "sourceRows": [
+    {
+      "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+      "original": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "blob": "95c6160d53da67d3c54082ea4f7fc3682dfc1a6a",
+        "bytes": 2166,
+        "sha256": "22c947af1f1decbba7c3f4a50f8d3869c37afe0ed942f53f38f887c3ad4b6790"
+      },
+      "successor": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "blob": "8b9a57778d340a3bc00dec306a157c15ab49756c",
+        "bytes": 2830,
+        "sha256": "5cb5c277c84750e824704433c78c7304eb505f4e16c35e8f798e8355ba9c92bf"
+      }
+    },
+    {
+      "path": "src/main/services/handoff-host.ts",
+      "original": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "blob": "2eeeb62350306b5762a63353c2cd13d16a406a56",
+        "bytes": 56601,
+        "sha256": "8725d8a9315dc56b6e11d11497ff007daad5556e8594ae2408c555feb128813b"
+      },
+      "successor": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "blob": "c48167a65ae5999c8bf070af6e6a0bf5169fe754",
+        "bytes": 56736,
+        "sha256": "84cc4a12ae9aeef9380c636cc0b4d940f96cdd3648a3a8608f2cea056fc979f0"
+      }
+    },
+    {
+      "path": "test/annex-v2/handoff-producer-admission.test.ts",
+      "original": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "blob": "98735045b4e6e2868cbf90488eeaabc7682eef2a",
+        "bytes": 38831,
+        "sha256": "4f5b9c8b28da0ea8199df89179fd2dd187d33c5a9310807b9eb3f3a730419348"
+      },
+      "successor": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "blob": "b731a4034de8f58760ac8998ab1ee4ef71a4fc7f",
+        "bytes": 47709,
+        "sha256": "9e514ac76cce98abaadf310fc5e5913b39d0768f35bf486fcab5adcf38fed446"
+      }
+    },
+    {
+      "path": "docs/annex-reverse-routes.md",
+      "original": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "blob": "bc9426d6938cd7e22fbaa8ec3e016c8968042cff",
+        "bytes": 27954,
+        "sha256": "963b19034b97645f71612f28e59ff50af8b9c50090af382c7c20555e91e2d9e9"
+      },
+      "successor": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "blob": "13f5856e8d074415dd51fcd1abb59644e1e8ed29",
+        "bytes": 28525,
+        "sha256": "64f7134d448cf975178f9f43f6595bf000e27168d17333b39824c14853b7c24a"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "run": 111,
+      "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+      "exit": 1,
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'real postpositive source verification|awaited source observation revision' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/111-producer-fences-red-original.xml",
+      "tree": "084d7b389ae7343b18aab15296e22ff00713000a",
+      "cleanBeforeAfter": true,
+      "matchingRelevantHashes": true
+    },
+    {
+      "run": 112,
+      "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+      "exit": 0,
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'awaited source observation revision: settled benign' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/112-producer-benign-original.xml",
+      "tree": "7f7b7233a620e24feb1b7ff6a62f844f06c92f12",
+      "cleanBeforeAfter": true,
+      "matchingRelevantHashes": true
+    },
+    {
+      "run": 113,
+      "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "exit": 0,
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'real postpositive source verification|awaited source observation revision' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/113-producer-fences-green-original.xml",
+      "tree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+      "cleanBeforeAfter": true,
+      "matchingRelevantHashes": true
+    },
+    {
+      "run": 114,
+      "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "exit": 0,
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --project node_modules/.cache/native-handoff-ingress/79-producer-candidate-tsconfig.json --noEmit --listFiles --pretty false",
+      "tree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+      "cleanBeforeAfter": true,
+      "matchingRelevantHashes": true
+    },
+    {
+      "run": 115,
+      "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "exit": 0,
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx eslint src/main/services/handoff-host.ts src/main/services/clubhouse-mcp/handoff-permissions.ts test/annex-v2/handoff-producer-admission.test.ts --format json --output-file node_modules/.cache/native-handoff-ingress/115-producer-fences-eslint-original.json",
+      "tree": "507f18b6f9125e2c6eccefb9dee0c054649a32f9",
+      "cleanBeforeAfter": true,
+      "matchingRelevantHashes": true
+    }
+  ],
+  "xmlRuns": [
+    {
+      "run": 111,
+      "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+      "counts": {
+        "pass": 4,
+        "fail": 4,
+        "skip": 29
+      },
+      "rows": [
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+            "time": "2.496999083"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:513:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376821204,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376821204,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n+       \"via\": \"dispatcher\",\n+     },\n+     \"updatedAt\": 1795376821204,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:514:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:515:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"markUndelivered\" to not be called at all, but actually been called 1 times  Received:    1st markUndelivered call:      Array [       \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"markUndelivered\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st markUndelivered call:\n\n    Array [\n      \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:516:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"postToMachine\" to not be called at all, but actually been called 1 times  Received:    1st postToMachine call:      Array [       \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",       \"/api/v1/network/handoffs\",       Object {         \"op\": \"offer\",         \"record\": Object {           \"createdAt\": 1795376821204,           \"from\": Object {             \"agentId\": \"producer-sender\",             \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",           },           \"history\": Array [             Object {               \"at\": 1795376821204,               \"by\": Object {                 \"address\": Object {                   \"agentId\": \"producer-sender\",                   \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",                 },                 \"kind\": \"agent\",               },               \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",               \"state\": \"offered\",             },           ],           \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",           \"manifest\": Object {             \"fileCount\": 2,             \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",             \"totalBytes\": 302,           },           \"mode\": \"worktree\",           \"schemaVersion\": 1,           \"senderName\": \"producer-sender\",           \"state\": \"offered\",           \"task\": Object {             \"brief\": \"Synthetic unit fixture only\",             \"title\": \"Continue fixture\",           },           \"to\": Object {             \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",             \"via\": \"dispatcher\",           },           \"updatedAt\": 1795376821204,           \"version\": 1,         },       },       Object {         \"maxResponseBytes\": 524288,         \"signal\": AbortSignal {           Symbol(kEvents): undefined,           Symbol(events.maxEventTargetListeners): 0,           Symbol(events.maxEventTargetListenersWarned): false,           Symbol(kHandlers): undefined,           Symbol(kAborted): false,           Symbol(kReason): undefined,           Symbol(kComposite): false,         },       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"postToMachine\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st postToMachine call:\n\n    Array [\n      \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n      \"/api/v1/network/handoffs\",\n      Object {\n        \"op\": \"offer\",\n        \"record\": Object {\n          \"createdAt\": 1795376821204,\n          \"from\": Object {\n            \"agentId\": \"producer-sender\",\n            \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n          },\n          \"history\": Array [\n            Object {\n              \"at\": 1795376821204,\n              \"by\": Object {\n                \"address\": Object {\n                  \"agentId\": \"producer-sender\",\n                  \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n                },\n                \"kind\": \"agent\",\n              },\n              \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",\n              \"state\": \"offered\",\n            },\n          ],\n          \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n          \"manifest\": Object {\n            \"fileCount\": 2,\n            \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",\n            \"totalBytes\": 302,\n          },\n          \"mode\": \"worktree\",\n          \"schemaVersion\": 1,\n          \"senderName\": \"producer-sender\",\n          \"state\": \"offered\",\n          \"task\": Object {\n            \"brief\": \"Synthetic unit fixture only\",\n            \"title\": \"Continue fixture\",\n          },\n          \"to\": Object {\n            \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n            \"via\": \"dispatcher\",\n          },\n          \"updatedAt\": 1795376821204,\n          \"version\": 1,\n        },\n      },\n      Object {\n        \"maxResponseBytes\": 524288,\n        \"signal\": AbortSignal {\n          Symbol(kEvents): undefined,\n          Symbol(events.maxEventTargetListeners): 0,\n          Symbol(events.maxEventTargetListenersWarned): false,\n          Symbol(kHandlers): undefined,\n          Symbol(kAborted): false,\n          Symbol(kReason): undefined,\n          Symbol(kComposite): false,\n        },\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:517:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times  Received:    1st publishFederationHandoff call:      Array [       Object {         \"createdAt\": 1795376821204,         \"from\": Object {           \"agentId\": \"producer-sender\",           \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",         },         \"history\": Array [           Object {             \"at\": 1795376821204,             \"by\": Object {               \"address\": Object {                 \"agentId\": \"producer-sender\",                 \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",               },               \"kind\": \"agent\",             },             \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",             \"state\": \"offered\",           },         ],         \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",         \"manifest\": Object {           \"fileCount\": 2,           \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",           \"totalBytes\": 302,         },         \"mode\": \"worktree\",         \"schemaVersion\": 1,         \"senderName\": \"producer-sender\",         \"state\": \"offered\",         \"task\": Object {           \"brief\": \"Synthetic unit fixture only\",           \"title\": \"Continue fixture\",         },         \"to\": Object {           \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",           \"via\": \"dispatcher\",         },         \"updatedAt\": 1795376821204,         \"version\": 1,       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st publishFederationHandoff call:\n\n    Array [\n      Object {\n        \"createdAt\": 1795376821204,\n        \"from\": Object {\n          \"agentId\": \"producer-sender\",\n          \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n        },\n        \"history\": Array [\n          Object {\n            \"at\": 1795376821204,\n            \"by\": Object {\n              \"address\": Object {\n                \"agentId\": \"producer-sender\",\n                \"machine\": \"b2:68:53:bb:7a:ad:f3:66:4d:46:d1:21:72:e4:75:a4\",\n              },\n              \"kind\": \"agent\",\n            },\n            \"operationId\": \"bfda0aa4-b7d4-4cf4-829d-e766a670dfe3\",\n            \"state\": \"offered\",\n          },\n        ],\n        \"id\": \"3c1584b4-c735-4d79-b88c-2b32f5dddf0e\",\n        \"manifest\": Object {\n          \"fileCount\": 2,\n          \"sha256\": \"3bbad95b1cafaaef640c4098d5c36445e95b760896c87db02b1b1212a519d44e\",\n          \"totalBytes\": 302,\n        },\n        \"mode\": \"worktree\",\n        \"schemaVersion\": 1,\n        \"senderName\": \"producer-sender\",\n        \"state\": \"offered\",\n        \"task\": Object {\n          \"brief\": \"Synthetic unit fixture only\",\n          \"title\": \"Continue fixture\",\n        },\n        \"to\": Object {\n          \"machine\": \"c3:cf:c8:28:62:1e:7b:ab:76:3d:f7:55:0b:34:11:09\",\n          \"via\": \"dispatcher\",\n        },\n        \"updatedAt\": 1795376821204,\n        \"version\": 1,\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:518:35\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:519:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+            "time": "1.32525125"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:513:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376822534,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376822534,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"producer-sender\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n+       \"via\": \"dispatcher\",\n+     },\n+     \"updatedAt\": 1795376822534,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:514:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"c2e01452-90cd-4960-87e6-abea26102f56\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:515:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"markUndelivered\" to not be called at all, but actually been called 1 times  Received:    1st markUndelivered call:      Array [       \"c2e01452-90cd-4960-87e6-abea26102f56\",     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"markUndelivered\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st markUndelivered call:\n\n    Array [\n      \"c2e01452-90cd-4960-87e6-abea26102f56\",\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:516:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"postToMachine\" to not be called at all, but actually been called 1 times  Received:    1st postToMachine call:      Array [       \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",       \"/api/v1/network/handoffs\",       Object {         \"op\": \"offer\",         \"record\": Object {           \"createdAt\": 1795376822534,           \"from\": Object {             \"agentId\": \"producer-sender\",             \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",           },           \"history\": Array [             Object {               \"at\": 1795376822534,               \"by\": Object {                 \"address\": Object {                   \"agentId\": \"producer-sender\",                   \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",                 },                 \"kind\": \"agent\",               },               \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",               \"state\": \"offered\",             },           ],           \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",           \"manifest\": Object {             \"fileCount\": 2,             \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",             \"totalBytes\": 302,           },           \"mode\": \"worktree\",           \"schemaVersion\": 1,           \"senderName\": \"producer-sender\",           \"state\": \"offered\",           \"task\": Object {             \"brief\": \"Synthetic unit fixture only\",             \"title\": \"Continue fixture\",           },           \"to\": Object {             \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",             \"via\": \"dispatcher\",           },           \"updatedAt\": 1795376822534,           \"version\": 1,         },       },       Object {         \"maxResponseBytes\": 524288,         \"signal\": AbortSignal {           Symbol(kEvents): undefined,           Symbol(events.maxEventTargetListeners): 0,           Symbol(events.maxEventTargetListenersWarned): false,           Symbol(kHandlers): undefined,           Symbol(kAborted): false,           Symbol(kReason): undefined,           Symbol(kComposite): false,         },       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"postToMachine\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st postToMachine call:\n\n    Array [\n      \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n      \"/api/v1/network/handoffs\",\n      Object {\n        \"op\": \"offer\",\n        \"record\": Object {\n          \"createdAt\": 1795376822534,\n          \"from\": Object {\n            \"agentId\": \"producer-sender\",\n            \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n          },\n          \"history\": Array [\n            Object {\n              \"at\": 1795376822534,\n              \"by\": Object {\n                \"address\": Object {\n                  \"agentId\": \"producer-sender\",\n                  \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n                },\n                \"kind\": \"agent\",\n              },\n              \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",\n              \"state\": \"offered\",\n            },\n          ],\n          \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",\n          \"manifest\": Object {\n            \"fileCount\": 2,\n            \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",\n            \"totalBytes\": 302,\n          },\n          \"mode\": \"worktree\",\n          \"schemaVersion\": 1,\n          \"senderName\": \"producer-sender\",\n          \"state\": \"offered\",\n          \"task\": Object {\n            \"brief\": \"Synthetic unit fixture only\",\n            \"title\": \"Continue fixture\",\n          },\n          \"to\": Object {\n            \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n            \"via\": \"dispatcher\",\n          },\n          \"updatedAt\": 1795376822534,\n          \"version\": 1,\n        },\n      },\n      Object {\n        \"maxResponseBytes\": 524288,\n        \"signal\": AbortSignal {\n          Symbol(kEvents): undefined,\n          Symbol(events.maxEventTargetListeners): 0,\n          Symbol(events.maxEventTargetListenersWarned): false,\n          Symbol(kHandlers): undefined,\n          Symbol(kAborted): false,\n          Symbol(kReason): undefined,\n          Symbol(kComposite): false,\n        },\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:517:33\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times  Received:    1st publishFederationHandoff call:      Array [       Object {         \"createdAt\": 1795376822534,         \"from\": Object {           \"agentId\": \"producer-sender\",           \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",         },         \"history\": Array [           Object {             \"at\": 1795376822534,             \"by\": Object {               \"address\": Object {                 \"agentId\": \"producer-sender\",                 \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",               },               \"kind\": \"agent\",             },             \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",             \"state\": \"offered\",           },         ],         \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",         \"manifest\": Object {           \"fileCount\": 2,           \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",           \"totalBytes\": 302,         },         \"mode\": \"worktree\",         \"schemaVersion\": 1,         \"senderName\": \"producer-sender\",         \"state\": \"offered\",         \"task\": Object {           \"brief\": \"Synthetic unit fixture only\",           \"title\": \"Continue fixture\",         },         \"to\": Object {           \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",           \"via\": \"dispatcher\",         },         \"updatedAt\": 1795376822534,         \"version\": 1,       },     ]   Number of calls: 1 ",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected \"publishFederationHandoff\" to not be called at all, but actually been called 1 times\n\nReceived:\n\n  1st publishFederationHandoff call:\n\n    Array [\n      Object {\n        \"createdAt\": 1795376822534,\n        \"from\": Object {\n          \"agentId\": \"producer-sender\",\n          \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n        },\n        \"history\": Array [\n          Object {\n            \"at\": 1795376822534,\n            \"by\": Object {\n              \"address\": Object {\n                \"agentId\": \"producer-sender\",\n                \"machine\": \"50:2e:c9:80:e6:6c:d6:f3:64:79:84:f9:28:ff:d8:c2\",\n              },\n              \"kind\": \"agent\",\n            },\n            \"operationId\": \"0bfd400e-7653-45ae-aca0-670f8215c724\",\n            \"state\": \"offered\",\n          },\n        ],\n        \"id\": \"c2e01452-90cd-4960-87e6-abea26102f56\",\n        \"manifest\": Object {\n          \"fileCount\": 2,\n          \"sha256\": \"ecbe666ebca5d0848c8690e81773b0a5feb9879b0b177fdb7c335b35d9db1d46\",\n          \"totalBytes\": 302,\n        },\n        \"mode\": \"worktree\",\n        \"schemaVersion\": 1,\n        \"senderName\": \"producer-sender\",\n        \"state\": \"offered\",\n        \"task\": Object {\n          \"brief\": \"Synthetic unit fixture only\",\n          \"title\": \"Continue fixture\",\n        },\n        \"to\": Object {\n          \"machine\": \"d7:e8:df:01:8f:7c:59:fb:ba:3a:56:5e:1d:73:1d:fe\",\n          \"via\": \"dispatcher\",\n        },\n        \"updatedAt\": 1795376822534,\n        \"version\": 1,\n      },\n    ]\n\n\nNumber of calls: 1\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:518:35\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:519:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+            "time": "1.360303625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+            "time": "1.326999625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+            "time": "1.309545625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+            "time": "1.286086167"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:589:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376827827,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"b4:51:9c:81:27:e5:60:32:d4:33:d3:94:ad:cb:58:09\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376827827,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"b4:51:9c:81:27:e5:60:32:d4:33:d3:94:ad:cb:58:09\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"47534b87-a4b5-41c4-a78d-d1365a528d12\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"b6bd48af-b941-4d6c-907e-a1929b0a308a\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"bf6d5f4b2dcbad5bfb3dea120fb59e673a093e41d818b0342ce81eb5f3fb6c06\",\n+       \"totalBytes\": 303,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"Original source\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"b4:51:9c:81:27:e5:60:32:d4:33:d3:94:ad:cb:58:09\",\n+     },\n+     \"updatedAt\": 1795376827827,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:590:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 303,\n          \"sha256\": \"bf6d5f4b2dcbad5bfb3dea120fb59e673a093e41d818b0342ce81eb5f3fb6c06\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"b6bd48af-b941-4d6c-907e-a1929b0a308a\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:591:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:595:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+            "time": "1.317085541"
+          },
+          "status": "fail",
+          "failures": [
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected undefined to be true // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected:\ntrue\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:589:39\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected [ { schemaVersion: 1, \u2026(12) } ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   {\n+     \"createdAt\": 1795376829124,\n+     \"from\": {\n+       \"agentId\": \"producer-sender\",\n+       \"machine\": \"13:c3:c0:02:a9:3f:43:22:d8:f9:7e:88:c0:8f:2a:f2\",\n+     },\n+     \"history\": [\n+       {\n+         \"at\": 1795376829124,\n+         \"by\": {\n+           \"address\": {\n+             \"agentId\": \"producer-sender\",\n+             \"machine\": \"13:c3:c0:02:a9:3f:43:22:d8:f9:7e:88:c0:8f:2a:f2\",\n+           },\n+           \"kind\": \"agent\",\n+         },\n+         \"operationId\": \"35b18a6f-68e8-4a41-8fee-b6464f1f3885\",\n+         \"state\": \"offered\",\n+       },\n+     ],\n+     \"id\": \"25efcf2e-1eeb-45ca-94f3-292b17e27f30\",\n+     \"manifest\": {\n+       \"fileCount\": 2,\n+       \"sha256\": \"1f2e55115bcda2d8088feaf82276d53e09eb45acd0907af7b2d326f9bda47541\",\n+       \"totalBytes\": 302,\n+     },\n+     \"mode\": \"worktree\",\n+     \"schemaVersion\": 1,\n+     \"senderName\": \"Original source\",\n+     \"state\": \"offered\",\n+     \"task\": {\n+       \"brief\": \"Synthetic unit fixture only\",\n+       \"title\": \"Continue fixture\",\n+     },\n+     \"to\": {\n+       \"agentId\": \"producer-receiver\",\n+       \"machine\": \"13:c3:c0:02:a9:3f:43:22:d8:f9:7e:88:c0:8f:2a:f2\",\n+     },\n+     \"updatedAt\": 1795376829124,\n+     \"version\": 1,\n+   },\n+ ]\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:590:45\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: expected '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' to be '{\\n  \"v\": 1,\\n  \"entries\": [\\n    {\\n\u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -10,9 +10,11 @@\n        \"summary\": {\n          \"fileCount\": 2,\n          \"totalBytes\": 302,\n          \"sha256\": \"1f2e55115bcda2d8088feaf82276d53e09eb45acd0907af7b2d326f9bda47541\"\n        },\n-       \"boundTo\": []\n+       \"boundTo\": [\n+         \"25efcf2e-1eeb-45ca-94f3-292b17e27f30\"\n+       ]\n      }\n    ]\n  }\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:591:42\n            "
+            },
+            {
+              "tag": "failure",
+              "attributes": {
+                "message": "promise resolved \"undefined\" instead of rejecting",
+                "type": "AssertionError"
+              },
+              "text": "\nAssertionError: promise resolved \"undefined\" instead of rejecting\n\n- Expected:\nError {\n  \"message\": \"rejected promise\",\n}\n\n+ Received:\nundefined\n\n \u276f test/annex-v2/handoff-producer-admission.test.ts:595:80\n            "
+            }
+          ],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+            "time": "1.296283834"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        }
+      ]
+    },
+    {
+      "run": 112,
+      "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 36
+      },
+      "rows": [
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+            "time": "2.426773292"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        }
+      ]
+    },
+    {
+      "run": 113,
+      "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+      "counts": {
+        "pass": 8,
+        "fail": 0,
+        "skip": 29
+      },
+      "rows": [
+        {
+          "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains original grant retirement even when Allow is restored before the queue resumes",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves gate-forget-only completion, unrelated bindings and cosmetic runtime metadata",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > ignores cosmetic binding changes during the actual target-project capture await",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a replacement quick source with the same id and worktree",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not adopt a different registered caller worktree after preparation",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > keeps a durable original source without a live runtime and ignores display name/color changes",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > refuses a durable source replacement with only its original createdAt changed",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > rechecks retirement during the actual positive authorization await",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > uses a synthetic isolated exact-call approval without changing standing Ask grants",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > requires still-valid consumed approval inside the queue, not merely a stable Ask grant",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > preserves consumed Ask approval when only the general MCP gate forgets the caller",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow consumed Ask approval for a changed exact approval context",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences dropped Ask approval during real postpositive source verification",
+            "time": "2.484280666"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences changed Ask context during real postpositive source verification",
+            "time": "1.302552542"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences current Ask during real postpositive source verification",
+            "time": "1.309586625"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences fresh Allow with changed approval/context during real postpositive source verification",
+            "time": "1.301224375"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > fences forget-only Ask during real postpositive source verification",
+            "time": "1.29359275"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending incompatible",
+            "time": "1.272136416"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: pending benign",
+            "time": "1.315594"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > verifies only the awaited source observation revision: settled benign",
+            "time": "1.285247459"
+          },
+          "status": "pass",
+          "failures": [],
+          "skipped": []
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not borrow a newly retargeted alias authorization for the frozen recipient",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > does not substitute a new same-summary preparation for the captured catalog entry",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its own requested mode after an independently running preparation",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > prepares its original captured source after an independently running preparation on another source",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns its await of separately admitted preparation without cancelling that independent read on stop",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > owns the original host before implicit preparation and refuses stop-time replacement",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-commands.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoff-preparations.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > finishes admitted handoffs.json save truthfully while stop waits actual work",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > holds a dispatched POST beyond its deadline until the actual promise releases",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes catalog-prewrite failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-prewrite failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > original producer continuity and admitted persistence > retains exact partial ids and distinguishes history-after-rename failure without retry or rollback fiction",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        },
+        {
+          "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+          "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+          "attributes": {
+            "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+            "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+            "time": "0"
+          },
+          "status": "skip",
+          "failures": [],
+          "skipped": [
+            {}
+          ]
+        }
+      ]
+    }
+  ],
+  "actualXmlRows": 111,
+  "compiler": {
+    "run": 114,
+    "diagnostics": 0,
+    "actualOrderedInputs": 3958,
+    "bothCompleteFixturesPresent": true,
+    "inputHashesCapturedAfterExecution": true
+  },
+  "lint": {
+    "run": 115,
+    "files": 3,
+    "errors": 0,
+    "warnings": 0
+  },
+  "archives": [
+    {
+      "file": "111-producer-fences-red-before.json.gz",
+      "rawBytes": 4028,
+      "rawSha256": "1db62c849bdd55482f66e498ed81f865f966ae7a7de0a018ff943f3ff5698dce",
+      "gzipBytes": 1754,
+      "gzipSha256": "300cecdc7cc17021a16b80f51c5664308913c357463c0def3857e3995a22ec97",
+      "provenance": {
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "path": "node_modules/.cache/native-handoff-ingress/111-producer-fences-red-before.json"
+      }
+    },
+    {
+      "file": "111-producer-fences-red-after.json.gz",
+      "rawBytes": 4151,
+      "rawSha256": "4e4a9994eebeeee22a256c61748e7b3e37dc39d9d648a888c623072ba5203abe",
+      "gzipBytes": 1788,
+      "gzipSha256": "b9763cf8526271dddbdadd7ca0b62dfb12604a8fb9f3b2da1a107dd2de256ae0",
+      "provenance": {
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "path": "node_modules/.cache/native-handoff-ingress/111-producer-fences-red-after.json"
+      }
+    },
+    {
+      "file": "111-producer-fences-red-original.log.gz",
+      "rawBytes": 35226,
+      "rawSha256": "fd8567a7dcb8302b74dc791576e0932a1e653ebc238e75cb52db0eab03a4c6c3",
+      "gzipBytes": 4970,
+      "gzipSha256": "06a7265f3b2616c15c2dc4f42cbf9f41ab08c2124ddbf79c7a4405c71cd22154",
+      "provenance": {
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "path": "node_modules/.cache/native-handoff-ingress/111-producer-fences-red-original.log"
+      }
+    },
+    {
+      "file": "111-producer-fences-red-exit.txt.gz",
+      "rawBytes": 2,
+      "rawSha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac",
+      "provenance": {
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "path": "node_modules/.cache/native-handoff-ingress/111-producer-fences-red-exit.txt"
+      }
+    },
+    {
+      "file": "112-producer-benign-before.json.gz",
+      "rawBytes": 4002,
+      "rawSha256": "35b77de06d48d3598208cbcc6fc952db17b1ec43c2a303dfa9fd09683b8420b1",
+      "gzipBytes": 1744,
+      "gzipSha256": "c44af29e504e77af3e076ca38f3449590f770bf445fac5430949be22f2d6d6be",
+      "provenance": {
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "path": "node_modules/.cache/native-handoff-ingress/112-producer-benign-before.json"
+      }
+    },
+    {
+      "file": "112-producer-benign-after.json.gz",
+      "rawBytes": 4121,
+      "rawSha256": "22911d8a622c753c78a36b147b47fea15f4557d504aedd7d35d35740f185986c",
+      "gzipBytes": 1776,
+      "gzipSha256": "8cc70ccc2f636d3689fbb5b10b659e9286bd613beb687defb438fc1a2cffa7c6",
+      "provenance": {
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "path": "node_modules/.cache/native-handoff-ingress/112-producer-benign-after.json"
+      }
+    },
+    {
+      "file": "112-producer-benign-original.log.gz",
+      "rawBytes": 1534,
+      "rawSha256": "0b6375a9cfb2e30bb13a33ad160c7a8d4c3c8bd0ad497f9f637cee663a212437",
+      "gzipBytes": 820,
+      "gzipSha256": "3a9181f410c1c770622d8428ebf8f5dfed4be478e47c664f352245ef3e9b8c45",
+      "provenance": {
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "path": "node_modules/.cache/native-handoff-ingress/112-producer-benign-original.log"
+      }
+    },
+    {
+      "file": "112-producer-benign-exit.txt.gz",
+      "rawBytes": 2,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0",
+      "provenance": {
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "path": "node_modules/.cache/native-handoff-ingress/112-producer-benign-exit.txt"
+      }
+    },
+    {
+      "file": "113-producer-fences-green-before.json.gz",
+      "rawBytes": 4030,
+      "rawSha256": "a91b7181282642ee12a730520aeb5a589a16494554b428506b1fd403b96a788f",
+      "gzipBytes": 1760,
+      "gzipSha256": "35933c20baa0ebccd51f7b00b509350b045e521ed3611eb204433c13f57a209b",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/113-producer-fences-green-before.json"
+      }
+    },
+    {
+      "file": "113-producer-fences-green-after.json.gz",
+      "rawBytes": 4155,
+      "rawSha256": "3b92465218fdbeacc465e42a9d405393a570b7c5f09f5d7e76950ed9b4e3be22",
+      "gzipBytes": 1792,
+      "gzipSha256": "08cf3f6a5d863c079b5ab51ce3145ac60b4ef09e60089d3d4e6787c5a488c902",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/113-producer-fences-green-after.json"
+      }
+    },
+    {
+      "file": "113-producer-fences-green-original.log.gz",
+      "rawBytes": 2221,
+      "rawSha256": "ecc56a75a2869ab960abab8f2366cbc38a969d2e4363da204f049f653ffb1720",
+      "gzipBytes": 973,
+      "gzipSha256": "87ba1da75ea81473a78fb4432dcd5124488d4401c8def295c30430ac1d9aaf41",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/113-producer-fences-green-original.log"
+      }
+    },
+    {
+      "file": "113-producer-fences-green-exit.txt.gz",
+      "rawBytes": 2,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/113-producer-fences-green-exit.txt"
+      }
+    },
+    {
+      "file": "114-producer-fences-types-before.json.gz",
+      "rawBytes": 3868,
+      "rawSha256": "555eea7b1d4ed3e3669df85ac823b5b088af6821de8cd9f7369003924070683d",
+      "gzipBytes": 1661,
+      "gzipSha256": "c1f4a14edbb9edf238ea4849551e2a05b36de0aa4b5b0f9d47622995e8b727b4",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/114-producer-fences-types-before.json"
+      }
+    },
+    {
+      "file": "114-producer-fences-types-after.json.gz",
+      "rawBytes": 3993,
+      "rawSha256": "945345eea60e17a96ff4fb4ec3ab61e8e141b282f75eb3dc711336881c582deb",
+      "gzipBytes": 1700,
+      "gzipSha256": "7e5d8fb3c471bbe58e43df45ba0f17cc7be6fad6c3d1c46353358f8b00ee2756",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/114-producer-fences-types-after.json"
+      }
+    },
+    {
+      "file": "114-producer-fences-types-original.log.gz",
+      "rawBytes": 734853,
+      "rawSha256": "e93021e34151b84305765bb003a2e488fc0663b3dff613aacd5ebfd96dc3512c",
+      "gzipBytes": 32735,
+      "gzipSha256": "ee413118d90f3875737616662cf72a6e597b7a8d1f751a21b2ad32ba30008c90",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/114-producer-fences-types-original.log"
+      }
+    },
+    {
+      "file": "114-producer-fences-types-exit.txt.gz",
+      "rawBytes": 2,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/114-producer-fences-types-exit.txt"
+      }
+    },
+    {
+      "file": "115-producer-fences-eslint-before.json.gz",
+      "rawBytes": 3996,
+      "rawSha256": "92d80b0290c5c42ff016af3297074d40b1cf6fbca464126dd0efafaa77637698",
+      "gzipBytes": 1689,
+      "gzipSha256": "06824bc80e5dabb0a9c0939fc9ccabf9d6d4ff3a0d923f5911ebe97b00808aff",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/115-producer-fences-eslint-before.json"
+      }
+    },
+    {
+      "file": "115-producer-fences-eslint-after.json.gz",
+      "rawBytes": 4122,
+      "rawSha256": "6d408c1f65b348b283e580dec9f4139eeffadab625e23cad3725e5a535edfd59",
+      "gzipBytes": 1721,
+      "gzipSha256": "a74500c367cf7c532552ad52de7ce3e8fb1241ea45fdc9dd82dff95f420762a0",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/115-producer-fences-eslint-after.json"
+      }
+    },
+    {
+      "file": "115-producer-fences-eslint-original.log.gz",
+      "rawBytes": 415,
+      "rawSha256": "c3f5a0055a3674265db5909877dfbedc2b20f81409252a6a7728bf5cbc2295f4",
+      "gzipBytes": 290,
+      "gzipSha256": "bf5164b4208df201dba598409938acb82ca8c7ea4fe149ca066a818b7931f777",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/115-producer-fences-eslint-original.log"
+      }
+    },
+    {
+      "file": "115-producer-fences-eslint-exit.txt.gz",
+      "rawBytes": 2,
+      "rawSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/115-producer-fences-eslint-exit.txt"
+      }
+    },
+    {
+      "file": "111-producer-fences-red-original.xml.gz",
+      "rawBytes": 47147,
+      "rawSha256": "ec141a5672660957779f3ff474e989ce489dfdfeac7a268f1b7bb0c9240eb905",
+      "gzipBytes": 4039,
+      "gzipSha256": "90a67ca94f6b2ebed35b5dbc6c6e978719b0a4a244b29879071d2e14a99e097b",
+      "provenance": {
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "path": "node_modules/.cache/native-handoff-ingress/111-producer-fences-red-original.xml"
+      }
+    },
+    {
+      "file": "112-producer-benign-original.xml.gz",
+      "rawBytes": 12335,
+      "rawSha256": "9eb71bd8966813cf881a1b6acc841d154f68de6ae50b9e9a9087434a8961bc42",
+      "gzipBytes": 1469,
+      "gzipSha256": "e32db9c5075215f11a011c490097aa783c46d1ba04ba70a3e3dc7c7e5def8d17",
+      "provenance": {
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "path": "node_modules/.cache/native-handoff-ingress/112-producer-benign-original.xml"
+      }
+    },
+    {
+      "file": "113-producer-fences-green-original.xml.gz",
+      "rawBytes": 12242,
+      "rawSha256": "4418126b346b63df8984e5c3dfbd405735033816fe337123bbacff2eb32cf6f7",
+      "gzipBytes": 1527,
+      "gzipSha256": "819d0e91a3ee9ac37180215098bfd7f1793c203df234cbd18b681dec699c3513",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/113-producer-fences-green-original.xml"
+      }
+    },
+    {
+      "file": "114-producer-fences-types-input-inventory-after.json.gz",
+      "rawBytes": 1264392,
+      "rawSha256": "5bcdb255d00460db1852d51eaaeb2a1032bd2e665b3e66779014d36118a6fdc9",
+      "gzipBytes": 212075,
+      "gzipSha256": "a1fdc5f4b2748e2739419ac31b94f191aecd0cacd23351750263206c7d45cc21",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/114-producer-fences-types-input-inventory-after.json"
+      }
+    },
+    {
+      "file": "115-producer-fences-eslint-original.json.gz",
+      "rawBytes": 1048,
+      "rawSha256": "4ca615258631433b4d5100ffd01049d5c712d557ad750b0b2890a618d8ebc225",
+      "gzipBytes": 284,
+      "gzipSha256": "f75634fd57186b60ad2300ed9a8e06e93108d844a420211336e18bd36dca986b",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "node_modules/.cache/native-handoff-ingress/115-producer-fences-eslint-original.json"
+      }
+    },
+    {
+      "file": "79-producer-candidate-tsconfig.json.gz",
+      "rawBytes": 277,
+      "rawSha256": "c7c89e24caa16d62e1371583d433a3ac052cb129e8fd94cadd082101f9b83bc6",
+      "gzipBytes": 196,
+      "gzipSha256": "91368a163badf615960e28f582233edce5d10d05f1d9443140c040f92199ee56",
+      "provenance": {
+        "path": "node_modules/.cache/native-handoff-ingress/79-producer-candidate-tsconfig.json"
+      }
+    },
+    {
+      "file": "109-producer-full-review-b6-original.md.gz",
+      "rawBytes": 18377,
+      "rawSha256": "62b49ef5b9ace7cfc7b0012670761810d6908562bf0882f00c6b1bb889f44682",
+      "gzipBytes": 7754,
+      "gzipSha256": "5c7450bede6a9a9d11092794fd25c6e1cbad12e26d986484451b90eece1dab53",
+      "provenance": {
+        "path": "node_modules/.cache/native-handoff-ingress/109-producer-full-review-b6-original.md"
+      }
+    },
+    {
+      "file": "110-producer-command-receipt.cjs.gz",
+      "rawBytes": 2477,
+      "rawSha256": "9ef09ca010ee9ea956fd8d558e0f72ffd30322555e9ab0c57944e6a82c1cabc6",
+      "gzipBytes": 1015,
+      "gzipSha256": "d2f4eb29cdd2b413d35c987f083c8de4a6e670ed5c4a4071d246e91a7d7c2620",
+      "provenance": {
+        "path": "node_modules/.cache/native-handoff-ingress/110-producer-command-receipt.cjs"
+      }
+    },
+    {
+      "file": "116-freeze-producer-fences.py.gz",
+      "rawBytes": 10529,
+      "rawSha256": "a39b3b177b686e00dd765e9d07847dafb8d4eb1be7a78b85c4efd783993073ee",
+      "gzipBytes": 3787,
+      "gzipSha256": "fbc1ed4a77db799ce58996155e1c53dd1d232b1e609de3d9d9405bad00a01277",
+      "provenance": {
+        "path": "node_modules/.cache/native-handoff-ingress/116-freeze-producer-fences.py"
+      }
+    },
+    {
+      "file": "source-1-original.txt.gz",
+      "rawBytes": 2166,
+      "rawSha256": "22c947af1f1decbba7c3f4a50f8d3869c37afe0ed942f53f38f887c3ad4b6790",
+      "gzipBytes": 825,
+      "gzipSha256": "36d82537f4d326a896a1e6a46c5e7771fc57c9356d410af70c22b801bd6f13fb",
+      "provenance": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts"
+      }
+    },
+    {
+      "file": "source-1-successor.txt.gz",
+      "rawBytes": 2830,
+      "rawSha256": "5cb5c277c84750e824704433c78c7304eb505f4e16c35e8f798e8355ba9c92bf",
+      "gzipBytes": 979,
+      "gzipSha256": "4f00ae5ccf4c1ba3601a9eb3be3c503b496b45ff54f2da00209d2684291791cd",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "src/main/services/clubhouse-mcp/handoff-permissions.ts"
+      }
+    },
+    {
+      "file": "source-2-original.txt.gz",
+      "rawBytes": 56601,
+      "rawSha256": "8725d8a9315dc56b6e11d11497ff007daad5556e8594ae2408c555feb128813b",
+      "gzipBytes": 14079,
+      "gzipSha256": "caf5f72c318be3f232cc26d7f3585d134f58ceb9b272bdd6b749558665c34fa9",
+      "provenance": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "path": "src/main/services/handoff-host.ts"
+      }
+    },
+    {
+      "file": "source-2-successor.txt.gz",
+      "rawBytes": 56736,
+      "rawSha256": "84cc4a12ae9aeef9380c636cc0b4d940f96cdd3648a3a8608f2cea056fc979f0",
+      "gzipBytes": 14104,
+      "gzipSha256": "425d37aa87e79182e4dc4397d5464533da1de8fa9c2e50007a7fbfb782765d13",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "src/main/services/handoff-host.ts"
+      }
+    },
+    {
+      "file": "source-3-original.txt.gz",
+      "rawBytes": 38831,
+      "rawSha256": "4f5b9c8b28da0ea8199df89179fd2dd187d33c5a9310807b9eb3f3a730419348",
+      "gzipBytes": 7584,
+      "gzipSha256": "3e28f90fe9eb106bb692436b8cb23c7c24255cceddf034c1d68cfb049771d043",
+      "provenance": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "path": "test/annex-v2/handoff-producer-admission.test.ts"
+      }
+    },
+    {
+      "file": "source-3-successor.txt.gz",
+      "rawBytes": 47709,
+      "rawSha256": "9e514ac76cce98abaadf310fc5e5913b39d0768f35bf486fcab5adcf38fed446",
+      "gzipBytes": 9033,
+      "gzipSha256": "720dfc20afcbe8e6b17756f74fea9a89f0fecac8f91f7f6984c13b7d14d3aad4",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "test/annex-v2/handoff-producer-admission.test.ts"
+      }
+    },
+    {
+      "file": "source-4-original.txt.gz",
+      "rawBytes": 27954,
+      "rawSha256": "963b19034b97645f71612f28e59ff50af8b9c50090af382c7c20555e91e2d9e9",
+      "gzipBytes": 11234,
+      "gzipSha256": "c9d6367aa0595740d34d605810760d89bacc2815a38f05d0574a28fa7a534187",
+      "provenance": {
+        "source": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "path": "docs/annex-reverse-routes.md"
+      }
+    },
+    {
+      "file": "source-4-successor.txt.gz",
+      "rawBytes": 28525,
+      "rawSha256": "64f7134d448cf975178f9f43f6595bf000e27168d17333b39824c14853b7c24a",
+      "gzipBytes": 11421,
+      "gzipSha256": "a839473718a1b0638b961f06c1ada468b3eb6e75b95f46fba59f36dea5364fcf",
+      "provenance": {
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "path": "docs/annex-reverse-routes.md"
+      }
+    },
+    {
+      "file": "selected-delta.patch.gz",
+      "rawBytes": 16964,
+      "rawSha256": "db9f1d6e077de550c58c84c9be24808acc29386c47083eb9c9931b1968ed804b",
+      "gzipBytes": 4776,
+      "gzipSha256": "aa5095cf2ac2a4a739315038ffcdca3708e430fb1241739ec2cb4c5c02eff06b",
+      "provenance": {
+        "parent": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "paths": [
+          "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+          "src/main/services/handoff-host.ts",
+          "test/annex-v2/handoff-producer-admission.test.ts",
+          "docs/annex-reverse-routes.md"
+        ]
+      }
+    },
+    {
+      "file": "genuine-baseline-fixture.patch.gz",
+      "rawBytes": 9847,
+      "rawSha256": "d08812251f24af95ad2c797bc0a598b781a6d97b6f9b0875e7d64a8fc2ad824b",
+      "gzipBytes": 2778,
+      "gzipSha256": "43e25e291b6828b2d3dc2eb7f693b72bb7c20703a578684174d0c57463d97918",
+      "provenance": {
+        "parent": "ef99265da9faddddf522c2c294745d86d593d78d",
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "paths": [
+          "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+          "src/main/services/handoff-host.ts",
+          "test/annex-v2/handoff-producer-admission.test.ts",
+          "docs/annex-reverse-routes.md"
+        ]
+      }
+    },
+    {
+      "file": "benign-fixture-refinement.patch.gz",
+      "rawBytes": 2538,
+      "rawSha256": "71b0dc11e776e8c08a2914a52f65ce87c2b328dc4d8e0f4e81f7b15a492e340e",
+      "gzipBytes": 952,
+      "gzipSha256": "fbe090c11275db45fdef668fc4b59205277f0508a53dc2289757377d81ba97b2",
+      "provenance": {
+        "parent": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "paths": [
+          "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+          "src/main/services/handoff-host.ts",
+          "test/annex-v2/handoff-producer-admission.test.ts",
+          "docs/annex-reverse-routes.md"
+        ]
+      }
+    },
+    {
+      "file": "combined-private-fences.patch.gz",
+      "rawBytes": 6919,
+      "rawSha256": "98be9cb7007ca375eb99d1f466f0de98fb47b877703bd6c4e6d6f668e0f1d576",
+      "gzipBytes": 2336,
+      "gzipSha256": "c6bcb44733e049f04b5619a108fa1171df092b4dfb9d3979f75950a612b6dc51",
+      "provenance": {
+        "parent": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "source": "275df2b3c8e5fa81cc066d0b308edb6c59d9df61",
+        "paths": [
+          "src/main/services/clubhouse-mcp/handoff-permissions.ts",
+          "src/main/services/handoff-host.ts",
+          "test/annex-v2/handoff-producer-admission.test.ts",
+          "docs/annex-reverse-routes.md"
+        ]
+      }
+    },
+    {
+      "file": "genuine-baseline-complete-fixture.txt.gz",
+      "rawBytes": 47517,
+      "rawSha256": "6113b0ec6f859579f7107c3a57f87ad876145523cc84ac77a47e464a5bb72d80",
+      "gzipBytes": 8991,
+      "gzipSha256": "fbcbc28a98b177c2bcad43a833bbe272f62f885e82a3a08d3d66c451eac3f33e",
+      "provenance": {
+        "source": "c2a6d24fa1b381ac23e825dc31ccd06bd061af9e",
+        "path": "test/annex-v2/handoff-producer-admission.test.ts"
+      }
+    },
+    {
+      "file": "benign-refinement-complete-fixture.txt.gz",
+      "rawBytes": 47709,
+      "rawSha256": "9e514ac76cce98abaadf310fc5e5913b39d0768f35bf486fcab5adcf38fed446",
+      "gzipBytes": 9033,
+      "gzipSha256": "720dfc20afcbe8e6b17756f74fea9a89f0fecac8f91f7f6984c13b7d14d3aad4",
+      "provenance": {
+        "source": "970e22dd4b99a2a3ce8654505675366067ce2d38",
+        "path": "test/annex-v2/handoff-producer-admission.test.ts"
+      }
+    }
+  ],
+  "archiveCount": 43,
+  "receiptLimits": "Observed clean head/tree and relevant hashes before/after each admitted command; no exclusive filesystem or atomic full-input seal. Historical101 has no listFiles/input inventory and is not retrosealed.",
+  "sourceObservationFixture": "Notification input is dispatched to the real registered onAgentConfigChanged callback; actual peekDurableConfigs lookup is held. Producer.check spy forwards the real check and counts visits only; no private counters or authorization values are rewritten.",
+  "acceptance": "Unreviewed combined CP1/CP2 successor; source-specific selected controls only. No PR/CI, whole-handoff, native TLS/bridge/provider/live-human, apply/wake/two-host or duplex acceptance."
+}

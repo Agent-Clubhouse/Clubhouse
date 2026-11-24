@@ -16,6 +16,14 @@ interface Preparation {
   summary: HandoffManifestSummary; boundTo: string[];
 }
 interface Catalog { v: 1; entries: Preparation[] }
+export type HandoffPreparationSource = Awaited<ReturnType<typeof callerHandoffSource>>;
+export interface HandoffPreparationSelection {
+  readonly id: string;
+  readonly owner: string;
+  readonly source: HandoffPreparationSource;
+  readonly mode: 'branch' | 'worktree';
+  readonly summary: HandoffManifestSummary;
+}
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 function parse(raw: unknown): Catalog {
   if (!object(raw) || raw.v !== 1 || Object.keys(raw).some((key) => !['v', 'entries'].includes(key)) || !Array.isArray(raw.entries) || raw.entries.length > 512) throw new Error('Invalid handoff preparation catalog.');
@@ -78,11 +86,13 @@ async function preparationRoot(): Promise<string> {
   return root;
 }
 
-export async function prepareCallerHandoff(owner: string, mode: 'branch' | 'worktree', selection: Pick<PrepareHandoffSnapshot, 'include' | 'exclude'> = {}) {
+async function prepareForSource(owner: string, mode: 'branch' | 'worktree', selection: Pick<PrepareHandoffSnapshot, 'include' | 'exclude'>,
+  captured?: { source: HandoffPreparationSource; beforePrepare(): void }) {
   const prior = preparing.get(owner);
   const work = (async () => {
     try { await prior; } catch { /* telemetry-exempt: a previous preparation failure does not block a new selection */ }
-    const source = await callerHandoffSource(owner); const root = await preparationRoot(); const id = randomUUID();
+    captured?.beforePrepare();
+    const source = captured?.source ?? await callerHandoffSource(owner); const root = await preparationRoot(); const id = randomUUID();
     allocated.add(id);
     try {
       const snapshot = await prepareHandoffTransfer({ ...selection, mode, worktreeRoot: source.worktreeRoot, stagingRoot: root, handoffId: id, bounds: source.bounds, secretPolicy: source.secretPolicy });
@@ -94,11 +104,36 @@ export async function prepareCallerHandoff(owner: string, mode: 'branch' | 'work
         });
       } catch (error) { await fs.promises.rm(snapshot.root, { recursive: true, force: true }); throw error; }
       for (const old of retired) await fs.promises.rm(path.join(root, old), { recursive: true, force: true });
-      return { ready: true as const, manifest: snapshot.manifest, summary, bounds: source.bounds };
+      return {
+        prepared: { ready: true as const, manifest: snapshot.manifest, summary, bounds: source.bounds },
+        selected: Object.freeze({ id, owner, source, mode, summary: Object.freeze({ ...summary }) }),
+      };
     } finally { allocated.delete(id); }
   })();
   preparing.set(owner, work);
   try { return await work; } finally { if (preparing.get(owner) === work) preparing.delete(owner); }
+}
+
+export async function prepareCallerHandoff(owner: string, mode: 'branch' | 'worktree', selection: Pick<PrepareHandoffSnapshot, 'include' | 'exclude'> = {}) {
+  return (await prepareForSource(owner, mode, selection)).prepared;
+}
+
+/** Main-only exact selection; later binding cannot substitute an equal-summary preparation. */
+export async function selectPreparedHandoff(owner: string, mode: 'branch' | 'worktree', summary: HandoffManifestSummary | undefined,
+  source: HandoffPreparationSource, beforePrepare: () => void): Promise<HandoffPreparationSelection> {
+  if (!summary) return (await prepareForSource(owner, mode, {}, { source, beforePrepare })).selected;
+  const entry = store().list().find((item) => item.owner === owner && item.project === source.project.id && item.mode === mode
+    && sameSummary(item.summary, summary) && (item.boundTo.length || Date.now() - item.at < TTL));
+  if (!entry) throw new Error('Prepare this selection again before offering it.');
+  await readHandoffSnapshotManifest(path.join(await preparationRoot(), entry.id), entry.summary, source.bounds);
+  return Object.freeze({ id: entry.id, owner, source, mode, summary: Object.freeze({ ...entry.summary }) });
+}
+
+export function assertPreparedHandoffSelection(selected: HandoffPreparationSelection): void {
+  if (!store().list().some((entry) => entry.id === selected.id && entry.owner === selected.owner && entry.project === selected.source.project.id
+    && entry.mode === selected.mode && sameSummary(entry.summary, selected.summary) && (entry.boundTo.length || Date.now() - entry.at < TTL))) {
+    throw new Error('The selected handoff preparation changed or expired.');
+  }
 }
 
 /** An offer may reference only this agent's own frozen, registered-project preparation. */
@@ -112,13 +147,14 @@ export async function ensurePreparedHandoff(owner: string, mode: 'branch' | 'wor
 }
 
 /** Runs inside the offer's before-commit boundary, so no visible offer lacks its durable source. */
-export async function bindPreparedHandoff(record: Handoff): Promise<void> {
+export async function bindPreparedHandoff(record: Handoff, selected?: HandoffPreparationSelection): Promise<void> {
   if (!record.manifest) throw new Error('Handoff has no prepared manifest.');
-  const source = await callerHandoffSource(record.from.agentId);
+  if (selected && (selected.owner !== record.from.agentId || selected.mode !== record.mode || !sameSummary(selected.summary, record.manifest))) throw new Error('Handoff preparation selection changed.');
+  const source = selected?.source ?? await callerHandoffSource(record.from.agentId);
   inFlightBindings.add(record.id);
   try {
     await store().change((entries) => {
-      const entry = entries.find((item) => item.owner === record.from.agentId && item.project === source.project.id && item.mode === record.mode && sameSummary(item.summary, record.manifest!) && (item.boundTo.length || Date.now() - item.at < TTL));
+      const entry = entries.find((item) => (!selected || item.id === selected.id) && item.owner === record.from.agentId && item.project === source.project.id && item.mode === record.mode && sameSummary(item.summary, record.manifest!) && (item.boundTo.length || Date.now() - item.at < TTL));
       if (!entry) throw new Error('Handoff preparation expired or belongs to another agent.');
       if (!entry.boundTo.includes(record.id)) entry.boundTo.push(record.id);
     });

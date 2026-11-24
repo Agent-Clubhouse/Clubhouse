@@ -1,0 +1,566 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T21:50:08.240590+00:00",
+  "source": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+  "sourceTree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "base": "6fa27a5a7f7b497a779df831b008489741390658",
+  "selectedFile": "test/annex-v2/handoff-producer-admission.test.ts",
+  "diffStat": "test/annex-v2/handoff-producer-admission.test.ts | 232 +++++++++++++++++++++--\n 1 file changed, 217 insertions(+), 15 deletions(-)",
+  "publicationRef": "refs/heads/lane-3613-p2-routes/handoff-producer-teardown-correction",
+  "review": {
+    "ref": "e08fa4e8c7753d9467db4829f723cd74eb5e9002",
+    "path": "docs/qa-transfer/2026-11-22/reports/producer-hosted-c165-independent-review.md",
+    "blob": "74ed6185885aacde7dc24c7dcf7b58f3bd9708f6",
+    "bytes": 17131,
+    "sha256": "0666100ec986b33fa6d24d0d7fac3f529c330362bae4dad2149de0585682c31d"
+  },
+  "pr": {
+    "baseRefName": "main",
+    "baseRefOid": "50c474b48f57e0256661244bd29b9343ec112bc4",
+    "headRefName": "lane-3613-p2-routes/handoff-recipient-continuity",
+    "headRefOid": "7d244fcd153df00668ecac3d0709cece054801e3",
+    "number": 3779,
+    "state": "OPEN",
+    "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3779"
+  },
+  "runs": [
+    {
+      "prefix": "146-fixture-teardown-faults-red",
+      "head": "81c40696132e2b32382121fcaee107f86b4c8af7",
+      "tree": "5f8aacc8d632fc42be2af665ab37e0f11747fae1",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'drains a real held preparation and completes teardown before reporting its original caller rejection|completes actual fixture teardown when its Windows' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/146-fixture-teardown-faults-red-original.xml",
+      "exit": 1,
+      "relevantHashes": 16,
+      "declarations": 55,
+      "counts": {
+        "fail": 3,
+        "skip": 52
+      },
+      "failureNodes": 17
+    },
+    {
+      "prefix": "147-fixture-teardown-faults-green",
+      "head": "c655bb63cb42f61b7d0cc10e6a28a4e18473132c",
+      "tree": "f60b9f2fc92df10dbac6ada46c9e5527756b821f",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'drains a real held preparation and completes teardown before reporting its original caller rejection|completes actual fixture teardown when its Windows|keeps actual fixture preparation alive until teardown settles it|keeps current sender authority, source bytes and durable binding through a held history queue' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/147-fixture-teardown-faults-green-original.xml",
+      "exit": 0,
+      "relevantHashes": 16,
+      "declarations": 55,
+      "counts": {
+        "pass": 5,
+        "skip": 50
+      },
+      "failureNodes": 0
+    },
+    {
+      "prefix": "148-fixture-teardown-types",
+      "head": "c655bb63cb42f61b7d0cc10e6a28a4e18473132c",
+      "tree": "f60b9f2fc92df10dbac6ada46c9e5527756b821f",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --project node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --noEmit --listFiles --pretty false",
+      "exit": 2,
+      "relevantHashes": 16,
+      "diagnostics": [
+        "test/annex-v2/handoff-producer-admission.test.ts(149,38): error TS2304: Cannot find name 'AggregateError'."
+      ],
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "151-pre-forward-diagnostic-red",
+      "head": "0007940501bba9b9fd341e6e1e8f5b16388bbb8d",
+      "tree": "d653f3bfb5e68fe8a4318c37bda0e3deae9db923",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'forwards actual preparation once when its pre-forward diagnostic clock throws' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/151-pre-forward-diagnostic-red-original.xml",
+      "exit": 1,
+      "relevantHashes": 16,
+      "declarations": 58,
+      "counts": {
+        "skip": 57,
+        "fail": 1
+      },
+      "failureNodes": 3
+    },
+    {
+      "prefix": "153-fixture-teardown-final-green",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "tree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'drains a real held preparation and completes teardown before reporting its original caller rejection|completes actual fixture teardown when its Windows|forwards actual preparation once when its pre-forward diagnostic clock throws|reports actual early offer settlement without entering an unreachable history hold|keeps actual fixture preparation alive until teardown settles it|keeps current sender authority, source bytes and durable binding through a held history queue' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/153-fixture-teardown-final-green-original.xml",
+      "exit": 0,
+      "relevantHashes": 16,
+      "declarations": 58,
+      "counts": {
+        "pass": 8,
+        "skip": 50
+      },
+      "failureNodes": 0
+    },
+    {
+      "prefix": "154-fixture-teardown-types",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "tree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --project node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --noEmit --listFiles --pretty false",
+      "exit": 0,
+      "relevantHashes": 16,
+      "diagnostics": [],
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "155-fixture-teardown-lint",
+      "head": "6eaa947d4195510a39a4f8331aa904c7e86b6bfb",
+      "tree": "879b992c16aadfd93cf48be46dbf94a1ce167cfc",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx eslint test/annex-v2/handoff-producer-admission.test.ts --format json --output-file node_modules/.cache/native-handoff-ingress/155-fixture-teardown-lint-original.json",
+      "exit": 0,
+      "relevantHashes": 16,
+      "lintFiles": 1,
+      "errors": 0,
+      "warnings": 0
+    }
+  ],
+  "archives": [
+    {
+      "file": "146-fixture-teardown-faults-red-testcase-rows.json.gz",
+      "bytes": 23068,
+      "sha256": "7bd3f8e7be0849c67ed2d8fc7c7ca285dd29334d9796fd58d20f50b1457da422",
+      "gzipBytes": 2018,
+      "gzipSha256": "f0dd45537c3a5f28634b3bbacd56b25dd7c7984c9e56cdb5eec9f6294455cc48"
+    },
+    {
+      "file": "146-fixture-teardown-faults-red-after.json.gz",
+      "bytes": 4506,
+      "sha256": "bb558f61c60e4bab145060f1def69d1799cc818bcb9d4eb028d8b7afedbb7871",
+      "gzipBytes": 1929,
+      "gzipSha256": "5cf9875c9e3a2a81424e04af2d5853920dcccc8835e6abd658c4a5ecfee88282"
+    },
+    {
+      "file": "146-fixture-teardown-faults-red-before.json.gz",
+      "bytes": 4375,
+      "sha256": "3ca593e5c39800131499e854f10b93cf6142c123ce69ba6932e565796732976c",
+      "gzipBytes": 1897,
+      "gzipSha256": "c33848f987f646083f0b396fe1eaf52d32b1055cbb6eee813a5a4fe9c2dc17be"
+    },
+    {
+      "file": "146-fixture-teardown-faults-red-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "146-fixture-teardown-faults-red-original.log.gz",
+      "bytes": 17576,
+      "sha256": "570fb0cc523c403a20e630070a3cc8478f1f428b7da48954d1744a6ec3094971",
+      "gzipBytes": 3087,
+      "gzipSha256": "19f41c245586bca810650ba21d24f504649ada02c8cd925d7cd1fb9cb1710048"
+    },
+    {
+      "file": "146-fixture-teardown-faults-red-original.xml.gz",
+      "bytes": 23685,
+      "sha256": "b6cba5d09f8ba6d310c3333141505813b3baaba80ce6647649f1f4979fdaa44d",
+      "gzipBytes": 2185,
+      "gzipSha256": "209cb9917e8047b559e8685862b70557a135e005cffb48ad1d5277bba45ab5b5"
+    },
+    {
+      "file": "147-fixture-teardown-faults-green-testcase-rows.json.gz",
+      "bytes": 17369,
+      "sha256": "d4640a00923d3f83fa1ebc418809533cd18316a0c798bbc34a9231e2ad3d95ed",
+      "gzipBytes": 1523,
+      "gzipSha256": "5aaed4de7b7d62accf42f9fab13ce39d99604f07da3d1723153713393ad24e08"
+    },
+    {
+      "file": "147-fixture-teardown-faults-green-after.json.gz",
+      "bytes": 4669,
+      "sha256": "2f732ac8f8f46eee5546f535cf51229087e31ddf0c70cece8b5e517127121a8f",
+      "gzipBytes": 2017,
+      "gzipSha256": "bef591d641544c3649cd8285ef9670fb75601980f83deb6a48a7fab1ddd77cf4"
+    },
+    {
+      "file": "147-fixture-teardown-faults-green-before.json.gz",
+      "bytes": 4536,
+      "sha256": "9b8cead9126204921c1eacc4cba1a16d7c28c328b3a23eb8469d49fb8898614c",
+      "gzipBytes": 1987,
+      "gzipSha256": "3446ae4609fd8d257f53c99065c028d5c20edaa9fb039b36d175de12a85773df"
+    },
+    {
+      "file": "147-fixture-teardown-faults-green-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "147-fixture-teardown-faults-green-original.log.gz",
+      "bytes": 2228,
+      "sha256": "6130024795d2a5c2df595114f545c132cdce3fbc3145e96c92045e2597adc120",
+      "gzipBytes": 1007,
+      "gzipSha256": "f5b1394b7222e0ee67a2f67d47fce734304564da01bd7140acbb57bad11f67bd"
+    },
+    {
+      "file": "147-fixture-teardown-faults-green-original.xml.gz",
+      "bytes": 18256,
+      "sha256": "7bfacef580a1267161447962d026d83c7d6c9e27fb471397f0739aa383d6d15a",
+      "gzipBytes": 1741,
+      "gzipSha256": "2bc1f0ebdbd34da3e922ad416af1a1b798142b4cfa3da172265e59095a7eeaa4"
+    },
+    {
+      "file": "148-fixture-teardown-types-after.json.gz",
+      "bytes": 4264,
+      "sha256": "f12e93d9863f27213cecb05cc71b196778bad050aff5118ed5ec385d0e247ea1",
+      "gzipBytes": 1809,
+      "gzipSha256": "07ee68741e5ad3172f55a49f4c9161e967e6b6cb9452c0ea03da08cd03e34f91"
+    },
+    {
+      "file": "148-fixture-teardown-types-before.json.gz",
+      "bytes": 4138,
+      "sha256": "b6adc5fb611665c70023c5bcfb8f482ff73489e4423fc209a11ec9b59abf6a6d",
+      "gzipBytes": 1761,
+      "gzipSha256": "0fcbb18b9c294e02fa48244e6ebdd29d3453d80eca3738a69709b2f1613e6735"
+    },
+    {
+      "file": "148-fixture-teardown-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "gzipBytes": 22,
+      "gzipSha256": "9d5a1d1f7fb3d248f901f884a71e325f1cb0c035a4704d54b991b6029de1c8c7"
+    },
+    {
+      "file": "148-fixture-teardown-types-original.log.gz",
+      "bytes": 735145,
+      "sha256": "ac7338f765d2f95f2eed42b5bcec3acc24b9b16dfbd7e5a05875b947eaed56ad",
+      "gzipBytes": 32852,
+      "gzipSha256": "3ab4551202db846f3a0a2d22ee56213107912db502d9b2bfda65310aceaa7681"
+    },
+    {
+      "file": "151-pre-forward-diagnostic-red-testcase-rows.json.gz",
+      "bytes": 19254,
+      "sha256": "51cdafbfb0281feddf3c8a835c9e0c2331715170d866825ed3f65dd247551459",
+      "gzipBytes": 1841,
+      "gzipSha256": "88be3d77ee28f11a30a29c876139c5b90537d07853f01fa530c122b0c20849bc"
+    },
+    {
+      "file": "151-pre-forward-diagnostic-red-after.json.gz",
+      "bytes": 4430,
+      "sha256": "8efb954236e983d43d31d77190ea16070f8aa6e1b9a1e03b187a3fd7da4bb61a",
+      "gzipBytes": 1897,
+      "gzipSha256": "1f5b3da8e2d0555c4741ec37bc80fbe0fa0cf8b8d914778c4ee2bf654b68ee89"
+    },
+    {
+      "file": "151-pre-forward-diagnostic-red-before.json.gz",
+      "bytes": 4300,
+      "sha256": "343298d004a733b0645eac72f80023819a76958d1ada534b44bd116a5d4ca813",
+      "gzipBytes": 1867,
+      "gzipSha256": "c1fa74fb97b9833070460262e64aa5fa0e64eef815d2f9e51dd999b942267694"
+    },
+    {
+      "file": "151-pre-forward-diagnostic-red-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "151-pre-forward-diagnostic-red-original.log.gz",
+      "bytes": 9777,
+      "sha256": "7ba3af1790a66a5f3e57de93a9f6530092f911ab588403a79a9dac980bb8d15e",
+      "gzipBytes": 2585,
+      "gzipSha256": "2feb2237673267eb3017f6b0fffd62f322cfd3690590a9196dcd228c13ea7e6e"
+    },
+    {
+      "file": "151-pre-forward-diagnostic-red-original.xml.gz",
+      "bytes": 20150,
+      "sha256": "bc58b923d218139d4f787fdb78598fde949163bae249680dfb42fed8e5a64f56",
+      "gzipBytes": 1982,
+      "gzipSha256": "1b6d93830ba82a6a16e5c784ea875c20cfecaed88d3ccda161dcc0774e2d8f51"
+    },
+    {
+      "file": "153-fixture-teardown-final-green-testcase-rows.json.gz",
+      "bytes": 18197,
+      "sha256": "b61f2f69f15c0c4e7043c8648f46903afed5108eaa4b2f4d9fdb8f20eaa2c312",
+      "gzipBytes": 1603,
+      "gzipSha256": "0d818fbb1ae01b182401d7b02c9accaff91350afdf54ea5a0042d4e916ffff9a"
+    },
+    {
+      "file": "153-fixture-teardown-final-green-after.json.gz",
+      "bytes": 4828,
+      "sha256": "d5500ca182dfa985b424e870444c50e6276b99108b88eedf476ed222c6c7ae59",
+      "gzipBytes": 2094,
+      "gzipSha256": "ad13befe0a6fb70618267815cd06841ded63ff8c44bcbb91efaec3d2444d4aec"
+    },
+    {
+      "file": "153-fixture-teardown-final-green-before.json.gz",
+      "bytes": 4696,
+      "sha256": "c86f5012b56b1f71774498534af9504c05cc50711fa73f717d38d7e96d7c2eda",
+      "gzipBytes": 2063,
+      "gzipSha256": "6fe728607d0324eb2ab60f6268c02d44778115da4ac8f1697c8da13e2ade2f6c"
+    },
+    {
+      "file": "153-fixture-teardown-final-green-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "153-fixture-teardown-final-green-original.log.gz",
+      "bytes": 2729,
+      "sha256": "955aa45f9b5188e3559fd0a7da724816e2c84c76a5ab571944829c6352355078",
+      "gzipBytes": 1111,
+      "gzipSha256": "ba4180d75a3a66dae75a9fdac24a9a0775ad13b0714f1bb227e640c9d706187b"
+    },
+    {
+      "file": "153-fixture-teardown-final-green-original.xml.gz",
+      "bytes": 19067,
+      "sha256": "ddf856d9c2c8675472926f5f0237f86ea7f2f039adef3d93ad1ba1ff1269c8fc",
+      "gzipBytes": 1843,
+      "gzipSha256": "a8b8f26b8cd0da13e68c630398b8954953d5d5e4bfbb1ef99372669bd4b7f851"
+    },
+    {
+      "file": "154-fixture-teardown-types-after.json.gz",
+      "bytes": 4264,
+      "sha256": "817c2a592b6c05708c69bfe58988d5cc383b19267811bf9755a23e2e50559af0",
+      "gzipBytes": 1808,
+      "gzipSha256": "dd138b3fa274af908284cbf6aa6499b95fe933595a32d9a8bab666482e519b2b"
+    },
+    {
+      "file": "154-fixture-teardown-types-before.json.gz",
+      "bytes": 4138,
+      "sha256": "b5af9d99e30ef08975b0b7f867798770a54e7c4e69c009095de777b82925764e",
+      "gzipBytes": 1761,
+      "gzipSha256": "9efe6f77c61cb7e0c35c0aaff82e59c6b7d9423464b01bcfd37b3db48f6daf81"
+    },
+    {
+      "file": "154-fixture-teardown-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "154-fixture-teardown-types-original.log.gz",
+      "bytes": 735037,
+      "sha256": "0530bf2fdf53563a05426be338466a445d986a0d86a88385c2b6c342ba84ab91",
+      "gzipBytes": 32753,
+      "gzipSha256": "578fce642a74a7001aa930d0d1f371c2e1156105ae5abd703fb69e10870d1b71"
+    },
+    {
+      "file": "155-fixture-teardown-lint-after.json.gz",
+      "bytes": 4292,
+      "sha256": "1a0477ef3ebf031c46c44f6fcdce8a7a84c700a5d594f318cace9a8fee0cd4a9",
+      "gzipBytes": 1805,
+      "gzipSha256": "b94b642f3f2367235a07a45a59018b9c642e85c25303d7a4a4c66432eff49a58"
+    },
+    {
+      "file": "155-fixture-teardown-lint-before.json.gz",
+      "bytes": 4167,
+      "sha256": "fd1be65e658af93a5e59b525872d8c8e6bb641f346d6c35aeaff7828800192ff",
+      "gzipBytes": 1774,
+      "gzipSha256": "7a7cc3b9c593b40d90d36c2b3c291adfc2c9a92bccf3eff4a5cd1cd8b6b7d846"
+    },
+    {
+      "file": "155-fixture-teardown-lint-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "155-fixture-teardown-lint-original.json.gz",
+      "bytes": 353,
+      "sha256": "44caf17c2e2975f4b267628ee08971b3fcb17b89dbd79af781619a6fc64f4b27",
+      "gzipBytes": 242,
+      "gzipSha256": "a4e9979b787e3ae7c7adfd83073debe76d359a53091df0275c599104d68e522b"
+    },
+    {
+      "file": "155-fixture-teardown-lint-original.log.gz",
+      "bytes": 325,
+      "sha256": "7992a7427c78e5ad927f1dbbd406eeb55af676c54a251aa558994318b032e196",
+      "gzipBytes": 261,
+      "gzipSha256": "75229bb5a15462571f738ac94788b609112261882fb8c1ccb73e26cb23bbf312"
+    },
+    {
+      "file": "154-owner-observed-after-execution-input-inventory.json.gz",
+      "bytes": 1875777,
+      "sha256": "6644760918ee238c69665f18e8e496ddee83b5530903d2fc3ce8f4e9e5b4d5c3",
+      "gzipBytes": 312574,
+      "gzipSha256": "0bea633d84b175f3faea544c4c61c96d492bf04b3385528848e53e6ee14df09a"
+    },
+    {
+      "file": "unchanged-source-bridges.json.gz",
+      "bytes": 561,
+      "sha256": "e5c7cd48a0bb11e7b52279045cbedda2743b4a5dc887d6930ac8f336e288b254",
+      "gzipBytes": 334,
+      "gzipSha256": "017764470d2b4c5e13a8aeffb6becec0b2349a8019a675741e0a33c94414cde9"
+    },
+    {
+      "file": "unchanged-old52-test-bodies.txt.gz",
+      "bytes": 45893,
+      "sha256": "a1f8664ae4f3f29a453d2ebea37c3ab44ba77830d3327ba13564c7a4fe4d714a",
+      "gzipBytes": 8103,
+      "gzipSha256": "6fe0a44ff597c2b13138659afb0bb60953a55bdaf938360aeef5eed23804438f"
+    },
+    {
+      "file": "146-original-owned-wrapper-and-cleanup.txt.gz",
+      "bytes": 1584,
+      "sha256": "e3689e20f4d04ea1920357f5868aa4aa3001efd5fe4340b647e25059b36db609",
+      "gzipBytes": 788,
+      "gzipSha256": "3c046e83e62abe1b21c76eef2aed6b4f99a4c23ac3c8f257ed7682fdc279085f"
+    },
+    {
+      "file": "151-original-before-forward-metadata.txt.gz",
+      "bytes": 836,
+      "sha256": "bd296c16234fe989b353dc79e94aaf95f57b899769d006bd43be177ebcc0dbc6",
+      "gzipBytes": 440,
+      "gzipSha256": "c60cda2ea9f24d1473861772e92b772dcd1a5df3501116b5e22d938b03b8f03e"
+    },
+    {
+      "file": "source-0007940501bba9b9fd341e6e1e8f5b16388bbb8d-handoff-producer-admission.test.ts.gz",
+      "bytes": 65760,
+      "sha256": "2d41023121df9a7d3580d2bdec09ac6717256291170633546dca6053167f0a5c",
+      "gzipBytes": 12626,
+      "gzipSha256": "56fe8c9914b6bd7a3131af2af8f3bf1fa0a7ebb026f9a265ef223e90ccef8013"
+    },
+    {
+      "file": "source-6eaa947d4195510a39a4f8331aa904c7e86b6bfb-handoff-producer-admission.test.ts.gz",
+      "bytes": 66098,
+      "sha256": "77d6ebe34cee0b16d824e116d7dc8a7d96289f94c14a69ba6d1556de0e1d5738",
+      "gzipBytes": 12713,
+      "gzipSha256": "131a33067ee3c4ea86d9aa87aa5bdb3ba435d500dd55d8e3278be028e31f3c00"
+    },
+    {
+      "file": "source-6fa27a5a7f7b497a779df831b008489741390658-handoff-producer-admission.test.ts.gz",
+      "bytes": 56747,
+      "sha256": "f9ffc7bc47867a0720dbf522b2e1f32eada42b1cdc1152e6a7d7c60fc5cf0d7c",
+      "gzipBytes": 10695,
+      "gzipSha256": "0d13dfd0ec59c0ca454c40da48bec5e393a0090654000f7da679452d993ad2ae"
+    },
+    {
+      "file": "source-81c40696132e2b32382121fcaee107f86b4c8af7-handoff-producer-admission.test.ts.gz",
+      "bytes": 61210,
+      "sha256": "3d9323ade96fbb8560875c7a38ea3909897b85711d3c25ef26cb60f7f6d29047",
+      "gzipBytes": 11511,
+      "gzipSha256": "35a42ee7ca464dd4161a03cd8dc7e5d54e9c92421e054f117a59db0b6b06917d"
+    },
+    {
+      "file": "source-c655bb63cb42f61b7d0cc10e6a28a4e18473132c-handoff-producer-admission.test.ts.gz",
+      "bytes": 62227,
+      "sha256": "45bce5653504282b923111d3cfd3df1c28fbffae156d72fac9ff2e33c9557968",
+      "gzipBytes": 11835,
+      "gzipSha256": "4128e58359edfab728651baa4c5933af23138a3788f26f7e355cf5a8733915b2"
+    },
+    {
+      "file": "delta-6fa27a5a7f7b497a779df831b008489741390658-6eaa947d4195510a39a4f8331aa904c7e86b6bfb.patch.gz",
+      "bytes": 12723,
+      "sha256": "d170f1c7b6b632c55cf3db1bacd557f26272cd3427ed5a8dcd05c85a15502ff2",
+      "gzipBytes": 3705,
+      "gzipSha256": "0b5185d1cd6c49984b3adb88e756ec4169327042cab1fe2492bb207e4de8404d"
+    },
+    {
+      "file": "delta-81c40696132e2b32382121fcaee107f86b4c8af7-6eaa947d4195510a39a4f8331aa904c7e86b6bfb.patch.gz",
+      "bytes": 12461,
+      "sha256": "2a2dfbbdb0a0bfd93b51f290e6cf5cdd558ebb6cc28ae9ec5758bb165b5b93cd",
+      "gzipBytes": 3703,
+      "gzipSha256": "e296dfbaa8e403f95369257cff4817e43115da98028eb8a05d53cbb39c24e5e9"
+    },
+    {
+      "file": "delta-0007940501bba9b9fd341e6e1e8f5b16388bbb8d-6eaa947d4195510a39a4f8331aa904c7e86b6bfb.patch.gz",
+      "bytes": 2412,
+      "sha256": "54e9dd6886dc8477672bbbcbace695f90bc80cee0522462f325a7c9a817e4c2f",
+      "gzipBytes": 965,
+      "gzipSha256": "0566578e5de2df51c007157093b149fc3db051891e6e48e7f3bad08df4fa6825"
+    },
+    {
+      "file": "150-full-e08-review-original.md.gz",
+      "bytes": 17131,
+      "sha256": "0666100ec986b33fa6d24d0d7fac3f529c330362bae4dad2149de0585682c31d",
+      "gzipBytes": 7288,
+      "gzipSha256": "88d6d7e9308a3ea6edece5c551ba6675d1a9d1138f1f12278494b28ca8ed82ca"
+    },
+    {
+      "file": "150-full-e08-review-original.stderr.gz",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gzipBytes": 20,
+      "gzipSha256": "f1b651238a58fe290baec6c5e32f3bdb1943dd2bd582f02569231f7a757c7837"
+    },
+    {
+      "file": "131-hosted-correction-command-receipt.cjs.gz",
+      "bytes": 2528,
+      "sha256": "73a357c517491c443cd4e043927f4fca9e1c384a29226fe15f03c605519b95f6",
+      "gzipBytes": 1024,
+      "gzipSha256": "56d46e3cd1653f4dc2724654889a9c457165b5943b47f95e65fdb4ca850b533d"
+    },
+    {
+      "file": "133-producer-hosted-correction-tsconfig.json.gz",
+      "bytes": 341,
+      "sha256": "c42e7ed4d268efc9b0de0f6a5c5bac7672b16a0a2ab805a2d5379bc1c7b6a6f3",
+      "gzipBytes": 212,
+      "gzipSha256": "e08b5a7dd7d296644d8f92deefa1214f3ff103552925d33ae02f391662198f3d"
+    },
+    {
+      "file": "156-teardown-pr-original.json.gz",
+      "bytes": 292,
+      "sha256": "9df96392bcb59629bd735a6614fc005bb1d6ca2e92c02d4a25d9eb00ba8b1221",
+      "gzipBytes": 230,
+      "gzipSha256": "7a66ff6ea1e3b963bab5e2b47d8d653fde7625219a608cc8342a6d3a62f96db2"
+    },
+    {
+      "file": "156-teardown-refs-original.txt.gz",
+      "bytes": 365,
+      "sha256": "936d99cf685fa82789ef5b485a3fe8c0983b75982fc3859069b6bd053701bbba",
+      "gzipBytes": 217,
+      "gzipSha256": "f545548fcf3737cec0ec29ef178d8396d292d5e2bee89e8d1e7e96d4efea9a66"
+    },
+    {
+      "file": "156-freeze-fixture-teardown.py.gz",
+      "bytes": 10285,
+      "sha256": "21577c820d0af14a1616a829d7b3a2ecdfe78272b98788c828e7815939e5d365",
+      "gzipBytes": 3822,
+      "gzipSha256": "6097cd7ad02ba5fa857645d85c3da55dec837ff1f75383bed3dbd622ff8c1f33"
+    }
+  ],
+  "archiveCount": 57,
+  "junitRows": 226,
+  "bridges": {
+    "old52TestBodies": {
+      "bytes": 45893,
+      "sha256": "a1f8664ae4f3f29a453d2ebea37c3ab44ba77830d3327ba13564c7a4fe4d714a",
+      "identical": true
+    },
+    "146OriginalOwnedWrapperAndCleanup": {
+      "bytes": 1584,
+      "sha256": "e3689e20f4d04ea1920357f5868aa4aa3001efd5fe4340b647e25059b36db609",
+      "identical": true
+    },
+    "151OriginalBeforeForwardMetadata": {
+      "bytes": 836,
+      "sha256": "bd296c16234fe989b353dc79e94aaf95f57b899769d006bd43be177ebcc0dbc6",
+      "identical": true
+    },
+    "unchangedFullSrcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1"
+  },
+  "compilerInputs": {
+    "rows": 3959,
+    "trackedVerified": 2471,
+    "dependencyObserved": 1488,
+    "timing": "AFTER execution; not a pre/atomic/full dynamic runtime seal"
+  },
+  "limits": {
+    "traceRows": 8,
+    "outputRows": 8,
+    "outputFields": 3,
+    "toolNameCharacters": 80
+  },
+  "preserved": [
+    "c165/6fa",
+    "ab853 original45068217103 failure",
+    "454/90fa/b6/2d363",
+    "all prior originals"
+  ],
+  "sourceAttribution": "153 exact6eaa8PASS/50SKIP/58 declarations;154 compiler/155 lint exactsamehead. 146/147/148/151 belong only to their own archived source. No aggregate58/full-handoff/hosted/landing acceptance.",
+  "unresolved": "Windows first5000ms body timeout phase and all36 failure closure remain UNKNOWN. Forced synchronous diagnostic branch is simulation, not native Windows acceptance. Existing exactdelta review required before PR update."
+}
