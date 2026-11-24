@@ -26,8 +26,10 @@ import { defaultAutoBudgetPolicy, isAutoReserveProvider } from '../../../shared/
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { SettingsBlock, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
+import { providerDescriptor } from '../../../shared/providers/descriptors';
 
-const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', 'codex-cli': 'Codex', 'copilot-cli': 'Copilot' };
+const providerName = (id: string): string => providerDescriptor(id)?.shortName ?? id;
+
 const LEVEL_NAMES: Record<AutoLevel, string> = { minimum: 'Minimum', easy: 'Easy', medium: 'Medium', hard: 'Hard', maximum: 'Maximum' };
 /** The model select's value for a minimum or maximum with no choice of its own. */
 const FOLLOW = '';
@@ -61,8 +63,7 @@ function statusText(view: Eligible): string | null {
 /** What Auto can pick from now, in the page's intro. */
 function autoIntro(providers: [string, ProviderRoutingView][], copilotAuto: boolean, resetAware = false): string {
   const active = providers.filter((entry): entry is [string, Eligible] => entry[1].autoEligible && entry[1].autoCandidate !== false && inactiveReason(entry[1]) === null);
-  const name = (id: string) => PROVIDER_NAMES[id] ?? id;
-  const main = active.filter(([id]) => id !== 'copilot-cli').map(([id]) => name(id));
+  const main = active.filter(([id]) => id !== 'copilot-cli').map(([id]) => providerName(id));
   const lastResort = copilotAuto && active.some(([id]) => id === 'copilot-cli');
   const tail = ' It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.';
   if (main.length === 0 && !lastResort) return `Auto has nothing to pick right now. No provider is turned on and available, and Copilot is not allowed as a last resort.${tail}`;
@@ -132,7 +133,7 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
       <div className="flex items-center gap-2.5 text-[13px]">
         <span className="w-16 text-ctp-text">{LEVEL_NAMES[difficulty]}</span>
         <select
-          aria-label={`${PROVIDER_NAMES[provider] ?? provider} ${difficulty} model`}
+          aria-label={`${providerName(provider)} ${difficulty} model`}
           className={`${settingsInput} min-w-0 flex-1`}
           disabled={busy}
           value={following ? FOLLOW : shown.model}
@@ -161,7 +162,7 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
           </span>
         ) : (
           <select
-            aria-label={`${PROVIDER_NAMES[provider] ?? provider} ${difficulty} effort`}
+            aria-label={`${providerName(provider)} ${difficulty} effort`}
             className={`${settingsInput} w-24`}
             disabled={busy}
             value={shown.effort ?? ''}
@@ -318,7 +319,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
           view.autoEligible ? (
             <div key={provider} className="mt-2" data-testid={`helper-presets-${provider}`}>
               <div className="flex items-center gap-2 text-xs text-ctp-overlay1">
-                <span>{PROVIDER_NAMES[provider] ?? provider}</span>
+                <span>{providerName(provider)}</span>
                 {statusText(view) && <span data-testid={`helper-presets-${provider}-status`}>{statusText(view)}</span>}
                 {view.choices.source === 'fallback' && <span>Model list may be out of date</span>}
                 <Button
@@ -340,7 +341,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
                   <select className={`${settingsInput} w-24`}
                     value={settings.autoBudget.policy.reserves[provider]}
                     disabled={busy || !settings.autoBudget.editable}
-                    aria-label={`${PROVIDER_NAMES[provider]} retained reserve percent`}
+                    aria-label={`${providerName(provider)} retained reserve percent`}
                     data-testid={`helper-budget-${provider}`}
                     onChange={(event) => void update({ autoBudgetPolicy: { ...settings.autoBudget!.policy!,
                       reserves: { ...settings.autoBudget!.policy!.reserves, [provider]: Number(event.target.value) } } })}
@@ -368,12 +369,12 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
               )}
               {inactiveReason(view) && view.autoCandidate !== false && (
                 <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-inactive`}>
-                  {inactiveNote(PROVIDER_NAMES[provider] ?? provider, inactiveReason(view)!)}
+                  {inactiveNote(providerName(provider), inactiveReason(view)!)}
                 </p>
               )}
               {view.autoCandidate === false && (
                 <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-not-candidate`}>
-                  {autoLabel} doesn’t pick {PROVIDER_NAMES[provider] ?? provider}. These are used when a helper on {PROVIDER_NAMES[provider] ?? provider} names a level.
+                  {autoLabel} doesn’t pick {providerName(provider)}. These are used when a helper on {providerName(provider)} names a level.
                 </p>
               )}
               <ul className="flex flex-col">

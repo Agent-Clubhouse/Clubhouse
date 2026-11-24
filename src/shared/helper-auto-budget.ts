@@ -1,6 +1,11 @@
-/** App-wide policy for the provider's shared local subscription, never a router-local quota bucket. */
-export const AUTO_RESERVE_PROVIDERS = ['claude-code', 'codex-cli'] as const;
-export type AutoReserveProvider = (typeof AUTO_RESERVE_PROVIDERS)[number];
+import { providerIdsWhere, type BudgetReserveProviderId } from './providers/descriptors';
+
+/**
+ * App-wide policy for the provider's shared local subscription, never a router-local quota bucket.
+ * Descriptors with `helperRouting.budgetReserve`; the key set is persisted, so changing it is a schema change.
+ */
+export const AUTO_RESERVE_PROVIDERS: readonly BudgetReserveProviderId[] = providerIdsWhere<BudgetReserveProviderId>((d) => d.helperRouting.budgetReserve);
+export type AutoReserveProvider = BudgetReserveProviderId;
 export type AutoReserves = Record<AutoReserveProvider, number>;
 
 export interface AutoBudgetPolicy {
@@ -19,7 +24,7 @@ export function isAutoReserveProvider(value: string): value is AutoReserveProvid
 }
 
 export function defaultAutoBudgetPolicy(): AutoBudgetPolicy {
-  return { version: 1, enabled: true, reserves: { 'claude-code': 10, 'codex-cli': 10 } };
+  return { version: 1, enabled: true, reserves: Object.fromEntries(AUTO_RESERVE_PROVIDERS.map((id) => [id, 10])) as AutoReserves };
 }
 
 export function isRetainedPercent(value: unknown): value is number {

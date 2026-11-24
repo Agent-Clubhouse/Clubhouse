@@ -23,6 +23,7 @@ import { onAgentExit } from '../services/agent-exit-broadcast';
 import { isTelemetryActive, replaySpan, tel } from './facade';
 
 import { clearToolCalls } from './agent-signals';
+import { providerTelemetryCode } from '../../shared/providers/descriptors';
 
 export { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 
@@ -59,7 +60,7 @@ let lookupOrchestrator: (agentId: string) => string | undefined = () => undefine
 
 function orchestratorOf(agentId: string): Orchestrator {
   const id = lookupOrchestrator(agentId);
-  return id === 'claude-code' || id === 'codex-cli' || id === 'copilot-cli' ? id : 'other';
+  return providerTelemetryCode(id);
 }
 
 function base(run: Run): TelAttr[] {

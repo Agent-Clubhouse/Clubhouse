@@ -9,6 +9,7 @@ import { ATTR, ERROR_TYPES, type TelAttr } from '../../shared/telemetry/attribut
 import type { ChatDriverAttempt, ChatStartFacts, ChatStartResult } from '../services/agent-runtime/chat-spawn';
 import { replaySpan, tel } from './facade';
 import { errorTypeOf, type ErrorType } from './types';
+import { providerTelemetryCode } from '../../shared/providers/descriptors';
 
 type Kind = Parameters<typeof ATTR.agentKind>[0];
 type Runtime = Parameters<typeof ATTR.agentRuntime>[0];
@@ -27,7 +28,7 @@ export interface SpawnFacts {
 }
 
 export function orchestratorAttr(id: string | undefined): Orchestrator {
-  return id === 'claude-code' || id === 'codex-cli' || id === 'copilot-cli' ? id : 'other';
+  return providerTelemetryCode(id);
 }
 
 /** Bucket a model string. The raw value is never sent. */
