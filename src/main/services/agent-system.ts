@@ -69,11 +69,11 @@ import type { QuickAgentOwner } from '../../shared/types';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
-import { cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
+import { announceChatStartFailure, cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, noteNextStartNotice, takeChatStartFailure, takeNextStartNotices, type StaleResumeReason } from './agent-runtime/stale-session';
 import { removedProfileStateDirs } from './provider-profiles-removed';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
-import { onAgentExit } from './agent-exit-broadcast';
+import { broadcastAgentExit, onAgentExit } from './agent-exit-broadcast';
 import { noteAgentStarting, noteAgentAwake, noteAgentWakeFailed } from './agent-display-state';
 import { sessionCaptureFor, trackSessionCapture, noteSessionCaptureFailure } from './session-capture-barrier';
 import { assertLaunchesOpen } from './launch-gate';
@@ -856,6 +856,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Killed, or replaced by a newer start for this agent: that one owns the
     // agent now, so this spawn opens nothing (in particular no terminal).
     if (chatStart === 'cancelled') return;
+    if (chatStart === 'failed') {
+      // No terminal (#3785): the agent shows why chat didn't start, its
+      // composer keeps what was typed, and the person picks Retry or the terminal.
+      untrackAgent(params.agentId);
+      broadcastAgentExit(params.agentId, 1);
+      announceChatStartFailure(params.agentId, chatFacts, params);
+      return;
+    }
     if (chatStart === 'chat') {
       facts.runtime = 'chat';
       announceAwake(params.agentId);
