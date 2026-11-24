@@ -29,7 +29,7 @@ import * as path from 'path';
 import type { ChatDriverId } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession } from '../../../shared/chat/runtime';
-import type { ChildProcess } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { createAcpChatDriver, type AcpLaunchSpec } from './driver';
 import { stdioConnector } from './stdio';
 
@@ -46,19 +46,53 @@ const STOP_BOUND_MS = 5_000 + 5_000 + 5_000;
  * this test spawned (Node won't signal a child it has seen exit), never a pid
  * that may have been reused. Cleanup runs after the test's own assertions,
  * including the ones that the process exited, so it can't turn a failure
- * green, and its own errors don't replace the test's.
+ * green.
  */
 const owned: { sessions: ChatDriverSession[]; children: ChildProcess[] } = { sessions: [], children: [] };
+
+/** Cleanup's own bounds: a close as long as the stop contract allows, then a forced kill's exit. */
+const CLEANUP = { closeMs: STOP_BOUND_MS, killMs: 5_000 };
+
+type Bounded = 'settled' | 'rejected' | 'deadline';
+
+function within(promise: Promise<unknown>, ms: number): Promise<Bounded> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('deadline'), ms);
+    promise.then(() => { clearTimeout(timer); resolve('settled'); }, () => { clearTimeout(timer); resolve('rejected'); });
+  });
+}
+
+function exitOf(child: ChildProcess): Promise<void> {
+  return exited(child) ? Promise.resolve() : new Promise((resolve) => child.once('exit', () => resolve()));
+}
+
+/**
+ * Close every session within a bound, then force-kill any owned child still
+ * running and wait a bound for it to exit. Every problem is returned, so a
+ * close that never settles (the boundary these tests are about) is a failure
+ * of its own, not a hook timeout, and a forced kill is never a quiet pass.
+ */
+async function cleanUp(sessions: ChatDriverSession[], children: ChildProcess[], bounds = CLEANUP): Promise<string[]> {
+  const problems: string[] = [];
+  const closes = await Promise.all(sessions.map((s) => within(s.close(), bounds.closeMs)));
+  closes.forEach((r, i) => { if (r !== 'settled') problems.push(`session ${i + 1} close ${r === 'deadline' ? `didn't settle within ${bounds.closeMs}ms` : 'failed'}`); });
+  for (const child of children) {
+    if (exited(child)) continue;
+    problems.push(`child ${child.pid} still running after cleanup's close; force-killed`);
+    child.kill('SIGKILL');
+    if (await within(exitOf(child), bounds.killMs) === 'deadline') problems.push(`child ${child.pid} didn't exit within ${bounds.killMs}ms of SIGKILL`);
+  }
+  return problems;
+}
 
 afterEach(async () => {
   const { sessions, children } = owned;
   owned.sessions = [];
   owned.children = [];
-  await Promise.allSettled(sessions.map((s) => s.close()));
-  for (const child of children) {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-  }
-});
+  const problems = await cleanUp(sessions, children);
+  // Reported alongside any failure of the test itself, never instead of it.
+  if (problems.length) throw new Error(`Cleanup: ${problems.join('; ')}`);
+}, CLEANUP.closeMs + CLEANUP.killMs + 5_000);
 
 function exited(child: ChildProcess): boolean {
   return child.exitCode !== null || child.signalCode !== null;
@@ -102,6 +136,31 @@ async function stopAndCheck(session: ChatDriverSession, drafts: ChatEventDraft[]
   await expect(session.send([{ type: 'text', text: 'again' }], 'prompt')).rejects.toThrow(/not open/);
   return took;
 }
+
+describe('the cleanup itself', () => {
+  // A finite control: a close that never settles is reported at its bound,
+  // and the owned child is then killed and seen to exit.
+  it('reports a never-settling close and force-kills the owned child, within bounds', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    owned.children.push(child);
+    const hanging = { close: () => new Promise<void>(() => {}) } as unknown as ChatDriverSession;
+    const started = Date.now();
+    const problems = await cleanUp([hanging], [child], { closeMs: 200, killMs: 5_000 });
+    expect(problems).toEqual([
+      "session 1 close didn't settle within 200ms",
+      `child ${child.pid} still running after cleanup's close; force-killed`,
+    ]);
+    expect(exited(child)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_200);
+  }, 10_000);
+
+  it('reports nothing when close works', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    owned.children.push(child);
+    const closing = { close: () => { child.kill(); return exitOf(child); } } as unknown as ChatDriverSession;
+    expect(await cleanUp([closing], [child], { closeMs: 5_000, killMs: 5_000 })).toEqual([]);
+  }, 10_000);
+});
 
 describe('an established ACP agent that stops reading but stays alive (real process)', () => {
   it('interrupt (composer Stop) settles nothing; close (agent Stop) ends the process in bounded time with the turn unknown', async () => {

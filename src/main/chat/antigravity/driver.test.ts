@@ -196,7 +196,7 @@ describe('Clubhouse MCP', () => {
 describe('sign-in', () => {
   it('Authentication required at session/new is a login error with agy\'s own sign-in steps', async () => {
     const err = await open({ newSessionError: { code: ACP_ERROR_CODES.authRequired, message: 'Authentication required' } }).catch((e: Error) => e);
-    expect((err as Error).message).toBe(`Authentication required: ${ANTIGRAVITY_LOGIN_HINT} (Authentication required)`);
+    expect((err as Error).message).toBe(`Authentication required: ${ANTIGRAVITY_LOGIN_HINT} (RPC error -32000: Authentication required)`);
     expect(isLoginRequiredError((err as Error).message)).toBe(true);
   });
 
