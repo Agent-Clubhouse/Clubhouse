@@ -61,7 +61,7 @@ export function antigravityMcpServers(opts: Pick<ChatDriverStartOptions, 'agentI
   // HTTP servers need `--process-per-session` (ACP guide), which this launch
   // doesn't use, so the planner leaves them out with a notice.
   const plan = mcp.planAntigravityAcpMcpServers({ bridge, projectServers, mcpCapabilities: { http: false, sse: false } });
-  if (!plan.ok) throw new AntigravityChatStartError(plan.reason);
+  if (plan.ok === false) throw new AntigravityChatStartError(plan.reason);
   for (const notice of plan.notices) log?.('warn', notice);
   return Object.fromEntries(plan.servers.map((s) => [s.name, toServerEntry(s)]));
 }

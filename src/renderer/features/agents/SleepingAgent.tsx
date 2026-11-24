@@ -6,7 +6,9 @@ import { ATTR, tel } from '../../telemetry';
 import { Agent } from '../../../shared/types';
 import { providerDescriptor } from '../../../shared/providers/descriptors';
 import { chatFailsExplicitly } from '../../../shared/chat/start-failure';
+import { useChatDraft } from './chat/useChatSession';
 import { useAgentStore } from '../../stores/agentStore';
+import { useToastStore } from '../../stores/toastStore';
 import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
@@ -108,7 +110,14 @@ export function SleepingAgent({ agent, details = false }: {
   const remoteHelperCandidate = isRemote && isDurable && !isDispatcher && remoteProject?.agentId !== DISPATCHER_PROJECT_ID;
   const remoteHelperAdmitted = remoteHelperCandidate && !!remoteParts?.satelliteId && !!remoteParts.agentId && remoteParts.agentId.length <= 240 && !!remoteProject?.agentId && remoteProject.agentId.length <= 240 && remoteParts.satelliteId === remoteProject.satelliteId;
   const remoteInlineVisible = !compact && !detailsOpen;
-  const [task, setTask] = useState('');
+  // A provider whose failed chat start doesn't open the terminal by itself
+  // (#3785): the text box is the agent's own chat draft, so what's typed
+  // stays there, never sent, across Retry chat and Open in terminal.
+  const explicitFailure = failed && !isRemote && chatFailsExplicitly(cli);
+  const [localTask, setLocalTask] = useState('');
+  const [chatDraft, setChatDraft] = useChatDraft(agent.id);
+  const task = explicitFailure ? chatDraft : localTask;
+  const setTask = explicitFailure ? setChatDraft : setLocalTask;
   const [waking, setWaking] = useState(false);
   const [wakeError, setWakeError] = useState<string | null>(null);
   // Synchronous guard: state updates land too late to stop a double click
@@ -128,9 +137,11 @@ export function SleepingAgent({ agent, details = false }: {
   // that's known rather than starting a fresh session by mistake.
   const ready = isRemote || !agentProject || last !== null;
 
-  const wake = useCallback(async (mode: WakeMode, sessionId?: string) => {
+  const wake = useCallback(async (mode: WakeMode, sessionId?: string, opts: { withoutTask?: boolean } = {}) => {
     if (wakingRef.current) return;
-    const mission = task.trim() || undefined;
+    // An explicit failure's retry starts chat with nothing sent: the draft waits in the composer.
+    const withoutTask = opts.withoutTask || explicitFailure;
+    const mission = withoutTask ? undefined : task.trim() || undefined;
     setWakeMenu(null);
     setWakeError(null);
     if (!isRemote && !agentProject) return;
@@ -149,8 +160,8 @@ export function SleepingAgent({ agent, details = false }: {
         const resume = mode === 'resume' && !!effective.lastSessionId;
         await spawnDurableAgent(agentProject.id, agentProject.path, effective, resume, mission);
       }
-      // Only clear the task once the wake went through
-      setTask('');
+      // Only clear the task once the wake went through (and only when it was sent)
+      if (!withoutTask) setTask('');
     } catch (err) {
       tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_wake'), ATTR.errorType('unknown')]);
       tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_wake')] });
@@ -159,17 +170,18 @@ export function SleepingAgent({ agent, details = false }: {
       wakingRef.current = false;
       setWaking(false);
     }
-  }, [task, isRemote, remoteParts, agentProject, agent.id, agent.name, spawnDurableAgent]);
+  }, [task, setTask, explicitFailure, isRemote, remoteParts, agentProject, agent.id, agent.name, spawnDurableAgent]);
 
   // Wake picks up the last session when there is one (#2019).
   // A satellite says whether it has a session; older ones don't, and start fresh.
   const canResume = hasLastSession || (isRemote && agent.hasSession === true);
   const defaultMode: WakeMode = canResume ? 'resume' : 'fresh';
 
-  // A provider whose failed chat start doesn't open the terminal by itself
-  // (#3785) offers it here instead: the person's choice, saved as the agent's
-  // runtime like the Chat / CLI switch, with whatever task is in the composer.
-  const offerTerminal = failed && !isRemote && !!agentProject && chatFailsExplicitly(cli);
+  // Such a provider offers the terminal here instead: the person's choice,
+  // saved as the agent's runtime like the Chat / CLI switch. The terminal
+  // starts with no first message; the draft stays in the chat composer, and
+  // Copy message is there for pasting it into the terminal.
+  const offerTerminal = explicitFailure && !!agentProject;
   const openInTerminal = useCallback(async () => {
     if (!agentProject || wakingRef.current) return;
     try {
@@ -178,8 +190,14 @@ export function SleepingAgent({ agent, details = false }: {
       setWakeError(`Couldn't switch ${agent.name} to the terminal: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
-    await wake(defaultMode);
+    await wake(defaultMode, undefined, { withoutTask: true });
   }, [agentProject, agent.id, agent.name, wake, defaultMode]);
+  const copyMessage = useCallback(() => {
+    void navigator.clipboard.writeText(task.trim()).then(
+      () => useToastStore.getState().addToast('Message copied', 'info'),
+      () => useToastStore.getState().addToast("Couldn't copy the message", 'info'),
+    );
+  }, [task]);
 
   const wakeItems: MenuEntry[] = [
     { id: 'resume', label: 'Wake and resume last session', disabled: !canResume, selected: defaultMode === 'resume', onSelect: () => { void wake('resume'); } },
@@ -309,13 +327,18 @@ export function SleepingAgent({ agent, details = false }: {
                   onKeyDown={onComposerKey}
                   rows={2}
                   aria-label={`Task for ${agent.name}`}
-                  placeholder={failed ? 'Retry with a task, or leave this empty to retry the last session' : isDispatcher ? `Ask ${agent.name} something` : `Describe a task for ${agent.name}`}
+                  placeholder={explicitFailure ? 'Your message stays here, unsent, until you send it from chat' : failed ? 'Retry with a task, or leave this empty to retry the last session' : isDispatcher ? `Ask ${agent.name} something` : `Describe a task for ${agent.name}`}
                   data-testid="wake-task-input"
                   className="block w-full min-h-[58px] max-h-48 resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-normal text-ctp-text placeholder:text-ctp-overlay0 outline-none"
                 />
                 <div className="h-[42px] flex items-center gap-1.5 pl-3.5 pr-2">
                   <ModelLabel orchestrator={cli} model={agent.model} />
                   <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
+                  {offerTerminal && task.trim() && (
+                    <Button kind="ghost" onClick={copyMessage} data-testid="copy-message-button">
+                      Copy message
+                    </Button>
+                  )}
                   {offerTerminal && (
                     <Button kind="ghost" onClick={() => { void openInTerminal(); }} disabled={waking || !ready} data-testid="open-in-terminal-button">
                       Open in terminal

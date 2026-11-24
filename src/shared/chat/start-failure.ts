@@ -12,5 +12,8 @@ export function chatFailsExplicitly(providerId: string | undefined): boolean {
   return providerId === ANTIGRAVITY_PROVIDER_ID;
 }
 
-/** The runtime notice code for such a failure. */
+/** The runtime notice code for such a failure, when nothing reached the agent: its first message is still unsent. */
 export const CHAT_START_FAILED_NOTICE = 'chat_start_failed';
+
+/** The same, when the session had started, so the first message may have reached the agent. */
+export const CHAT_START_FAILED_AFTER_START_NOTICE = 'chat_start_failed_after_start';
