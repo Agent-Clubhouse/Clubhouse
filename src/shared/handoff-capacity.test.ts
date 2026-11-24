@@ -62,7 +62,7 @@ describe('capacity provider keys across versions (#3799)', () => {
     const projected = capacityForWire(full, false);
     expect(JSON.stringify(projected)).toBe(JSON.stringify(legacy));
     expect(capacityForWire(full, true)).toBe(full);
-    const offline = { machine, online: false as const, lastSeen: null, accepting_handoffs: false as const };
+    const offline = { machine, online: false as const, lastSeen: null as number | null, accepting_handoffs: false as const };
     expect(capacityForWire(offline, false)).toBe(offline);
   });
 

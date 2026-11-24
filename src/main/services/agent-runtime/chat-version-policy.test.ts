@@ -197,7 +197,7 @@ describe('remote denylist from the update manifest', () => {
 
 describe('Antigravity ACP version policy (#3800)', () => {
   const AGY = 'antigravity_acp' as Parameters<typeof evaluateCliVersion>[0];
-  const live = { tested: TESTED_CLI_VERSIONS, denylist: [] };
+  const live: CliVersionPolicy = { tested: TESTED_CLI_VERSIONS, denylist: [] };
 
   it('has a floor of 1.5.10 and no tested maximum, because nothing has run against a real agy yet', () => {
     expect(TESTED_CLI_VERSIONS[AGY]).toEqual({ minVersion: '1.5.10' });

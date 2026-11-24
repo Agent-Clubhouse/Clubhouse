@@ -1905,7 +1905,7 @@ describe('capacity-providers feature (#3799)', () => {
     const { requesterWs } = await connected(['request', 'capacity-providers']);
     expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(true);
     expect(control.peerAgreedFeature(REQUESTER, 'capacity-providers')).toBe(true);
-    requesterWs.close(1000);
+    requesterWs.close(1000, '');
     await flush();
     expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(false);
   });
