@@ -27,9 +27,12 @@ export interface AcpTransportEnd {
   code: number | null;
   signal: string | null;
   error?: Error;
+  /** The agent never started. */
+  spawn?: boolean;
 }
 
 export interface AcpTransport {
+  /** Throws when the message can't be written; it then never reaches the agent. */
   send(message: JsonRpcMessage): void;
   /** Ends the transport; resolves once it has closed. */
   close(): Promise<void>;
@@ -158,7 +161,12 @@ export class AcpConnection {
   notify(method: string, params: unknown): void {
     if (this.endInfo) return;
     this.log('debug', 'ACP notification', { method });
-    this.transport.send({ jsonrpc: '2.0', method, params });
+    try {
+      this.transport.send({ jsonrpc: '2.0', method, params });
+    } catch (err) {
+      // A notification has no answer to wait for; the transport reports its own end.
+      this.log('warn', 'ACP notification not written', { method, error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   close(): Promise<void> {
@@ -207,6 +215,13 @@ export class AcpConnection {
   }
 
   private handleRequest(id: JsonRpcId, method: string, params: unknown): void {
+    if (this.incoming.has(key(id))) {
+      // JSON-RPC ids identify one outstanding request. Any answer to a reused
+      // id would read as the first request's, so the duplicate gets none and
+      // the first keeps its handler and its withdrawal.
+      this.log('warn', 'ACP request reuses an id still in flight; ignored', { method });
+      return;
+    }
     const controller = new AbortController();
     this.incoming.set(key(id), controller);
     let answered = false;
@@ -214,7 +229,12 @@ export class AcpConnection {
       if (answered) return;
       answered = true;
       this.incoming.delete(key(id));
-      if (!this.endInfo) this.transport.send({ jsonrpc: '2.0', id, ...msg });
+      if (this.endInfo) return;
+      try {
+        this.transport.send({ jsonrpc: '2.0', id, ...msg });
+      } catch (err) {
+        this.log('warn', 'ACP answer not written', { error: err instanceof Error ? err.message : String(err) });
+      }
     };
     controller.signal.addEventListener('abort', () => answer({
       error: { code: ACP_ERROR_CODES.requestCancelled, message: 'Request cancelled' },
