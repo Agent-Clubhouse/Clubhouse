@@ -249,7 +249,20 @@ export function getDispatcherState(): DispatcherState {
     models: getDispatcherModels(),
     personality: getDispatcherPersonality(),
     setup: getDispatcherSetup(),
+    providerPending: { chat: runningOnOtherProvider(chatConfig), work: runningOnOtherProvider(config) },
   };
+}
+
+/**
+ * The provider an agent's running session is on, when its record now names
+ * another. The registration is the session itself, so this is what runs, not
+ * what was saved. Null while it is asleep or already on its saved provider.
+ */
+function runningOnOtherProvider(agent: DurableAgentConfig | null): string | null {
+  if (!agent) return null;
+  const running = agentRegistry.get(agent.id)?.orchestrator;
+  const saved = agent.orchestrator ?? defaultDispatcherOrchestrator();
+  return running && saved && running !== saved ? running : null;
 }
 
 function dispatcherProvider(): string | null {

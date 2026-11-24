@@ -112,6 +112,18 @@ export interface DispatcherState {
   personality: DispatcherPersonality;
   /** Whether its view shows first-run setup, or offers it from the chat (#3047). */
   setup: DispatcherSetupState;
+  /**
+   * Each job whose running session is on another provider than its saved one,
+   * with the provider it still runs on. A new provider can't take over a
+   * running session, so it applies when that job restarts. Missing means none.
+   */
+  providerPending?: DispatcherProviderPending;
+}
+
+/** The provider each job's running session is still on, while its saved provider differs. */
+export interface DispatcherProviderPending {
+  chat: string | null;
+  work: string | null;
 }
 
 /**

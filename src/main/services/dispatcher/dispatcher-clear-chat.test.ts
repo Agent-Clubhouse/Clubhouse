@@ -19,6 +19,8 @@ vi.mock('./dispatcher-service', () => ({
   getDispatcherChatAgentId: () => 'chat',
   getDispatcherAgentId: () => 'work',
   prepareDispatcherSessionStart: vi.fn(async () => undefined),
+  defaultDispatcherOrchestrator: () => 'claude-code',
+  wakeDispatcherController: vi.fn(async () => undefined),
 }));
 
 import * as agentConfig from '../agent-config';
@@ -176,5 +178,142 @@ describe('strict verification before Dispatcher lifecycle writes (#3686)', () =>
     expect(quarantine).not.toHaveBeenCalled();
     expect(forgetSession).not.toHaveBeenCalled();
     expect(prepareStart).not.toHaveBeenCalled();
+  });
+});
+
+describe('a saved provider the running session isn\'t on (#3191)', () => {
+  /** A Dispatcher whose agents run on Claude Code while their records name Codex. A stop really stops the agent. */
+  function moved(order: string[] = []) {
+    const running = new Set(['chat', 'work']);
+    let holding = false;
+    const deps = {
+      runningProvider: (id: string) => (running.has(id) ? 'claude-code' : undefined),
+      savedProvider: async () => 'codex-cli',
+      isRunning: (id: string) => running.has(id),
+      stopRunning: vi.fn(async (dir: string, id: string, provider: string) => {
+        order.push(`stop:${dir === (id === 'chat' ? getDispatcherChatPath() : getDispatcherPath())}:${id}:${provider}${holding ? ':held' : ''}`);
+        running.delete(id);
+      }),
+      holdDeliveries: async <T,>(_id: string, fn: () => Promise<T>): Promise<T> => {
+        order.push('hold');
+        holding = true;
+        try { return await fn(); } finally { holding = false; order.push('release'); }
+      },
+      prepareStart: vi.fn(async (_dir: string, id: string) => { order.push(`prepare:${id}`); }),
+      clearContext: vi.fn(async () => undefined),
+      forgetSession: vi.fn(async (_dir: string, id: string) => { order.push(`forget:${id}`); }),
+      quarantine: vi.fn(async (_dir: string, _id: string, sid: string) => { order.push(`quarantine:${sid}`); }),
+      workSessionId: async () => 'old-native',
+      takeWaiting: vi.fn(() => { order.push(`take${holding ? ':held' : ''}`); return { ids: ['req_1'], started: 2 }; }),
+      endWaiting: vi.fn((w: { ids: string[] }) => { order.push(`end:${w.ids.join(',')}`); }),
+      noteNextStart: vi.fn((id: string, notice: { code: string }) => { order.push(`note:${id}:${notice.code}`); }),
+      wakeWork: vi.fn(async () => { order.push(`wake${holding ? ':held' : ''}`); }),
+    };
+    return { deps, running, order };
+  }
+
+  it('stops a running chat on its old provider instead of clearing it there, writing nothing before it has stopped', async () => {
+    const { deps, order } = moved();
+    const result = await clearDispatcherChat(deps);
+    expect(result).toEqual({ cleared: 'next_start' });
+    // Its next start prepares it, as any start does.
+    expect(order).toEqual(['stop:true:chat:claude-code', 'forget:chat']);
+    expect(deps.clearContext).not.toHaveBeenCalled();
+  });
+
+  it('leaves a chat whose stop fails as it was: nothing prepared, its resume id kept', async () => {
+    const { deps } = moved();
+    deps.stopRunning.mockRejectedValueOnce(new Error('Could not stop it.'));
+    await expect(clearDispatcherChat(deps)).rejects.toThrow('Could not stop it.');
+    expect(deps.prepareStart).not.toHaveBeenCalled();
+    expect(deps.forgetSession).not.toHaveBeenCalled();
+  });
+
+  it('clears a running chat in place when it already runs on its saved provider', async () => {
+    const { deps } = moved();
+    const result = await clearDispatcherChat({ ...deps, savedProvider: async () => 'claude-code' });
+    expect(result).toEqual({ cleared: 'now' });
+    expect(deps.stopRunning).not.toHaveBeenCalled();
+    expect(deps.clearContext).toHaveBeenCalledWith('chat');
+  });
+
+  it('stops the controller with hand-offs held, then sets its session aside, ends what it owed and starts it again idle', async () => {
+    const { deps, order } = moved();
+    const result = await startDispatcherWorkFresh('user', deps);
+    expect(result).toBe('now');
+    expect(order).toEqual([
+      'hold', 'stop:true:work:claude-code:held', 'quarantine:old-native', 'take:held', 'end:req_1', 'note:work:started_fresh', 'release',
+      // Started outside the hold: the start goes through the same delivery queue.
+      'wake',
+    ]);
+    expect(deps.clearContext).not.toHaveBeenCalled();
+    expect(deps.prepareStart).not.toHaveBeenCalled();
+  });
+
+  it('ends a request the old conversation took during the stop, since the requests are read once it has stopped', async () => {
+    const { deps, running } = moved();
+    const owed = ['req_1'];
+    // The old conversation takes one more hand-off as it stops.
+    deps.stopRunning.mockImplementationOnce(async () => { owed.push('req_during_stop'); running.delete('work'); });
+    // Whatever is under way when the requests are read.
+    deps.takeWaiting.mockImplementation(() => ({ ids: [...owed], started: 3 }));
+    await startDispatcherWorkFresh('user', deps);
+    expect(deps.endWaiting).toHaveBeenCalledWith({ ids: ['req_1', 'req_during_stop'], started: 3 });
+  });
+
+  it('leaves the controller as it was when the stop fails: session, resume id and requests untouched, nothing started', async () => {
+    const { deps } = moved();
+    deps.stopRunning.mockRejectedValueOnce(new Error('Could not stop it.'));
+    await expect(startDispatcherWorkFresh('user', deps)).rejects.toThrow('Could not stop it.');
+    expect(deps.quarantine).not.toHaveBeenCalled();
+    expect(deps.forgetSession).not.toHaveBeenCalled();
+    expect(deps.prepareStart).not.toHaveBeenCalled();
+    expect(deps.takeWaiting).not.toHaveBeenCalled();
+    expect(deps.endWaiting).not.toHaveBeenCalled();
+    expect(deps.noteNextStart).not.toHaveBeenCalled();
+    expect(deps.wakeWork).not.toHaveBeenCalled();
+  });
+
+  it('treats a controller still running after its stop as a failed stop, and writes nothing', async () => {
+    const { deps } = moved();
+    deps.stopRunning.mockImplementationOnce(async () => undefined);
+    await expect(startDispatcherWorkFresh('user', deps)).rejects.toThrow('still runs on its old provider');
+    expect(deps.quarantine).not.toHaveBeenCalled();
+    expect(deps.endWaiting).not.toHaveBeenCalled();
+    expect(deps.wakeWork).not.toHaveBeenCalled();
+  });
+
+  it('reports a controller that stopped but did not start again as starting at its next message', async () => {
+    const { deps } = moved();
+    deps.wakeWork.mockRejectedValueOnce(new Error('No CLI.'));
+    expect(await startDispatcherWorkFresh('user', deps)).toBe('next_start');
+  });
+
+  it('runs one restart per agent: a second request while one is under way joins it, failure included, and a later one runs again', async () => {
+    const { deps, running } = moved();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    deps.stopRunning.mockImplementationOnce(async () => { await gate; running.delete('work'); });
+    const first = startDispatcherWorkFresh('user', deps);
+    const second = startDispatcherWorkFresh('user', deps);
+    release();
+    await expect(Promise.all([first, second])).resolves.toEqual(['now', 'now']);
+    expect(deps.stopRunning).toHaveBeenCalledTimes(1);
+    expect(deps.wakeWork).toHaveBeenCalledTimes(1);
+    running.add('work');
+    deps.stopRunning.mockRejectedValueOnce(new Error('Could not stop it.'));
+    const a = startDispatcherWorkFresh('user', deps);
+    const b = startDispatcherWorkFresh('user', deps);
+    await expect(a).rejects.toThrow('Could not stop it.');
+    await expect(b).rejects.toThrow('Could not stop it.');
+    expect(deps.stopRunning).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts both fresh with the chat stopped too, and tells the chat at its next start', async () => {
+    const { deps } = moved();
+    const result = await startDispatcherFresh('both', deps);
+    expect(result).toEqual({ work: 'now', chat: 'next_start' });
+    expect(deps.stopRunning.mock.calls.map((c) => c[1])).toEqual(['work', 'chat']);
+    expect(deps.noteNextStart).toHaveBeenCalledWith('chat', expect.objectContaining({ code: 'dispatcher_started_fresh' }));
   });
 });

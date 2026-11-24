@@ -11,6 +11,7 @@ import { DEFAULT_DISPATCHER_PERSONALITY, PERSONALITY_PRESET_TEXT } from '../../.
 import { NO_DISPATCHER_SETUP } from '../../../shared/dispatcher-setup';
 
 import { DispatcherSettingsView, dispatcherSwitchHelp } from './DispatcherSettingsView';
+import { ClearChatHost, StartFreshHost } from '../dispatcher/ClearChat';
 
 const FOLDER = 'dispatcher-folder';
 const OFF: DispatcherState = {
@@ -466,6 +467,44 @@ describe('DispatcherSettingsView', () => {
       window.clubhouse.dispatcher.getUsage = vi.fn().mockRejectedValue(new Error('x'));
       await renderOn();
       await waitFor(() => expect(screen.getByTestId('dispatcher-usage-conversations-value').textContent).toBe('Couldn’t read it.'));
+    });
+  });
+
+  describe('a new provider not applied yet', () => {
+    async function renderWithHosts(s: DispatcherState) {
+      state = s;
+      await act(async () => { render(<><DispatcherSettingsView /><ClearChatHost /><StartFreshHost /></>); });
+    }
+
+    it('shows nothing while each running job is on its saved provider', async () => {
+      await renderOn({ ...ON, providerPending: { chat: null, work: null } });
+      expect(screen.queryByTestId('dispatcher-provider-pending')).toBeNull();
+    });
+
+    it('says which job still runs on which provider, and offers a new chat for the chat alone through its confirm', async () => {
+      await renderWithHosts({ ...ON, providerPending: { chat: 'claude-code', work: null } });
+      const note = screen.getByTestId('dispatcher-provider-pending');
+      expect(note).toHaveTextContent('Rosie is still talking with you on Claude Code. The new provider applies when it restarts, with a new conversation. Its memory stays.');
+      // Nothing restarts until the person confirms.
+      fireEvent.click(within(note).getByRole('button', { name: 'Start new chat…' }));
+      expect(window.clubhouse.dispatcher.clearChat).not.toHaveBeenCalled();
+      await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-clear-chat-confirm-button')); });
+      expect(window.clubhouse.dispatcher.clearChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers Restart when background work is on its old provider, through the Restart Dispatcher confirm', async () => {
+      window.clubhouse.dispatcher.startFresh = vi.fn(async () => ({ work: 'now' as const, chat: 'next_start' as const }));
+      await renderWithHosts({ ...ON, providerPending: { chat: 'claude-code', work: 'copilot-cli' } });
+      const note = screen.getByTestId('dispatcher-provider-pending');
+      expect(note).toHaveTextContent('Rosie is still talking with you on Claude Code and working in the background on Copilot CLI.');
+      fireEvent.click(within(note).getByRole('button', { name: 'Restart…' }));
+      await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-start-fresh-both')); });
+      expect(window.clubhouse.dispatcher.startFresh).toHaveBeenCalledWith('both');
+    });
+
+    it('names one provider when both jobs are still on it', async () => {
+      await renderOn({ ...ON, providerPending: { chat: 'claude-code', work: 'claude-code' } });
+      expect(screen.getByTestId('dispatcher-provider-pending')).toHaveTextContent('Rosie is still talking with you and working in the background on Claude Code.');
     });
   });
 
