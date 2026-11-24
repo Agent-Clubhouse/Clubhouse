@@ -49,6 +49,7 @@
  * running, loses its connections, and can't be started again until MCP is back,
  * when it returns to what its saved values say and wakes the controller idle.
  */
+import { pickDispatcherDefault } from './dispatcher-default';
 import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -748,9 +749,7 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
  * New agent page picks it (the first enabled provider in registration order).
  */
 export function defaultDispatcherOrchestrator(): OrchestratorId | undefined {
-  const enabled = getOrchestratorSettings().enabled ?? [];
-  const providers = getAllProviders();
-  return (providers.find((p) => enabled.includes(p.id)) ?? providers[0])?.id;
+  return pickDispatcherDefault(getAllProviders().map((p) => p.id), getOrchestratorSettings().enabled ?? []);
 }
 
 async function readConfig(dir: string = getDispatcherPath()): Promise<DurableAgentConfig | null> {

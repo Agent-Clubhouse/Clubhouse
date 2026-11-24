@@ -11,6 +11,9 @@ vi.mock('./copilot-cli-provider', () => ({
 vi.mock('./codex-cli-provider', () => ({
   CodexCliProvider: class { constructor() { return makeFakeProvider('codex-cli', 'Codex CLI'); } },
 }));
+vi.mock('./antigravity-cli-provider', () => ({
+  AntigravityCliProvider: class { constructor() { return makeFakeProvider('antigravity-cli', 'Antigravity CLI'); } },
+}));
 
 function makeFakeProvider(id: OrchestratorId, displayName: string): OrchestratorProvider {
   return {
@@ -137,6 +140,23 @@ describe('Orchestrator Registry', () => {
       registerBuiltinProviders();
 
       expect(getAllProviders()).toHaveLength(3);
+    });
+
+    it('leaves the experimental Antigravity provider out unless asked', async () => {
+      const { registerBuiltinProviders, getProvider } = await loadRegistry();
+
+      registerBuiltinProviders();
+      registerBuiltinProviders({ antigravity: false });
+
+      expect(getProvider('antigravity-cli')).toBeUndefined();
+    });
+
+    it('registers Antigravity last when its flag is on, so it is never the first-enabled default', async () => {
+      const { registerBuiltinProviders, getAllProviders } = await loadRegistry();
+
+      registerBuiltinProviders({ antigravity: true });
+
+      expect(getAllProviders().map((p) => p.id)).toEqual(['claude-code', 'copilot-cli', 'codex-cli', 'antigravity-cli']);
     });
   });
 });
