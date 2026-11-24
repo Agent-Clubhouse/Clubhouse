@@ -35,6 +35,21 @@ Never add final lines to turn lines. A turn id is logged once. Lines are
 capped at 2,000 an hour; anything over the cap is counted and logged when the
 hour turns.
 
+### Totals
+
+```
+node scripts/usage-rollup.mjs [--by day,provider,role,agentId] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--dir <log folder>] [--json]
+```
+
+- **What it reads.** The `core:usage` lines in `~/.clubhouse/logs/telemetry-*.jsonl`, nothing else.
+- **How it adds.** It sums the turn lines (`src/shared/usage-rollup.mjs`). Session totals are counted but never added. A turn read twice is added once.
+- **What it shows separately.** Cached input, turns that reported no usage, the turns missing each figure, and the turns per source.
+- **Grouping.** `--by` picks any of `day`, `provider`, `driver`, `model`, `effort`, `role`, `agentId`, `parentAgentId` and `source`.
+- **Limits.**
+  - It covers only what the logging settings let through and retention kept.
+  - It covers only turns that fit the recorder's diag budget.
+  - A day with logging off reads as no turns, not as zero use.
+
 ### Not covered
 
 - **Terminal (TUI) agents** of any provider publish no chat events and log
