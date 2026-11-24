@@ -34,7 +34,7 @@ const mockPtySpawn = vi.fn();
 const mockPtyGracefulKill = vi.fn();
 const mockStopCreatedProcess = vi.fn((..._args: unknown[]) => false);
 const mockPtyIsRunning = vi.fn((..._args: unknown[]) => false);
-const mockPtyProcessIdentity = vi.fn((): string | undefined => undefined);
+const mockPtyProcessIdentity = vi.fn((..._args: unknown[]): string | undefined => undefined);
 const mockPtyKill = vi.fn();
 vi.mock('./pty-manager', () => ({
   spawn: (...args: unknown[]) => mockPtySpawn(...args),
@@ -193,7 +193,7 @@ const mockApplyLaunchWrapper = vi.fn(
 );
 const mockValidateWrapperConfig = vi.fn((..._args: unknown[]) => ({ ok: true as const }));
 vi.mock('../orchestrators/shared', () => ({
-  applyLaunchWrapper: (...args: unknown[]) => mockApplyLaunchWrapper(...args),
+  applyLaunchWrapper: (...args: Parameters<typeof mockApplyLaunchWrapper>) => mockApplyLaunchWrapper(...args),
   validateWrapperConfig: (...args: unknown[]) => mockValidateWrapperConfig(...(args as [unknown, string, { isPluginEnabled: (id: string) => boolean }])),
 }));
 
@@ -337,7 +337,7 @@ const mockBuildClubhouseMcpDef = vi.fn((port: number) => ({
 }));
 vi.mock('./clubhouse-mcp/injection', () => ({
   injectClubhouseMcp: (...args: unknown[]) => mockInjectClubhouseMcp(...args),
-  buildClubhouseMcpDef: (...args: unknown[]) => mockBuildClubhouseMcpDef(...args),
+  buildClubhouseMcpDef: (...args: Parameters<typeof mockBuildClubhouseMcpDef>) => mockBuildClubhouseMcpDef(...args),
   CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
 
