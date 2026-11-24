@@ -100,6 +100,9 @@ export const MAX_IN_FLIGHT = 16;
 export const CONTROL_SEND_BUFFER_MAX_BYTES = 16 * 1024 * 1024;
 /** Requests a requester has waiting on one connection. */
 export const MAX_PENDING = 64;
+/** A locally cancelled request tolerates one delayed bulk offer, only on that connection. */
+export const CANCELLED_REQUEST_TTL_MS = 30_000;
+export const CANCELLED_REQUEST_MAX_PER_LINK = MAX_PENDING;
 /** How long a target remembers a finished non-read request, so a retry with its id gets the same answer. */
 export const SEEN_TTL_MS = 10 * 60_000;
 /**
@@ -263,6 +266,13 @@ interface Pending {
   progress: () => void;
 }
 
+interface CancelledRequest {
+  method: ControlMethod;
+  path: string;
+  maxResponseBytes?: number;
+  at: number;
+}
+
 interface Link {
   bulk: ControlBulkLane;
   ws: WebSocket;
@@ -284,6 +294,8 @@ interface Link {
   heartbeat: ReturnType<typeof setInterval> | null;
   alive: boolean;
   pending: Map<string, Pending>;
+  /** Requester: locally cancelled requests whose late bulk response is refused once, not treated as a protocol fault. */
+  cancelled: Map<string, CancelledRequest>;
   /** Requester: subscriptions this machine holds over this connection (at most one). */
   subscriptions: Map<string, SubscriptionHandlers>;
   /** Target: the subscription this connection is being served, if any. */
@@ -514,6 +526,21 @@ function bulkMeta(kind: BulkKind, id: string, meta: Record<string, unknown>): Co
   return parsed.ok ? parsed.message : null;
 }
 let bulkTokenLimitForTests: number | undefined;
+
+function pruneCancelledRequests(link: Link): void {
+  const cutoff = Date.now() - CANCELLED_REQUEST_TTL_MS;
+  for (const [id, request] of link.cancelled) if (request.at <= cutoff) link.cancelled.delete(id);
+}
+
+function rememberCancelledRequest(link: Link, request: Pending): void {
+  pruneCancelledRequests(link);
+  link.cancelled.delete(request.id);
+  if (link.cancelled.size >= CANCELLED_REQUEST_MAX_PER_LINK) {
+    const oldest = link.cancelled.keys().next().value;
+    if (oldest !== undefined) link.cancelled.delete(oldest);
+  }
+  link.cancelled.set(request.id, { method: request.method, path: request.path, maxResponseBytes: request.maxResponseBytes, at: Date.now() });
+}
 function makeBulkLane(link: Link): ControlBulkLane {
   return new ControlBulkLane({
     allowed: () => bulkAllowed(link),
@@ -535,6 +562,16 @@ function makeBulkLane(link: Link): ControlBulkLane {
     rejectStart: (kind, id, meta, size) => {
       const message = bulkMeta(kind, id, meta);
       const pending = link.pending.get(id);
+      // A response to a locally cancelled request may already be on its way: refuse it once, within its original bounds.
+      if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request') && !pending) {
+        pruneCancelledRequests(link);
+        const cancelled = link.cancelled.get(id);
+        if (cancelled && size <= responseBodyLimit(cancelled.path, cancelled.method)
+          && (cancelled.maxResponseBytes === undefined || size <= cancelled.maxResponseBytes)) {
+          link.cancelled.delete(id);
+          return true;
+        }
+      }
       if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request')
         && pending && (size > responseBodyLimit(pending.path, pending.method)
           || (pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes))) {
@@ -636,6 +673,7 @@ function closeLink(link: Link, code: number, reason: string, failWith: ControlEr
     pending.reject(new ControlRequestError(failWith, !isReadOnlyMethod(pending.method), pending.id));
   }
   link.pending.clear();
+  link.cancelled.clear();
   // Requesters stop waiting; their runs go on to settle (or be cut off) on their own clocks.
   for (const reply of link.replying.values()) reply.abort('closed');
   link.replying.clear();
@@ -667,7 +705,7 @@ function inboundStillAllowed(link: Link): boolean {
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
   const link = {
     ws, fingerprint, pin, direction, remoteAddress, features: null, announcedReady: false, requestEpoch: ++nextLinkEpoch, offered: null, closed: false,
-    helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
+    helloTimer: null, heartbeat: null, alive: true, pending: new Map(), cancelled: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
   } as Link;
   link.bulk = makeBulkLane(link);
   links.add(link);
@@ -1227,13 +1265,17 @@ export function request(fingerprint: string, input: ControlRequestInput, options
       options.signal?.removeEventListener('abort', onAbort);
     };
     function giveUp(code: ControlErrorCode): void {
-      if (!link!.pending.delete(id)) return;
+      const pending = link!.pending.get(id);
+      if (!pending) return;
+      link!.pending.delete(id);
+      if (code === 'cancelled') rememberCancelledRequest(link!, pending);
       cleanup();
       link!.bulk.cancel(id);
       rawSend(link!, { v: 1, type: 'cancel', id });
       reject(new ControlRequestError(code, !readOnly, id));
     }
     options.signal?.addEventListener('abort', onAbort, { once: true });
+    link.cancelled.delete(id);
     link.pending.set(id, { id, method: input.method, path: input.path, maxResponseBytes: options.maxResponseBytes, resolve, reject, cleanup, progress: () => timer.refresh?.() });
     if (link.features?.has('bulk') && bytes && (binaryPath(input.path) || bytes.length > BULK_CHUNK_BYTES)) {
       if (bytes.length > CONTROL_FRAME_MAX_BYTES && !/\/attachments$/.test(input.path)) { link.pending.delete(id); cleanup(); reject(new ControlRequestError('request_too_large', false, id)); return; }
