@@ -10,6 +10,7 @@
         "agentIcons": {
           "durable_chat": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAFXRFWHRpY29uAGR1cmFibGVfY2hhdC5wbmeieNGaAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
         },
+        "agentRunStateVersion": 1,
         "agents": {
           "proj_app": [
             {
