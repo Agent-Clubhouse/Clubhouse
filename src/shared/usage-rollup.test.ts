@@ -15,6 +15,9 @@ describe('rollupUsage', () => {
     ]);
     expect(out.rows).toEqual([expect.objectContaining({ day: '2026-11-24', provider: 'codex', role: 'helper', agentId: 'a1', turns: 2, input: 1500, cachedInput: 1000, uncachedInput: 500, output: 15, reasoning: 4 })]);
     expect(out.rows[0].missing).toEqual({ cacheWrite: 2, reasoning: 1 });
+    // No turn reported a cache write: null, not 0. Reasoning was reported by one turn: its sum.
+    expect(out.rows[0].cacheWrite).toBeNull();
+    expect(out.noLines).toBe(false);
     expect(out.sessionTotalsSkipped).toBe(1);
     expect(out.totals.input).toBe(1500);
   });
@@ -28,8 +31,25 @@ describe('rollupUsage', () => {
 
   it('keeps a turn without usage as such, not as zeros, and a reported zero as zero', () => {
     const out = rollupUsage([turn({ ...base, turnId: 't1', completeness: 'none' }), turn({ ...base, turnId: 't2', input: 0, output: 0 })]);
-    expect(out.totals).toMatchObject({ turns: 2, turnsWithoutUsage: 1, input: 0, output: 0 });
+    expect(out.totals).toMatchObject({ turns: 2, turnsWithoutUsage: 1, input: 0, output: 0, cachedInput: null, uncachedInput: null });
     expect(out.totals.missing).toMatchObject({ input: 1, output: 1 });
+    const none = rollupUsage([turn({ ...base, turnId: 't1' })]);
+    expect(none.totals).toMatchObject({ input: null, output: null, reasoning: null, uncachedInput: null });
+  });
+
+  it('adds turn lines without an id but counts them, since a repeat of one cannot be told apart', () => {
+    const line = turn({ ...base, input: 5, output: 1 });
+    const out = rollupUsage([line, line, turn({ ...base, turnId: 't1', input: 1, output: 1 })]);
+    expect(out.totals).toMatchObject({ turns: 3, turnsWithoutId: 2, input: 11 });
+    expect(out.rows[0].turnsWithoutId).toBe(2);
+  });
+
+  it('says when there are no turn lines at all, and counts unreadable lines', () => {
+    const out = rollupUsage([null, { ns: 'core:usage', msg: 'Usage session total', meta: {} }, { t: 'signal' }]);
+    expect(out.noLines).toBe(true);
+    expect(out.malformed).toBe(1);
+    expect(out.rows).toEqual([]);
+    expect(out.totals.input).toBeNull();
   });
 
   it('groups by the dimensions asked for, with unknown and none for what a line lacks', () => {

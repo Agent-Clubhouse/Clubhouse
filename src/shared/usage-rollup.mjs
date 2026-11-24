@@ -5,11 +5,16 @@
 // Rules:
 // - Only `Usage turn` lines are added. `Usage session total` lines are running
 //   totals (a resumed session's carries earlier runs) and are counted, never added.
-// - A figure a line leaves out is not zero: `missing` counts the turns without it.
+// - A figure a line leaves out is not zero: `missing` counts the turns without it,
+//   and a figure no turn of a row (or of the totals) reported is `null`, not 0.
 //   A turn with no figures at all is in `turnsWithoutUsage`.
 // - A turn is added once per agent, session and turn id, so a log read twice
-//   (or a line repeated) doesn't double it.
-// - `uncachedInput` is input minus cached input, from turns that report both.
+//   (or a line repeated) doesn't double it. A turn line without a turn id can't
+//   be told from a repeat: it is added, and counted in `turnsWithoutId`.
+// - `uncachedInput` is input minus cached input, from turns that report both
+//   (`null` when none did).
+// - An unreadable line (a `null` record) or a usage line without its fields is
+//   counted in `malformed`. `noLines` says no turn line was found at all.
 // - Days are UTC, from each line's own time.
 
 export const USAGE_ROLLUP_DIMENSIONS = ['day', 'provider', 'driver', 'model', 'effort', 'role', 'agentId', 'parentAgentId', 'source'];
@@ -23,7 +28,7 @@ const valid = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const text = (v, fallback) => (typeof v === 'string' && v ? v : fallback);
 
 function emptyTotals() {
-  const t = { turns: 0, turnsWithoutUsage: 0, uncachedInput: 0, missing: {}, sources: {} };
+  const t = { turns: 0, turnsWithoutUsage: 0, turnsWithoutId: 0, uncachedInput: 0, uncachedTurns: 0, missing: {}, sources: {} };
   for (const k of USAGE_ROLLUP_FIGURES) t[k] = 0;
   return t;
 }
@@ -43,7 +48,11 @@ export function rollupUsage(records, options = {}) {
   let repeats = 0;
   let malformed = 0;
   for (const r of records) {
-    if (!r || typeof r !== 'object' || r.ns !== NS) continue;
+    if (r === null) {
+      malformed++;
+      continue;
+    }
+    if (typeof r !== 'object' || r.ns !== NS) continue;
     if (r.msg === FINAL) {
       sessionTotalsSkipped++;
       continue;
@@ -56,7 +65,8 @@ export function rollupUsage(records, options = {}) {
       continue;
     }
     if ((since && day < since) || (until && day > until)) continue;
-    if (typeof m.turnId === 'string' && m.turnId) {
+    const hasId = typeof m.turnId === 'string' && m.turnId;
+    if (hasId) {
       const key = `${m.agentId}\u0000${m.sessionId}\u0000${m.turnId}`;
       if (seen.has(key)) {
         repeats++;
@@ -81,13 +91,17 @@ export function rollupUsage(records, options = {}) {
       row = { ...Object.fromEntries(groupBy.map((d) => [d, dims[d]])), ...emptyTotals() };
       rows.set(key, row);
     }
-    for (const t of [row, totals]) add(t, m, dims.source);
+    for (const t of [row, totals]) {
+      add(t, m, dims.source);
+      if (!hasId) t.turnsWithoutId++;
+    }
   }
+  for (const t of [...rows.values(), totals]) finish(t);
   const sorted = [...rows.values()].sort((a, b) => {
     for (const d of groupBy) if (a[d] !== b[d]) return a[d] < b[d] ? -1 : 1;
     return 0;
   });
-  return { groupBy, rows: sorted, totals, sessionTotalsSkipped, repeats, malformed };
+  return { groupBy, rows: sorted, totals, noLines: totals.turns === 0, sessionTotalsSkipped, repeats, malformed };
 }
 
 function add(t, m, source) {
@@ -103,5 +117,15 @@ function add(t, m, source) {
     }
   }
   if (!reported) t.turnsWithoutUsage++;
-  if (valid(m.input) && valid(m.cachedInput)) t.uncachedInput += Math.max(0, m.input - m.cachedInput);
+  if (valid(m.input) && valid(m.cachedInput)) {
+    t.uncachedInput += Math.max(0, m.input - m.cachedInput);
+    t.uncachedTurns++;
+  }
+}
+
+/** A figure no turn reported is null, not 0; a reported 0 stays 0. */
+function finish(t) {
+  for (const k of USAGE_ROLLUP_FIGURES) if ((t.missing[k] ?? 0) === t.turns) t[k] = null;
+  if (t.uncachedTurns === 0) t.uncachedInput = null;
+  delete t.uncachedTurns;
 }

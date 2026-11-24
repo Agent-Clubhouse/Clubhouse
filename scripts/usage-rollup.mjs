@@ -34,7 +34,7 @@ function logFiles(dir) {
   return fs.readdirSync(dir).filter((n) => /^telemetry-.*\.jsonl$/.test(n)).sort().map((n) => path.join(dir, n));
 }
 
-const fmt = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+const fmt = (n) => (n === null ? 'unknown' : n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
 
 function main(argv) {
   const arg = (name) => {
@@ -48,22 +48,30 @@ function main(argv) {
     console.error(`Unknown --by ${bad.join(', ')}. Choose from: ${USAGE_ROLLUP_DIMENSIONS.join(', ')}`);
     process.exit(2);
   }
+  for (const flag of ['--since', '--until']) {
+    const day = arg(flag);
+    if (day !== undefined && !(/^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T00:00:00Z`)))) {
+      console.error(`${flag} takes a UTC day, YYYY-MM-DD`);
+      process.exit(2);
+    }
+  }
   const files = logFiles(dir);
   const result = rollupUsage(usageRecords(files), { groupBy: by, since: arg('--since'), until: arg('--until') });
   if (argv.includes('--json')) {
     process.stdout.write(`${JSON.stringify({ files: files.length, ...result }, null, 2)}\n`);
     return;
   }
-  if (result.totals.turns === 0) {
+  if (result.noLines) {
     console.log(`No usage turn lines in ${files.length} log files. They are written by builds with usage attribution, while Settings › Logging is on with core:usage at info or lower.`);
     return;
   }
-  console.log(`${files.length} log files; ${result.totals.turns} turns (${result.totals.turnsWithoutUsage} reported no usage); ${result.sessionTotalsSkipped} session totals not added; ${result.repeats} repeated turns skipped`);
-  console.log([...result.groupBy, 'turns', 'no usage', 'uncached in', 'cached in', 'output', 'reasoning', 'sources', 'missing'].join('\t'));
+  const t = result.totals;
+  console.log(`${files.length} log files; ${t.turns} turns (${t.turnsWithoutUsage} reported no usage, ${t.turnsWithoutId} without a turn id so a repeat can't be detected); ${result.sessionTotalsSkipped} session totals not added; ${result.repeats} repeated turns skipped; ${result.malformed} malformed lines`);
+  console.log([...result.groupBy, 'turns', 'no usage', 'no id', 'input', 'uncached in', 'cached in', 'cache write', 'output', 'reasoning', 'sources', 'missing'].join('\t'));
   for (const r of result.rows) {
     const sources = Object.entries(r.sources).map(([k, n]) => `${k}:${n}`).join(',');
     const missing = Object.entries(r.missing).map(([k, n]) => `${k}:${n}`).join(',') || '-';
-    console.log([...result.groupBy.map((d) => r[d]), r.turns, r.turnsWithoutUsage, fmt(r.uncachedInput), fmt(r.cachedInput), fmt(r.output), fmt(r.reasoning), sources, missing].join('\t'));
+    console.log([...result.groupBy.map((d) => r[d]), r.turns, r.turnsWithoutUsage, r.turnsWithoutId, fmt(r.input), fmt(r.uncachedInput), fmt(r.cachedInput), fmt(r.cacheWrite), fmt(r.output), fmt(r.reasoning), sources, missing].join('\t'));
   }
 }
 

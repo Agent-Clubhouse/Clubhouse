@@ -42,8 +42,9 @@ node scripts/usage-rollup.mjs [--by day,provider,role,agentId] [--since YYYY-MM-
 ```
 
 - **What it reads.** The `core:usage` lines in `~/.clubhouse/logs/telemetry-*.jsonl`, nothing else.
-- **How it adds.** It sums the turn lines (`src/shared/usage-rollup.mjs`). Session totals are counted but never added. A turn read twice is added once.
-- **What it shows separately.** Cached input, turns that reported no usage, the turns missing each figure, and the turns per source.
+- **How it adds.** It sums the turn lines (`src/shared/usage-rollup.mjs`). Session totals are counted but never added. A turn read twice is added once. A line without a turn id is added too, but counted in `turnsWithoutId`, since a repeat of it can't be detected.
+- **Unknown stays unknown.** A figure no turn reported is `null` in `--json` and `unknown` in the table, never 0; a reported 0 stays 0. `noLines` (or the message without `--json`) means no turn line was found, not zero use. Unreadable usage lines are counted in `malformed`.
+- **What it shows separately.** Total, uncached and cached input, cache writes, turns that reported no usage, the turns missing each figure, and the turns per source.
 - **Grouping.** `--by` picks any of `day`, `provider`, `driver`, `model`, `effort`, `role`, `agentId`, `parentAgentId` and `source`.
 - **Limits.**
   - It covers only what the logging settings let through and retention kept.
