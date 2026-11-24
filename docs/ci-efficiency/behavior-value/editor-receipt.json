@@ -4,18 +4,18 @@
     {
       "variant": "original",
       "codec_sha256": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
-      "wall_seconds": 0.9003,
+      "wall_seconds": 1.1536,
       "deselected": 74,
       "tests": [
         {
           "name": "replaces a source range while preserving adjacent text and emphasis",
           "status": "passed",
-          "ms": 19.01070900000002
+          "ms": 22.870334000000014
         },
         {
           "name": "maps slash-token offsets through list and emphasis syntax",
           "status": "passed",
-          "ms": 3.8686670000000163
+          "ms": 4.365958000000035
         }
       ],
       "reasons": []
@@ -23,18 +23,18 @@
     {
       "variant": "shift",
       "codec_sha256": "c84932ea257975585aec997f0af3c4a3a31800f819abbc0e350d7429b44d0d43",
-      "wall_seconds": 0.8804,
+      "wall_seconds": 1.1343,
       "deselected": 74,
       "tests": [
         {
           "name": "replaces a source range while preserving adjacent text and emphasis",
           "status": "failed",
-          "ms": 19.40500000000003
+          "ms": 22.202292
         },
         {
           "name": "maps slash-token offsets through list and emphasis syntax",
           "status": "passed",
-          "ms": 3.915040999999974
+          "ms": 4.363249999999994
         }
       ],
       "reasons": [
@@ -44,18 +44,18 @@
     {
       "variant": "restored",
       "codec_sha256": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
-      "wall_seconds": 0.8791,
+      "wall_seconds": 0.9291,
       "deselected": 74,
       "tests": [
         {
           "name": "replaces a source range while preserving adjacent text and emphasis",
           "status": "passed",
-          "ms": 19.24433300000004
+          "ms": 20.374791999999957
         },
         {
           "name": "maps slash-token offsets through list and emphasis syntax",
           "status": "passed",
-          "ms": 3.8677920000000086
+          "ms": 3.880917000000011
         }
       ],
       "reasons": []

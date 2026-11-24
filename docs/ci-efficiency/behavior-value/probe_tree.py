@@ -1,8 +1,7 @@
-"""Prepare an isolated renderer test tree from verified local Git objects."""
+"""Prepare a private Git checkout so Vitest's tracked-path teardown can run."""
 from contextlib import contextmanager
 from pathlib import Path
 import subprocess
-import tarfile
 import tempfile
 
 
@@ -10,14 +9,15 @@ import tempfile
 def source_tree(root, commit, modules):
     with tempfile.TemporaryDirectory(prefix='codec-audit-tree-') as directory:
         tree = Path(directory)
-        with tempfile.TemporaryFile() as archive:
-            subprocess.run(['git', 'archive', commit, 'src', 'test', 'scripts', 'vitest.config.ts',
-                            'package.json', 'package-lock.json', 'tsconfig.json'], cwd=root,
-                           stdout=archive, check=True)
-            archive.seek(0)
-            with tarfile.open(fileobj=archive) as source:
-                for member in source:
-                    if member.isfile() or member.isdir():
-                        source.extract(member, tree)
+        subprocess.run(['git', 'clone', '--quiet', '--local', '--shared', '--no-checkout',
+                        str(root), str(tree)], check=True)
+        subprocess.run(['git', 'checkout', '--quiet', '--detach', commit], cwd=tree, check=True)
         (tree / 'node_modules').symlink_to(modules, target_is_directory=True)
         yield tree
+
+
+def check_teardown(proc):
+    output = proc.stderr + proc.stdout
+    for marker in [b'error during close', b'Unhandled Error', b'fatal: not a git repository']:
+        if marker in output:
+            raise ValueError('Invalid global setup or teardown: ' + marker.decode())

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
-from probe_tree import source_tree
+from probe_tree import check_teardown, source_tree
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -36,6 +36,7 @@ def main():
                 CHAT + 'prompt-codec.test.ts'], cwd=tree,
                 env={**os.environ, 'NODE_OPTIONS': '--no-experimental-webstorage --max-old-space-size=768'},
                 capture_output=True, timeout=25)
+            check_teardown(proc)
             report = json.loads(out.read_text())
             suites = report['testResults']
             if len(suites) != 1 or report.get('numRuntimeErrorTestSuites') or report.get('unhandledErrors'):

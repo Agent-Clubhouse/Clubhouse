@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from probe_tree import source_tree
+from probe_tree import check_teardown, source_tree
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -38,6 +38,7 @@ def main():
                 '-t', EDITOR + '|' + CODEC, CHAT + 'PromptEditor.test.tsx', CHAT + 'prompt-codec.test.ts'],
                 cwd=tree, env={**os.environ, 'NODE_OPTIONS': '--no-experimental-webstorage --max-old-space-size=768'},
                 capture_output=True, timeout=30)
+            check_teardown(proc)
             report = json.loads(out.read_text())
             tests = [t for s in report['testResults'] for t in s['assertionResults']
                      if t['status'] not in ['pending', 'skipped']]

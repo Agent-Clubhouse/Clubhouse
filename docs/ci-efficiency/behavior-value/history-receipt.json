@@ -22,7 +22,7 @@
   "variants": [
     {
       "production_revision": "ad5789182f348521a738d67a3d11f83a21b87a9c",
-      "wall_seconds": 1.232,
+      "wall_seconds": 1.3021,
       "exit": 1,
       "deselected": 54,
       "production_sha256": {
@@ -36,7 +36,7 @@
           "test": "survives a remount and the next keystroke: \"  * build\\n  * test\"",
           "status": "failed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 18.081999999999994,
+          "duration_ms": 18.315249999999992,
           "reason": "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
         },
         {
@@ -44,7 +44,7 @@
           "test": "survives a remount and the next keystroke: \"1. a\\n1. b\"",
           "status": "failed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 2.8505839999999694,
+          "duration_ms": 2.8362089999999966,
           "reason": "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
         },
         {
@@ -52,7 +52,7 @@
           "test": "survives a remount and the next keystroke: \"3. a\\n5. b\"",
           "status": "failed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 2.0541660000000093,
+          "duration_ms": 2.019541000000004,
           "reason": "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
         },
         {
@@ -60,7 +60,7 @@
           "test": "survives a remount and the next keystroke: \"- a\\n* b\"",
           "status": "failed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.625750000000039,
+          "duration_ms": 1.6046660000000088,
           "reason": "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
         },
         {
@@ -68,7 +68,7 @@
           "test": "survives a remount and the next keystroke: \"- first\\n  continuation\"",
           "status": "failed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.814375000000041,
+          "duration_ms": 1.7644169999999804,
           "reason": "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
         },
         {
@@ -76,7 +76,7 @@
           "test": "survives a remount and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
           "status": "failed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.5961659999999824,
+          "duration_ms": 1.5375000000000227,
           "reason": "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
         },
         {
@@ -84,7 +84,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"  * build\\n  * test\"",
           "status": "failed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.571583999999973,
+          "duration_ms": 1.5646249999999782,
           "reason": "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
         },
         {
@@ -92,7 +92,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"1. a\\n1. b\"",
           "status": "failed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.2686669999999935,
+          "duration_ms": 1.2642079999999964,
           "reason": "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
         },
         {
@@ -100,7 +100,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"3. a\\n5. b\"",
           "status": "failed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.152750000000026,
+          "duration_ms": 1.1386249999999905,
           "reason": "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
         },
         {
@@ -108,7 +108,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"- a\\n* b\"",
           "status": "failed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.2333749999999668,
+          "duration_ms": 1.2257079999999974,
           "reason": "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
         },
         {
@@ -116,7 +116,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"- first\\n  continuation\"",
           "status": "failed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 0.9920000000000186,
+          "duration_ms": 1.038082999999972,
           "reason": "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
         },
         {
@@ -124,7 +124,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
           "status": "failed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.1332090000000221,
+          "duration_ms": 1.1413749999999823,
           "reason": "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
         },
         {
@@ -132,7 +132,7 @@
           "test": "renders repeated numbering as one ordered list",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 10.779374999999959,
+          "duration_ms": 10.640125000000012,
           "reason": null
         },
         {
@@ -140,7 +140,7 @@
           "test": "renders bold inside a list item",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 3.325540999999987,
+          "duration_ms": 3.2754170000000045,
           "reason": null
         },
         {
@@ -148,7 +148,7 @@
           "test": "renders mixed bullet markers as a list",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 3.0022500000000036,
+          "duration_ms": 2.959124999999972,
           "reason": null
         },
         {
@@ -156,7 +156,7 @@
           "test": "renders a continuation line inside its list item",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 1.2469999999999573,
+          "duration_ms": 1.2068749999999682,
           "reason": null
         },
         {
@@ -164,7 +164,7 @@
           "test": "restores pasted text exactly: \"  * build\\n  * test\"",
           "status": "failed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 3.927291999999966,
+          "duration_ms": 4.035833000000025,
           "reason": "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
         },
         {
@@ -172,7 +172,7 @@
           "test": "restores pasted text exactly: \"1. a\\n1. b\"",
           "status": "failed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.3374579999999696,
+          "duration_ms": 0.3400829999999928,
           "reason": "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
         },
         {
@@ -180,7 +180,7 @@
           "test": "restores pasted text exactly: \"3. a\\n5. b\"",
           "status": "failed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.21549999999996317,
+          "duration_ms": 0.24900000000002365,
           "reason": "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
         },
         {
@@ -188,7 +188,7 @@
           "test": "restores pasted text exactly: \"- a\\n* b\"",
           "status": "failed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.17674999999997,
+          "duration_ms": 0.190166999999974,
           "reason": "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
         },
         {
@@ -196,7 +196,7 @@
           "test": "restores pasted text exactly: \"- first\\n  continuation\"",
           "status": "failed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.5052919999999972,
+          "duration_ms": 0.5133329999999887,
           "reason": "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
         },
         {
@@ -204,14 +204,14 @@
           "test": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
           "status": "failed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.29283399999997073,
+          "duration_ms": 0.3374589999999671,
           "reason": "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
         }
       ]
     },
     {
       "production_revision": "c44e472952561e565ac78b7114e011e6f9a5e999",
-      "wall_seconds": 1.2154,
+      "wall_seconds": 1.2527,
       "exit": 0,
       "deselected": 54,
       "production_sha256": {
@@ -225,7 +225,7 @@
           "test": "survives a remount and the next keystroke: \"  * build\\n  * test\"",
           "status": "passed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 16.995124999999973,
+          "duration_ms": 16.555582999999956,
           "reason": null
         },
         {
@@ -233,7 +233,7 @@
           "test": "survives a remount and the next keystroke: \"1. a\\n1. b\"",
           "status": "passed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 2.594875000000002,
+          "duration_ms": 2.5550419999999576,
           "reason": null
         },
         {
@@ -241,7 +241,7 @@
           "test": "survives a remount and the next keystroke: \"3. a\\n5. b\"",
           "status": "passed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.87012500000003,
+          "duration_ms": 1.8047920000000204,
           "reason": null
         },
         {
@@ -249,7 +249,7 @@
           "test": "survives a remount and the next keystroke: \"- a\\n* b\"",
           "status": "passed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.460125000000005,
+          "duration_ms": 1.4173750000000496,
           "reason": null
         },
         {
@@ -257,7 +257,7 @@
           "test": "survives a remount and the next keystroke: \"- first\\n  continuation\"",
           "status": "passed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.5252910000000384,
+          "duration_ms": 1.4871669999999995,
           "reason": null
         },
         {
@@ -265,7 +265,7 @@
           "test": "survives a remount and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
           "status": "passed",
           "family": "survives a remount and the next keystroke:",
-          "duration_ms": 1.3924160000000256,
+          "duration_ms": 1.3627910000000156,
           "reason": null
         },
         {
@@ -273,7 +273,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"  * build\\n  * test\"",
           "status": "passed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.508166000000017,
+          "duration_ms": 1.4903749999999718,
           "reason": null
         },
         {
@@ -281,7 +281,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"1. a\\n1. b\"",
           "status": "passed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.1952909999999974,
+          "duration_ms": 1.1525000000000318,
           "reason": null
         },
         {
@@ -289,7 +289,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"3. a\\n5. b\"",
           "status": "passed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.1441659999999843,
+          "duration_ms": 1.1055000000000064,
           "reason": null
         },
         {
@@ -297,7 +297,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"- a\\n* b\"",
           "status": "passed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.150874999999985,
+          "duration_ms": 1.1707079999999905,
           "reason": null
         },
         {
@@ -305,7 +305,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"- first\\n  continuation\"",
           "status": "passed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.028915999999981,
+          "duration_ms": 0.9688750000000255,
           "reason": null
         },
         {
@@ -313,7 +313,7 @@
           "test": "survives a failed-send restore and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
           "status": "passed",
           "family": "survives a failed-send restore and the next keystroke:",
-          "duration_ms": 1.1475409999999897,
+          "duration_ms": 1.0734170000000063,
           "reason": null
         },
         {
@@ -321,7 +321,7 @@
           "test": "renders repeated numbering as one ordered list",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 10.736750000000029,
+          "duration_ms": 10.641666999999984,
           "reason": null
         },
         {
@@ -329,7 +329,7 @@
           "test": "renders bold inside a list item",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 3.305708999999979,
+          "duration_ms": 3.312458000000049,
           "reason": null
         },
         {
@@ -337,7 +337,7 @@
           "test": "renders mixed bullet markers as a list",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 2.991792000000032,
+          "duration_ms": 2.9459170000000086,
           "reason": null
         },
         {
@@ -345,7 +345,7 @@
           "test": "renders a continuation line inside its list item",
           "status": "passed",
           "family": "sent markdown",
-          "duration_ms": 1.2104999999999677,
+          "duration_ms": 1.2369580000000155,
           "reason": null
         },
         {
@@ -353,7 +353,7 @@
           "test": "restores pasted text exactly: \"  * build\\n  * test\"",
           "status": "passed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 2.71225000000004,
+          "duration_ms": 2.898499999999956,
           "reason": null
         },
         {
@@ -361,7 +361,7 @@
           "test": "restores pasted text exactly: \"1. a\\n1. b\"",
           "status": "passed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.1838329999999928,
+          "duration_ms": 0.21825000000001182,
           "reason": null
         },
         {
@@ -369,7 +369,7 @@
           "test": "restores pasted text exactly: \"3. a\\n5. b\"",
           "status": "passed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.14850000000001273,
+          "duration_ms": 0.16620799999998326,
           "reason": null
         },
         {
@@ -377,7 +377,7 @@
           "test": "restores pasted text exactly: \"- a\\n* b\"",
           "status": "passed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.12695899999999938,
+          "duration_ms": 0.14933300000001282,
           "reason": null
         },
         {
@@ -385,7 +385,7 @@
           "test": "restores pasted text exactly: \"- first\\n  continuation\"",
           "status": "passed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.2665829999999687,
+          "duration_ms": 0.30374999999997954,
           "reason": null
         },
         {
@@ -393,7 +393,7 @@
           "test": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
           "status": "passed",
           "family": "restores pasted text exactly:",
-          "duration_ms": 0.1794999999999618,
+          "duration_ms": 0.20112499999999045,
           "reason": null
         }
       ]

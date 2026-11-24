@@ -2,6 +2,8 @@
 
 **Keep the full checks authoritative.** The strongest immediate opportunity is to surface the first actionable Linux or Windows failure while its job finishes. In 42 sampled failed jobs with an identifiable test report, the median interval from that report to job completion was **5m 34s**. The test-selection experiment found **zero eligible historical runs** in the ordinary-event sample. There is no measured evidence for dropping a required check today.
 
+A follow-up audit measured which composer tests detect visible text and formatting regressions. [Prompt-codec test value, leave-one-group-out results and historical bug replay](behavior-value/REPORT.md)
+
 ## What a PR or main push costs
 
 The run-created window spans October 25 00:00 through November 23 23:29 UTC, 2026. It covers 2,343 runs. Validate accounted for 2,254, with 1,294 successes, 317 failures, 631 cancellations and 12 skips at observation. Of these, 177 runs had multiple attempts, producing 2,485 attempts in total. The job sample comprises 181 runs across 93 strata. It includes 12 runs with no observed jobs. Deduplication removed 37 attempt records that repeated prior work under new job IDs. The ordinary comparison covers 1,527 PR runs and 694 main pushes, sampled at 47 and 42 respectively. Historical full-ci labels were unavailable. [Sampling and reproduction](history-methods.md)

@@ -12,7 +12,7 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
-from probe_tree import source_tree
+from probe_tree import check_teardown, source_tree
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -45,6 +45,7 @@ def run_variant(tree, modules, revision, reporter):
            '-t', FILTER, *[CHAT + suite for suite in SUITES]]
     start = time.monotonic()
     proc = subprocess.run(cmd, cwd=tree, env=env, capture_output=True, timeout=30)
+    check_teardown(proc)
     elapsed = round(time.monotonic() - start, 4)
     if not reporter.exists():
         sys.stderr.buffer.write(proc.stderr[-4000:])
