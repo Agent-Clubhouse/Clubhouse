@@ -124,6 +124,31 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(onModelChange).toHaveBeenCalledWith('opus', 'max');
   });
 
+  it('with no model, changes the effort alone through onEffortChange (#3797 gate 3)', () => {
+    const onEffortChange = vi.fn();
+    const { onModelChange } = renderComposer({ model: null, models: [], effort: 'low', efforts: ['low', 'high'], onEffortChange }, { modelSwitch: 'none' });
+    const pill = screen.getByTestId('chat-effort-pill');
+    expect(pill).not.toBeDisabled();
+    fireEvent.click(pill);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'High' }));
+    expect(onEffortChange).toHaveBeenCalledWith('high');
+    expect(onModelChange).not.toHaveBeenCalled();
+  });
+
+  it('with no model and no effort-only handler, the effort pill stays read-only, as before', () => {
+    renderComposer({ model: null, models: [], effort: 'low', efforts: ['low', 'high'] }, { modelSwitch: 'none' });
+    expect(screen.getByTestId('chat-effort-pill')).toBeDisabled();
+  });
+
+  it('with a model, the effort goes through onModelChange even when onEffortChange is given', () => {
+    const onEffortChange = vi.fn();
+    const { onModelChange } = renderComposer({ onEffortChange });
+    fireEvent.click(screen.getByTestId('chat-effort-pill'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Max' }));
+    expect(onModelChange).toHaveBeenCalledWith('opus', 'max');
+    expect(onEffortChange).not.toHaveBeenCalled();
+  });
+
   it('names every level in sentence case, xhigh as "Extra high" (#2181)', () => {
     expect(['none', 'low', 'medium', 'high', 'xhigh', 'max'].map(effortWord)).toEqual(['None', 'Low', 'Medium', 'High', 'Extra high', 'Max']);
   });

@@ -47,7 +47,8 @@ export type MobileCommand = CommandBase & (
   | (ChatTarget & { type: 'chat.permission'; requestId: string; optionId: string; /** The digest from the full-event route, for a request a phone was sent only a preview of (#2731). */ reviewedDigest?: string })
   | (ChatTarget & { type: 'chat.question'; requestId: string; answers: ChatQuestionAnswers })
   // `effort` omitted keeps a chosen effort the new model offers; null is the provider's default (capabilities.effortDefault).
-  | (ChatTarget & { type: 'chat.setModel'; model: string; effort?: string | null })
+  // `model` omitted changes the effort alone, for an agent that offers no model choice.
+  | (ChatTarget & { type: 'chat.setModel'; model?: string; effort?: string | null })
   | (ChatTarget & { type: 'chat.setLevel'; level: PermissionLevel })
   | { type: 'agent.start'; agentId: string; message?: string; resume?: boolean; expectedProvider?: string; expectedSessionId?: string; contractVersion?: 2; expectedState?: string; expectedNextWake?: ProviderNextWake }
   | { type: 'agent.stop'; agentId: string; waitForStopped?: boolean }
