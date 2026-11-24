@@ -189,3 +189,38 @@ it.each(pastedDrafts)('restores pasted text exactly: %j', (text) => {
   expect(serializePrompt(parsePrompt(text, { exact: true })).text).toBe(text);
   expect(serializePrompt(withoutSources(parsePrompt(text, { exact: true }))).text).toBe(text);
 });
+
+// Behavior-value focused assertions.
+it('behavior-value: preserves supported strong and emphasis semantics', () => {
+  const doc = parsePrompt('**bold** and *italic*');
+  expect(doc.firstChild?.child(0).marks.map((mark) => mark.type.name)).toEqual(['strong']);
+  expect(doc.firstChild?.child(2).marks.map((mark) => mark.type.name)).toEqual(['em']);
+});
+
+it('behavior-value: maps visible selections to slash token and marked text', () => {
+  const doc = parsePrompt('- **hello** /co');
+  const source = serializePrompt(doc);
+  const selectedSource = (visible: string) => {
+    let found: [number, number] | undefined;
+    doc.descendants((node, pos) => {
+      if (!node.isTextblock) return;
+      const start = node.textContent.indexOf(visible);
+      if (start >= 0) found = [pos + 1 + start, pos + 1 + start + visible.length];
+    });
+    expect(found).toBeDefined();
+    const [from, to] = found!;
+    expect(doc.textBetween(from, to)).toBe(visible);
+    return source.text.slice(source.positions[from], source.positions[to]);
+  };
+  expect(selectedSource('/co')).toBe('/co');
+  expect(selectedSource('hello')).toBe('hello');
+  expect(selectedSource('hello')).not.toContain('*');
+});
+
+it('behavior-value: keeps fenced emphasis visibly literal and unmarked', () => {
+  const text = '```\n**literal**\n```';
+  const doc = parsePrompt(text);
+  expect(doc.child(1).textContent).toBe('**literal**');
+  expect(doc.child(1).firstChild?.marks).toEqual([]);
+  expect(serializePrompt(doc).text).toBe(text);
+});
