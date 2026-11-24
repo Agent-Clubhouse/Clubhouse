@@ -137,7 +137,7 @@ describe('steer claim', () => {
     await tick();
     expect(of('turn_ended')).toHaveLength(0);
     expect(of('notice')).toHaveLength(0);
-    expect(drafts.at(-1)).toMatchObject({ type: 'error', data: { code: 'process_exited', fatal: true } });
+    expect(drafts[drafts.length - 1]).toMatchObject({ type: 'error', data: { code: 'process_exited', fatal: true } });
     await expect(session.send(text('again'), 'steer')).rejects.toThrow(/not open/);
     expect(agent.promptsWritten).toBe(2);
   });
@@ -276,7 +276,7 @@ describe('effort without a model choice (gate 3)', () => {
     await session.setEffort!('high');
     expect(agent.sentRequests('session/set_config_option')).toEqual([{ sessionId: 'session-1', configId: 'thinking', value: 'high' }]);
     await tick();
-    expect(of('session_info').at(-1)?.data).toEqual({ effort: 'high' });
+    expect(of('session_info').slice(-1)[0]?.data).toEqual({ effort: 'high' });
     expect(of('model_changed')).toEqual([]);
   });
 
