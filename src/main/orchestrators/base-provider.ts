@@ -231,7 +231,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
       await fsp.rename(temp, filePath);
       return true;
     } catch (err) {
-      await fsp.rm(temp, { force: true }).catch(() => undefined);
+      await fsp.rm(temp, { force: true }).catch((): void => undefined);
       throw err;
     }
   }
