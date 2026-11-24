@@ -235,8 +235,8 @@ interface OpenTurn {
 /** Thrown when setup fails for want of a login, in words isLoginRequiredError recognises. */
 export class AcpAuthRequiredError extends Error {
   readonly needsLogin = true;
-  constructor(readonly loginHint: string | undefined, detail: string) {
-    super(`Authentication required${loginHint ? `: ${loginHint}` : ''} (${detail})`);
+  constructor(readonly loginHint: string, detail: string) {
+    super(`Authentication required: ${loginHint} (${detail})`);
   }
 }
 
@@ -319,7 +319,7 @@ class AcpDriverSession implements ChatDriverSession {
     try {
       await this.setUp(opts, setup, n);
     } catch (err) {
-      if (err instanceof RpcError && err.code === ACP_ERROR_CODES.authRequired) throw new AcpAuthRequiredError(this.spec.loginHint, err.message);
+      if (this.spec.loginHint && err instanceof RpcError && err.code === ACP_ERROR_CODES.authRequired) throw new AcpAuthRequiredError(this.spec.loginHint, err.message);
       throw err;
     }
 
@@ -465,7 +465,7 @@ class AcpDriverSession implements ChatDriverSession {
       // Without the steer claim the stable schema has no way in; queue: 'client' means the runtime holds it.
       throw new Error(`Cannot ${delivery} into a running ACP turn; queue it until the turn ends`);
     }
-    if (!running && delivery === 'steer') throw new Error('No running ACP turn to steer');
+    // A steer that finds the turn already over starts a new one, and says so.
     // Anything that can fail before the prompt is written fails the send itself.
     const prompt = toAcpPrompt(content, this.negotiated.prompt);
     const answer = this.conn.request<PromptResponse>(ACP_AGENT_METHODS.sessionPrompt, { sessionId: this.sessionId, prompt }, { timeoutMs: null });
@@ -570,6 +570,7 @@ class AcpDriverSession implements ChatDriverSession {
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
+    if (!this.spec.levels) throw new Error(`This ACP agent has no live permission levels (asked for ${level})`);
     if (!this.capabilities.liveLevels.includes(level)) {
       throw new Error(`This ACP agent can't switch to the ${PERMISSION_LEVEL_LABELS[level]} level without a restart`);
     }
