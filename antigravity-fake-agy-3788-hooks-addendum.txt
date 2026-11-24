@@ -1,0 +1,31 @@
+Evidence addendum: Antigravity hooks documentation behind fake-agy hook shapes (#3788)
+Source under review: d744d187ac06f6a69538143bd9267ee043ff9574 (tree e47a147f10360af322b21635aed75f401bc4a4b1). No source change.
+Captured by antigravity-fixtures (H1). Its own fetch; the integrator's capture was not reused because no file or hash of it was available to compare.
+
+1. Capture
+URL: https://antigravity.google/docs/hooks/
+Fetched: 2026-11-24T04:39:21Z (curl -sS -L, one request, no auth, no cookies)
+HTTP/2 200; server date: Tue, 24 Nov 2026 04:39:21 GMT
+last-modified: Tue, 24 Nov 2026 00:03:43 GMT; etag: "6b04d45f-3aa41"; content-length: 240193
+sha256(raw HTML, 240193 bytes): 62b63466fdaa995dfcb375957408b77547baf78bc3dad5ba6c524aba2b77e33f
+sha256(response headers): 5b9599ed662013a4d1e5b0fcf0748d8ff277669afcf9abff76f8ee9f6faa5edf
+The raw page is not committed: it is Google's content. Only the short quotes below are, for attribution.
+Note: last-modified is after the 2026-11-23 reads by the design doc and the integrator. The quotes below match what those reads reported for every shape the fake depends on.
+
+2. Quotes from the captured page (text extracted from the HTML; whitespace collapsed)
+a. Location: "Workspace level : .agents/hooks.json in your workspace root. Global level : ~/.gemini/config/hooks.json ."
+   fake: reads cwd/.agents/hooks.json only and never the global file (the narrower choice was deliberate, so it never touches HOME).
+b. Named-hook map example: { "my-linter-hook" : { "PostToolUse" : [ { "matcher" : "run_command" , "hooks" : [ { "type" : "command" , "command" : "./scripts/lint.sh" , "timeout" : 10 } ] } ] }, "safety-gate" : { "enabled" : false , "PreToolUse" : [ { "matcher" : "run_command" , "hooks" : [ { "command" : "./scripts/safety-check.sh" } ] } ] }, ...
+c. "enabled boolean Optional. Set to false to disable the hook without removing it. Defaults to true ."
+d. Non-tool events: "... and Stop , the structure is simpler (a list of handlers directly under the event key) and the matcher is ignored."
+e. Handler: "type string Optional. Currently only "command" is supported. Defaults to "command" . command string Required. The shell command to execute. timeout integer Optional. Timeout in seconds. Defaults to 30 ."
+   fake: (Number(handler.timeout) || 30) * 1000 ms, capped by hooks.maxTimeoutMs (a test-only cap, default 10000 ms).
+f. "Hooks receive input through stdin as JSON and return output through stdout as JSON. Field names use camelCase."
+g. PreToolUse output example: { "decision" : "ask" , "reason" : "Requires confirmation for test execution." , "permissionOverrides" : [ "command(npm test)" ] }
+Not on the page (still assumptions, configurable and labelled in report.synthesized): what a non-zero exit, timeout or non-JSON stdout means; whether handlers inherit the environment.
+
+3. Explicit limits of d744d187 (kept, not fixed)
+L1 Schema check limit. fake-agy.test.ts checks each message the fake writes against the vendored ACP schema only at the top level: the method exists on the right side, the definition's top-level required fields are present, update kinds are in ACP_SESSION_UPDATE_KINDS, and stop reasons are in the StopReason enum. It is not full JSON Schema validation. Nested shapes, field types and nested enums (tool call content, config option variants, permission options, auth method variants) are not validated.
+L2 argv verbatim and report privacy. report.argv records every agy argument verbatim, and the TUI banner prints argv to stderr. Everything else in the report is reduced: env is an allowlist, the hook nonce and credentials are recorded by presence or name only, and MCP env and header values are stripped. A caller that put a secret on the command line would have it recorded. Clubhouse's design passes no secrets on argv, and the tests use only synthetic arguments.
+L3 Hook grandchild cleanup. On a handler timeout the fake kills only its direct child (the shell) and stops waiting at once. A grandchild started by the handler command can survive and keep running until it exits by itself. The fake does not kill the process tree.
+L4 run5 seal gap. Run5 (gate START 2026-11-24T04:36:03Z, END 04:36:08Z, rc=0) recorded head and tree in run5-admission.txt but took no clean git status --porcelain seal at that moment. The file-hash seal in seal-before-vitest.txt belongs to b0527b09a, before the vitest-3 attempt. A clean read taken now cannot retroactively prove the worktree state during run5. The final integration proof must seal all bytes and the clean state itself.
