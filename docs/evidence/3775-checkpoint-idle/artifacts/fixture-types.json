@@ -1,0 +1,6 @@
+{
+  "extends": "../../../tsconfig.json",
+  "files": [
+    "../../../src/main/services/agent-runtime/checkpoint-tracker.test.ts"
+  ]
+}

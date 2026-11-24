@@ -1,0 +1,268 @@
+2026-11-22T03:22:40Z START lane-p2 idle=91% unused=7409M avail=34852M freepct=87 comp=717M swap=3769M pid=1686 cmd=npx vitest run --project main src/main/services/annex-control.test.ts --maxWorkers=2 -t route-budget disposition
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-control.test.ts (190 tests | 8 failed | 169 skipped) 38ms
+     × refuses only the known GET response above its route budget before credit 9ms
+     × refuses only the known POST response above its route budget before credit 2ms
+     × keeps the route bound with excess=1, largerLocalBound=false 1ms
+     × keeps the route bound with excess=1, largerLocalBound=true 0ms
+     × drops a rejected token's late payload without effects and completes a fresh response on the same link 1ms
+     × still closes on a rejected token replay into a currently-owned fresh request 0ms
+     × retains write history after response refusal without automatic retry or reexecution 0ms
+     × releases cancelled sender transfers and response slots across more than one full request window 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > refuses only the known GET response above its route budget before credit
+AssertionError: expected { refused: { …(3) }, …(9) } to deeply equal { refused: { …(3) }, …(9) }
+
+- Expected
++ Received
+
+  {
+-   "cancels": 1,
++   "cancels": 0,
+    "credits": 0,
+-   "ready": true,
++   "ready": false,
+    "refused": {
+-     "code": "response_too_large",
++     "code": "transport_unavailable",
+      "indeterminate": false,
+      "requestId": "budget-owner",
+    },
+    "rejectedBinary": 0,
+-   "requesterClosed": null,
+-   "servedClosed": 0,
+-   "subscriptionEnds": [],
+-   "targetClosed": null,
+-   "unrelatedFailures": [],
++   "requesterClosed": {
++     "code": 4400,
++     "reason": "protocol",
++   },
++   "servedClosed": 1,
++   "subscriptionEnds": [
++     "transport_unavailable",
++   ],
++   "targetClosed": {
++     "code": 4400,
++     "reason": "protocol",
++   },
++   "unrelatedFailures": [
++     {
++       "code": "transport_unavailable",
++       "indeterminate": false,
++       "requestId": "unrelated-read",
++     },
++     {
++       "code": "transport_unavailable",
++       "indeterminate": true,
++       "requestId": "unrelated-write",
++     },
++   ],
+  }
+
+ ❯ src/main/services/annex-control.test.ts:242:24
+    240|         unrelatedFailures,
+    241|       };
+    242|       expect(observed).toEqual({
+       |                        ^
+    243|         refused: { code: 'response_too_large', indeterminate: method =…
+    244|         requesterClosed: null, targetClosed: null, ready: true, credit…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > refuses only the known POST response above its route budget before credit
+AssertionError: expected { refused: { …(3) }, …(9) } to deeply equal { refused: { …(3) }, …(9) }
+
+- Expected
++ Received
+
+  {
+-   "cancels": 1,
++   "cancels": 0,
+    "credits": 0,
+-   "ready": true,
++   "ready": false,
+    "refused": {
+-     "code": "response_too_large",
++     "code": "transport_unavailable",
+      "indeterminate": true,
+      "requestId": "budget-owner",
+    },
+    "rejectedBinary": 0,
+-   "requesterClosed": null,
+-   "servedClosed": 0,
+-   "subscriptionEnds": [],
+-   "targetClosed": null,
+-   "unrelatedFailures": [],
++   "requesterClosed": {
++     "code": 4400,
++     "reason": "protocol",
++   },
++   "servedClosed": 1,
++   "subscriptionEnds": [
++     "transport_unavailable",
++   ],
++   "targetClosed": {
++     "code": 4400,
++     "reason": "protocol",
++   },
++   "unrelatedFailures": [
++     {
++       "code": "transport_unavailable",
++       "indeterminate": false,
++       "requestId": "unrelated-read",
++     },
++     {
++       "code": "transport_unavailable",
++       "indeterminate": true,
++       "requestId": "unrelated-write",
++     },
++   ],
+  }
+
+ ❯ src/main/services/annex-control.test.ts:242:24
+    240|         unrelatedFailures,
+    241|       };
+    242|       expect(observed).toEqual({
+       |                        ^
+    243|         refused: { code: 'response_too_large', indeterminate: method =…
+    244|         requesterClosed: null, targetClosed: null, ready: true, credit…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > keeps the route bound with excess=1, largerLocalBound=false
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > keeps the route bound with excess=1, largerLocalBound=true
+AssertionError: expected ControlRequestError: transport_unavailable { …(3) } to match object { code: 'response_too_large', …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "response_too_large",
++ ControlRequestError {
++   "code": "transport_unavailable",
+    "indeterminate": false,
+  }
+
+ ❯ src/main/services/annex-control.test.ts:308:38
+    306|     const pending = control.request(TARGET, { method: 'GET', path },
+    307|       largerLocalBound ? { maxResponseBytes: limit + 1024 } : {});
+    308|     if (excess) await expect(pending).rejects.toMatchObject({ code: 'r…
+       |                                      ^
+    309|     else expect((await pending).body.equals(body)).toBe(true);
+    310|     await flush();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > drops a rejected token's late payload without effects and completes a fresh response on the same link
+AssertionError: expected ControlRequestError: transport_unavailable { …(3) } to match object { code: 'response_too_large', …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "response_too_large",
++ ControlRequestError {
++   "code": "transport_unavailable",
+    "indeterminate": false,
+  }
+
+ ❯ src/main/services/annex-control.test.ts:355:23
+    353|       .then(() => { delivered = true; }, (error: unknown) => {
+    354|         if (!(error instanceof control.ControlRequestError)) throw err…
+    355|         expect(error).toMatchObject({ code: 'response_too_large', inde…
+       |                       ^
+    356|       });
+    357|     await rejected;
+ ❯ src/main/services/annex-control.test.ts:357:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > still closes on a rejected token replay into a currently-owned fresh request
+AssertionError: expected ControlRequestError: transport_unavailable { …(3) } to match object { code: 'response_too_large' }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "response_too_large",
++ ControlRequestError {
++   "code": "transport_unavailable",
+  }
+
+ ❯ src/main/services/annex-control.test.ts:387:106
+    385|       : new Promise((resolve) => { release = resolve; });
+    386|     const { requesterWs, targetWs } = await connected(['request', 'bul…
+    387|     await expect(control.request(TARGET, { method: 'GET', path }, { re…
+       |                                                                                                          ^
+    388|       .rejects.toMatchObject({ code: 'response_too_large' });
+    389|     await flush();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > retains write history after response refusal without automatic retry or reexecution
+AssertionError: expected ControlRequestError: transport_unavailabl… { …(3) } to match object { code: 'response_too_large', …(2) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "response_too_large",
++ ControlRequestError {
++   "code": "transport_unavailable",
+    "indeterminate": true,
+    "requestId": "budget-write-history",
+  }
+
+ ❯ src/main/services/annex-control.test.ts:414:88
+    412|     const { requesterWs } = await connected(['request', 'bulk']);
+    413|     const input: ControlHttpRequest = { method: 'POST', path, body: '{…
+    414|     await expect(control.request(TARGET, input, { requestId: 'budget-w…
+       |                                                                                        ^
+    415|       .rejects.toMatchObject({ code: 'response_too_large', indetermina…
+    416|     expect(dispatch).toHaveBeenCalledOnce();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > route-budget disposition (#3714) > releases cancelled sender transfers and response slots across more than one full request window
+AssertionError: expected ControlRequestError: transport_unavailable { …(3) } to match object { code: 'response_too_large', …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "response_too_large",
++ ControlRequestError {
++   "code": "transport_unavailable",
+    "indeterminate": false,
+  }
+
+ ❯ src/main/services/annex-control.test.ts:431:108
+    429|     const { requesterWs, targetWs } = await connected(['request', 'bul…
+    430|     for (let index = 0; index <= control.MAX_IN_FLIGHT; index++) {
+    431|       await expect(control.request(TARGET, { method: 'GET', path }, { …
+       |                                                                                                            ^
+    432|         .rejects.toMatchObject({ code: 'response_too_large', indetermi…
+    433|       await flush();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 13 passed | 169 skipped (190)
+   Start at  22:22:40
+   Duration  234ms (transform 96ms, setup 5ms, import 116ms, tests 38ms, environment 0ms)
+
+2026-11-22T03:22:40Z END lane-p2 rc=1

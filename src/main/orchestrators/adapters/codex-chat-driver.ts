@@ -13,6 +13,7 @@ import type {
   ChatDriverProbe,
   ChatDriverSession,
   ChatDriverStartOptions,
+  ChatSendReceipt,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
@@ -482,6 +483,10 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
+    return (await this.sendWithReceipt(content, delivery)).delivery;
+  }
+
+  async sendWithReceipt(content: ContentBlock[], delivery: MessageDelivery): Promise<ChatSendReceipt> {
     this.logRedactor.remember(content);
     const threadId = this.requireThread();
     const command = parseCodexSlashCommand(content);
@@ -494,6 +499,7 @@ class CodexChatSession implements ChatDriverSession {
         throw new Error(`Finish or stop the current turn before running /${command.name}`);
       }
       this.commandRunning = true;
+      let nativeTurn: ChatSendReceipt['nativeTurn'];
       try {
         if (command.name === 'compact') {
           await this.compact();
@@ -506,6 +512,7 @@ class CodexChatSession implements ChatDriverSession {
           // review runs with the thread's current ones.
           const result = await this.client.request('review/start', { threadId, target: command.target, delivery: 'inline' });
           const turn = result?.turn;
+          nativeTurn = { id: turn.id, completed: turn.status !== 'inProgress' || turn.id === this.lastEndedTurnId };
           if (turn?.status === 'inProgress' && turn.id !== this.lastEndedTurnId) this.commandTurnId = turn.id;
           else this.commandRunning = false;
         }
@@ -513,13 +520,13 @@ class CodexChatSession implements ChatDriverSession {
         this.commandRunning = false;
         throw err;
       }
-      return 'prompt';
+      return { delivery: 'prompt', ...(nativeTurn && { nativeTurn }) };
     }
     const input = toCodexInput(content);
     if (delivery === 'steer' && this.client.getActiveTurnId(threadId)) {
       try {
         await this.client.turnSteer(threadId, input);
-        return 'steer';
+        return { delivery: 'steer' };
       } catch (err) {
         // The turn can end between the check and the steer, and Codex then
         // rejects the stale expectedTurnId. With no turn left running, the
@@ -533,12 +540,16 @@ class CodexChatSession implements ChatDriverSession {
     const overrides = this.nextTurn;
     this.nextTurn = {};
     try {
-      await this.client.turnStart({ threadId, input, ...overrides });
+      const { turn } = await this.client.turnStart({ threadId, input, ...overrides });
+      return { delivery: 'prompt', nativeTurn: { id: turn.id, completed: turn.status !== 'inProgress' || turn.id === this.lastEndedTurnId } };
     } catch (err) {
       this.nextTurn = { ...overrides, ...this.nextTurn };
       throw err;
     }
-    return 'prompt';
+  }
+
+  isClosed(): boolean {
+    return !this.client.alive;
   }
 
   async interrupt(): Promise<void> {

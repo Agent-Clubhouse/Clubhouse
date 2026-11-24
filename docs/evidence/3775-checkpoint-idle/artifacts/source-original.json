@@ -1,0 +1,72 @@
+{
+  "sourceCommit": "adcb284b217030163574b2b094df2b482cdc8684",
+  "base": "30bf4c2d11ad8027b1e408a423794bccbc52c9d5",
+  "tree": "1f23b1350640314a18b3e9aee66de5711f3b49fc",
+  "changedPaths": [
+    "src/main/services/agent-runtime/checkpoint-tracker.test.ts"
+  ],
+  "node": "v24.22.1",
+  "platform": "darwin",
+  "inputs": [
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.test.ts",
+      "bytes": 15733,
+      "sha256": "913d21b98b995c3867ec30a937e8819685e264f4c3989682dfc98b7ba59b1796"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoint-tracker.ts",
+      "bytes": 15348,
+      "sha256": "f71f8ab65d759d717e3e805e60db84fe4576666b20733f9d037f080bc01ecffb"
+    },
+    {
+      "path": "src/main/services/agent-runtime/checkpoints.ts",
+      "bytes": 24430,
+      "sha256": "219a0194154b42c9a6eb615e0e3d8b9cbe3c5e2587158ceb8d061fb27613d5fe"
+    },
+    {
+      "path": "test/checkpoint-fixture-lifetime.ts",
+      "bytes": 10432,
+      "sha256": "1595e7895bb714cd68a673cc5602da8343276bdfb4d63c30197638425f69fc5d"
+    },
+    {
+      "path": "test/dispatcher-work-owner.ts",
+      "bytes": 7342,
+      "sha256": "cffdfa8407a32eec3b6d8a4161e7e1baa956152d9c4e03809787a26fef8b2acb"
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "bytes": 379,
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680"
+    },
+    {
+      "path": "test/global-setup.ts",
+      "bytes": 658,
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e"
+    },
+    {
+      "path": "vitest.config.ts",
+      "bytes": 3220,
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 530,
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432"
+    },
+    {
+      "path": "package.json",
+      "bytes": 5782,
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 690814,
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d"
+    },
+    {
+      "path": "node_modules/.cache/3775-checkpoint-idle/fixture-types.json",
+      "bytes": 134,
+      "sha256": "f96121b20e098b064e78796367cfd42459831eb7e5f42ad1ceebeee97d38e6f1"
+    }
+  ]
+}

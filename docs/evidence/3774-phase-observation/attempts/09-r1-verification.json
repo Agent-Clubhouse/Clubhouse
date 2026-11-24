@@ -1,0 +1,16 @@
+[
+  {
+    "key": "08-final-output-red",
+    "failed": 2,
+    "passed": 1,
+    "skipped": 67,
+    "inputStable": true
+  },
+  {
+    "key": "09-final-output-fixed",
+    "failed": 0,
+    "passed": 3,
+    "skipped": 67,
+    "inputStable": true
+  }
+]

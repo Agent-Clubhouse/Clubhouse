@@ -1,0 +1,24 @@
+[lane-3613-p2-routes/budget-disposition-3714 353147dd7] test(annex): freeze route-budget blast-radius discriminator (#3714)
+ 2 files changed, 152 insertions(+)
+ create mode 100644 docs/evidence/3714-route-budget/capture.mjs
+node:fs:621
+  return binding.open(
+                 ^
+
+Error: ENOENT: no such file or directory, open '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/shared/chat.ts'
+    at Object.openSync (node:fs:621:18)
+    at readFileSync (node:fs:487:35)
+    at file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3714-route-budget/capture.mjs:39:54
+    at Array.map (<anonymous>)
+    at seal (file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3714-route-budget/capture.mjs:39:18)
+    at file:///Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3714-route-budget/capture.mjs:41:16
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/shared/chat.ts'
+}
+
+Node.js v24.22.1

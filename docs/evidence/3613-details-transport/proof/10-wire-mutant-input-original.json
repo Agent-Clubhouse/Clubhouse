@@ -1,0 +1,8 @@
+{
+  "parent": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "mutation": "Adopt a wire-provided snapshotReceipt at accepted mint instead of always local UUID; both private eligibility/currentness helpers restored exactly",
+  "sourceSHA256": "41ce570f328c82854418bc02241b372bfac9d344ecaf7a45f904daa9628f02ac",
+  "fixtureSHA256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6",
+  "selector": "mints and exports a local receipt only from the accepted current reverse snapshot",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project main src/main/services/annex-client.test.ts -t \"mints and exports a local receipt only from the accepted current reverse snapshot\" --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/details-transport/10-wire-mutant-original.xml"
+}

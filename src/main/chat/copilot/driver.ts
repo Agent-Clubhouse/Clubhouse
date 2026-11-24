@@ -285,6 +285,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private interrupting = false;
   private closing = false;
   private finished = false;
+  /** The CLI exited; set before the driver closes its own turn and requests. */
+  private exited = false;
   private nextRequest = 0;
   private turnTokens: TokenUsage | undefined;
   private sessionTokens: TokenUsage | undefined;
@@ -605,6 +607,10 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     if (ownsTurn && !continues) this.endTurn(this.interrupting ? 'cancelled' : 'end_turn');
   }
 
+  isClosed(): boolean {
+    return this.exited || this.finished;
+  }
+
   async interrupt(): Promise<void> {
     if (this.turnRunning) this.interrupting = true;
     this.settlePending('agent');
@@ -917,6 +923,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   /** The CLI is gone. The SDK fires no session event for this, so the driver ends the session itself. */
   private onExit(): void {
     if (this.finished) return;
+    this.exited = true;
     this.log(this.closing ? 'info' : 'warn', 'Copilot CLI exited', {
       agentId: this.opts.agentId,
       nativeSessionId: this.sdk?.sessionId,

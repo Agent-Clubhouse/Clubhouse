@@ -1,0 +1,159 @@
+2026-11-21T22:52:32Z START lane-p2 idle=91% unused=4588M avail=30918M freepct=87 comp=740M swap=3809M pid=96734 cmd=npm test -- --project main src/main/services/annex-client.test.ts src/main/services/annex-client-buffer.test.ts src/main/services/annex-control.test.ts src/main/services/annex-devices.test.ts --maxWorkers=2
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/annex-client.test.ts src/main/services/annex-client-buffer.test.ts src/main/services/annex-control.test.ts src/main/services/annex-devices.test.ts --maxWorkers=2
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-client-buffer.test.ts (30 tests | 1 failed) 200ms
+       × stops trimming after a disconnect, since a restarted satellite counts from zero 5ms
+ ❯ |main| src/main/services/annex-client.test.ts (363 tests | 9 failed) 35472ms
+       × drops an older snapshot on one connection, but always takes a new connection's first 3ms
+         × ignores a stale prior-epoch agent denial rather than clearing a fresh connection receipt 5005ms
+         × ignores a stale prior-epoch role denial rather than clearing a fresh connection receipt 5011ms
+         × ignores a stale prior-epoch canvas denial rather than clearing a fresh connection receipt 5009ms
+         × power-resume revalidation withdraws the receipt and fences an in-flight agent read until the new socket attests 5008ms
+         × power-resume revalidation withdraws the receipt and fences an in-flight canvas read until the new socket attests 5006ms
+         × power-resume revalidation withdraws the receipt and fences an in-flight role read until the new socket attests 5011ms
+       × builds every outbound connection from pinned options (source check) 5ms
+         × reads only controller pages and sessions on an authorized reverse route without a main address 3ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client-buffer.test.ts > annex-client remote PTY buffer cache > seeding from the satellite (#2324) > stops trimming after a disconnect, since a restarted satellite counts from zero
+AssertionError: expected [] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+- [
+-   ObjectContaining {
+-     "data": "after restart",
+-   },
+- ]
++ []
+
+ ❯ src/main/services/annex-client-buffer.test.ts:518:36
+    516|
+    517|       livePtyData('after restart', 13);
+    518|       expect(forwardedPtyEvents()).toEqual([expect.objectContaining({ …
+       |                                    ^
+    519|     });
+    520|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > snapshot order > drops an older snapshot on one connection, but always takes a new connection's first
+TypeError: Cannot read properties of null (reading 'projects')
+ ❯ shown src/main/services/annex-client.test.ts:1222:67
+    1220|       await bonjourFindCallback!(makeService());
+    1221|       await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+    1222|       const shown = () => (annexClient.getSatellite(FINGERPRINT)!.snap…
+       |                                                                   ^
+    1223|
+    1224|       messageHandler!(snapshot(100, 'first'));
+ ❯ src/main/services/annex-client.test.ts:1225:14
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > ignores a stale prior-epoch agent denial rather than clearing a fresh connection receipt
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > ignores a stale prior-epoch role denial rather than clearing a fresh connection receipt
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > ignores a stale prior-epoch canvas denial rather than clearing a fresh connection receipt
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/main/services/annex-client.test.ts:3045:52
+    3043|       });
+    3044|
+    3045|       it.each(['agent', 'role', 'canvas'] as const)('ignores a stale p…
+       |                                                    ^
+    3046|         await discover(); sockets[0].handlers.open(); send(0, 'snapsho…
+    3047|         const finish = answer(403, {}, true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > power-resume revalidation withdraws the receipt and fences an in-flight agent read until the new socket attests
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > power-resume revalidation withdraws the receipt and fences an in-flight canvas read until the new socket attests
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > power-resume revalidation withdraws the receipt and fences an in-flight role read until the new socket attests
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/main/services/annex-client.test.ts:3059:52
+    3057|       });
+    3058|
+    3059|       it.each(['agent', 'canvas', 'role'] as const)('power-resume reva…
+       |                                                    ^
+    3060|         await discover(); sockets[0].handlers.open(); send(0, 'snapsho…
+    3061|         const oldReceipt = current().snapshotReceipt, generation = cur…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > builds every outbound connection from pinned options (source check)
+AssertionError: expected 'te: sat,\n    connectionEpoch: sat ? …' to contain '...tlsOptions'
+
+- Expected
++ Received
+
+- ...tlsOptions
++ te: sat,
++     connectionEpoch: sat ? connectionEpochs.get(sat.id) ?? 0 : 0, controller: new AbortController(),
++   };
++   const signal = input.signal ? AbortSignal.any([input.signal, lease.controller.signal]) : lease.controller.signal;
++   const requestId = randomUUID();
++   satelliteRequests.add(lease);
++   try {
++     const response = route.via === 'reverse'
++       ? await annexControl.request(key, input, { signal, requestId, timeoutMs: input.timeoutMs, maxResponseBytes: input.maxResponseBytes })
++       : await new Promise<SatelliteResponse>((resolve, reject) => {
++         let settled = false;
++         const fail = (error: Error) => { if (!settled) { settled = true; reject(error); } };
++         const req = https.request(`https://${bracketHost(route.route.host)}:${route.route.port}${input.path}`, {
++           ...pinnedTlsOptionsFor(key), method: input.method, timeout: input.timeoutMs, signal,
++           he
+
+ ❯ src/main/services/annex-client.test.ts:3589:81
+    3587|       expect(calls.length).toBeGreaterThanOrEqual(9);
+    3588|       for (const call of calls) {
+    3589|         expect(source.slice(Math.max(0, call.index! - 700), call.index…
+       |                                                                                 ^
+    3590|       }
+    3591|       const assignments = [...source.matchAll(/const tlsOptions = ([^;…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > chat across desktops (#2390) > controller-only request routes > reads only controller pages and sessions on an authorized reverse route without a main address
+AssertionError: promise resolved "{ status: 200, …(1) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "body": {
++     "events": [],
++     "readOnly": true,
++     "version": 1,
++   },
++   "status": 200,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:4586:76
+    4584|         expect(annexClient.isMachineConnected(FP)).toBe(false);
+    4585|         expect(await annexClient.requestAgentSettings(FP, 'a')).toEqua…
+    4586|         await expect(annexClient.postToMachine(FP, '/api/v1/anything',…
+       |                                                                            ^
+    4587|         expect(annexControl.request).toHaveBeenCalledTimes(2);
+    4588|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+
+ Test Files  2 failed | 2 passed (4)
+      Tests  10 failed | 599 passed (609)
+   Start at  17:52:32
+   Duration  35.88s (transform 1.87s, setup 11ms, import 674ms, tests 36.29s, environment 0ms)
+
+2026-11-21T22:53:08Z END lane-p2 rc=1

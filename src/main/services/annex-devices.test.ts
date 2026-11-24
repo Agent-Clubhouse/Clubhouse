@@ -14,6 +14,7 @@ vi.mock('./annex-client', () => ({
   forgetSatellite: vi.fn(),
   satelliteAddress: vi.fn(() => undefined),
   getControllerReadObservation: vi.fn(),
+  isMachineConnected: vi.fn(),
 }));
 vi.mock('./annex-settings', () => ({ networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false, getSettings: vi.fn(() => ({ enableClient: true })) }));
 vi.mock('./annex-network-membership', () => ({
@@ -89,6 +90,18 @@ describe('annex device list', () => {
   it('shows a controller with no open socket as offline, with no problem to explain', () => {
     const [device] = buildDeviceList({ ...empty, peers: [peer({})] });
     expect(device).toMatchObject({ state: 'offline', problem: null });
+  });
+
+  it('keeps reverse live consumer state separate from a direct outbound observation', () => {
+    const [device] = buildDeviceList({
+      ...empty,
+      peers: [peer({ fingerprint: 'fp-sat', role: 'member', kind: 'desktop' })],
+      satellites: [satellite({})],
+      reach: new ReachTracker(),
+      controlOf: () => ({ acceptedHere: true, openedHere: false }),
+      directOf: () => false,
+    });
+    expect(device.reach?.outbound).toMatchObject({ state: 'up', via: 'reverse' });
   });
 
   it('maps satellite connection states', () => {

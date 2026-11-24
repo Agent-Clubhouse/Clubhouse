@@ -117,6 +117,7 @@ export async function fetchLeftOutIcons(
       let next = 0;
       const worker = async () => {
         while (next < missing.length) {
+          if (!getSnapshot()) return;
           const want = missing[next++];
           const key = keyOf(want.kind, want.id);
           let result: IconFetchResult;
@@ -126,6 +127,7 @@ export async function fetchLeftOutIcons(
             // telemetry-exempt: a failed icon is counted and retried within the limits above, and shows initials meanwhile
             result = { status: 'failed' };
           }
+          if (!getSnapshot()) return;
           if (result.status === 'ok') {
             state.have.set(key, { icon: want.icon, dataUrl: result.dataUrl });
             state.tried.delete(key);

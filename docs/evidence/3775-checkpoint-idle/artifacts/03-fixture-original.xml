@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="11" failures="0" errors="0" time="3.718606167">
+    <testsuite name="src/main/services/agent-runtime/checkpoint-tracker.test.ts" timestamp="2026-11-22T08:39:46.150Z" hostname="Masons-MacBook-Pro-13346.local" tests="11" failures="0" errors="0" skipped="0" time="3.718606167">
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; names the pre-prompt snapshot as the turn start, checkpoints the end and reports the turn diff" time="0.354104">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; reverts a completed turn and undoes the revert with exact bytes and undoable state" time="0.644067917">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; works from a subdirectory, with paths relative to the repository root" time="0.486864666">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; marks turns shared when another agent works in the same worktree" time="0.372695292">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; marks a turn shared with a live terminal agent in the same worktree" time="0.266411667">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; marks and closes a turn that ends before its start checkpoint is written" time="0.261863083">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; reports a revert in progress so new prompts can wait for it" time="0.444395917">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; does not mark turns shared for agents in other worktrees" time="0.252759292">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; refuses to revert while the agent is mid-turn" time="0.25938875">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; shows session changes against the working tree" time="0.212491417">
+        </testcase>
+        <testcase classname="src/main/services/agent-runtime/checkpoint-tracker.test.ts" name="checkpoint tracker &gt; reports unavailable outside a git repository and refuses to revert an unfinished turn" time="0.162867">
+        </testcase>
+    </testsuite>
+</testsuites>

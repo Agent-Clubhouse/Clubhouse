@@ -1,0 +1,45 @@
+2026-11-22T01:58:07Z START lane-p2 idle=86% unused=6112M avail=33750M freepct=87 comp=722M swap=3777M pid=69540 cmd=npx tsc --noEmit --project docs/annex-reverse-routes.tsconfig.json
+src/main/ipc/annex-handlers.test.ts(120,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(126,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(134,58): error TS2345: Argument of type '{ enableServer: true; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: true; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(142,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(149,58): error TS2345: Argument of type '{ enableServer: false; enableClient: true; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: true; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(156,58): error TS2345: Argument of type '{ enableServer: true; enableClient: true; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: true; enableClient: true; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(168,58): error TS2345: Argument of type '{ enableServer: boolean; enableClient: boolean; deviceName: string; autoReconnect: boolean; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: boolean; enableClient: boolean; deviceName: string; autoReconnect: boolean; }' is missing the following properties from type 'AnnexSettings': alias, icon, color
+src/main/ipc/annex-handlers.test.ts(181,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(190,58): error TS2345: Argument of type '{ enableServer: boolean; enableClient: boolean; deviceName: string; loopbackOnly: boolean; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: boolean; enableClient: boolean; deviceName: string; loopbackOnly: boolean; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(204,58): error TS2345: Argument of type '{ enableServer: boolean; enableClient: boolean; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: boolean; enableClient: boolean; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(213,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(221,58): error TS2345: Argument of type '{ enableServer: true; enableClient: true; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: true; enableClient: true; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(229,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(239,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(253,54): error TS2345: Argument of type '{ advertising: true; port: number; pin: string; connectedCount: number; }' is not assignable to parameter of type 'AnnexStatus & { pairingPort: number; tlsEnabled: boolean; pairingPaused: boolean; }'.
+  Type '{ advertising: true; port: number; pin: string; connectedCount: number; }' is missing the following properties from type 'AnnexStatus': fingerprint, alias, icon, color
+src/main/ipc/annex-handlers.test.ts(392,58): error TS2345: Argument of type '{ enableServer: true; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: true; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(399,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(405,58): error TS2345: Argument of type '{ enableServer: true; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: true; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(420,58): error TS2345: Argument of type '{ enableServer: false; enableClient: true; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: true; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(427,58): error TS2345: Argument of type '{ enableServer: false; enableClient: false; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: false; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/ipc/annex-handlers.test.ts(433,58): error TS2345: Argument of type '{ enableServer: false; enableClient: true; deviceName: string; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enableServer: false; enableClient: true; deviceName: string; }' is missing the following properties from type 'AnnexSettings': alias, icon, color, autoReconnect
+src/main/services/annex-client.test.ts(1250,42): error TS7018: Object literal's property 'satellite' implicitly has an 'any' type.
+2026-11-22T01:58:16Z END lane-p2 rc=2

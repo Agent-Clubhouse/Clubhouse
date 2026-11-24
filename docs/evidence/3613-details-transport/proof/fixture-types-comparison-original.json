@@ -1,0 +1,452 @@
+{
+  "baseline": "61e64c099b05ccfc663adbe5432f46faa2909359",
+  "candidate": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "baselineDiagnostics": 54,
+  "candidateDiagnostics": 54,
+  "normalizedFullDiagnosticMultisetEqual": true,
+  "orderedCompilerInputCount": 3956,
+  "orderedPathsEqual": true,
+  "unchangedBracketedInputHashes": 3954,
+  "changedFiles": [
+    "src/main/services/annex-client.ts",
+    "src/main/services/annex-client.test.ts"
+  ],
+  "actualTestAndProductionIncluded": true,
+  "flagsAndConfigEqual": true,
+  "changedHunkDiagnostics": 0,
+  "compilerStatus": "Both actual full fixture checks FAIL54 exit2; no compilerPASS or independent typing acceptance inferred; distinct from prior139/1 dispositions",
+  "diagnosticMappings": [
+    {
+      "baselineLine": 694,
+      "candidateLine": 925,
+      "column": 45,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '[source: ControlConnectionSource][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1698,
+      "candidateLine": 1929,
+      "column": 54,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1699,
+      "candidateLine": 1930,
+      "column": 31,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1706,
+      "candidateLine": 1937,
+      "column": 54,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1713,
+      "candidateLine": 1944,
+      "column": 31,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1714,
+      "candidateLine": 1945,
+      "column": 31,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1722,
+      "candidateLine": 1953,
+      "column": 31,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1735,
+      "candidateLine": 1966,
+      "column": 54,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1748,
+      "candidateLine": 1979,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1753,
+      "candidateLine": 1984,
+      "column": 45,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1763,
+      "candidateLine": 1994,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1768,
+      "candidateLine": 1999,
+      "column": 40,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1779,
+      "candidateLine": 2010,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1780,
+      "candidateLine": 2011,
+      "column": 45,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1812,
+      "candidateLine": 2043,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1822,
+      "candidateLine": 2053,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1823,
+      "candidateLine": 2054,
+      "column": 33,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1845,
+      "candidateLine": 2076,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1846,
+      "candidateLine": 2077,
+      "column": 33,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1855,
+      "candidateLine": 2086,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1856,
+      "candidateLine": 2087,
+      "column": 33,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1870,
+      "candidateLine": 2101,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1879,
+      "candidateLine": 2110,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1880,
+      "candidateLine": 2111,
+      "column": 33,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1891,
+      "candidateLine": 2122,
+      "column": 33,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1924,
+      "candidateLine": 2155,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1934,
+      "candidateLine": 2165,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1946,
+      "candidateLine": 2177,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1962,
+      "candidateLine": 2193,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1976,
+      "candidateLine": 2207,
+      "column": 33,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 1992,
+      "candidateLine": 2223,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 2007,
+      "candidateLine": 2238,
+      "column": 56,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 2017,
+      "candidateLine": 2248,
+      "column": 31,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3277,
+      "candidateLine": 3508,
+      "column": 15,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ handlers: Record<string, (...args: any[]) => void>; terminate: Mock<Procedure | Constructable>; ping: Mock<Procedure | Constructable>; close: Mock<...>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3287,
+      "candidateLine": 3518,
+      "column": 152,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '[channel: string, ...args: unknown[]][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3388,
+      "candidateLine": 3619,
+      "column": 17,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ handlers: Record<string, (...args: any[]) => void>; terminate: Mock<Procedure | Constructable>; ping: Mock<Procedure | Constructable>; close: Mock<...>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3483,
+      "candidateLine": 3725,
+      "column": 41,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3544,
+      "candidateLine": 3786,
+      "column": 41,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3728,
+      "candidateLine": 3970,
+      "column": 55,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3775,
+      "candidateLine": 4017,
+      "column": 15,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ handlers: Record<string, (...args: any[]) => void>; terminate: Mock<Procedure | Constructable>; ping: Mock<Procedure | Constructable>; close: Mock<...>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3846,
+      "candidateLine": 4088,
+      "column": 39,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3892,
+      "candidateLine": 4134,
+      "column": 39,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 3893,
+      "candidateLine": 4135,
+      "column": 39,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4059,
+      "candidateLine": 4301,
+      "column": 15,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4075,
+      "candidateLine": 4317,
+      "column": 22,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4298,
+      "candidateLine": 4540,
+      "column": 17,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4303,
+      "candidateLine": 4545,
+      "column": 24,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4304,
+      "candidateLine": 4546,
+      "column": 17,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4356,
+      "candidateLine": 4598,
+      "column": 22,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; handlers: Record<string, (...args: any[]) => void>; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4565,
+      "candidateLine": 4807,
+      "column": 25,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4588,
+      "candidateLine": 4830,
+      "column": 25,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4618,
+      "candidateLine": 4860,
+      "column": 25,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 4629,
+      "candidateLine": 4871,
+      "column": 48,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '{ url: string; method: string; body?: any; }[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    },
+    {
+      "baselineLine": 5406,
+      "candidateLine": 5649,
+      "column": 68,
+      "code": "TS2550",
+      "message": "Property 'at' does not exist on type '[peer: AnnexPeer][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.",
+      "sourceLineByteEqual": true
+    }
+  ]
+}

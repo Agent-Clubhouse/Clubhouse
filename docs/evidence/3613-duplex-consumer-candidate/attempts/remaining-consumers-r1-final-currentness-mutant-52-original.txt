@@ -1,0 +1,48 @@
+2026-11-22T00:16:45Z START lane-p2 idle=85% unused=6975M avail=33761M freepct=87 comp=741M swap=3785M pid=36191 cmd=npm test -- --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t never sends queued reverse icons directly|keeps the same omitted icons live
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t never sends queued reverse icons directly|keeps the same omitted icons live
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-client.test.ts (369 tests | 2 failed | 363 skipped) 25ms
+       × never sends queued reverse icons directly after pin retirement 7ms
+       × keeps the same omitted icons live on a fresh stream after link retirement 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > never sends queued reverse icons directly after pin retirement
+AssertionError: expected "request" to be called 4 times, but got 8 times
+ ❯ src/main/services/annex-client.test.ts:504:36
+    502|       expect(https.get).not.toHaveBeenCalled();
+    503|       expect(https.request).not.toHaveBeenCalled();
+    504|       expect(annexControl.request).toHaveBeenCalledTimes(4);
+       |                                    ^
+    505|       expect(broadcastToAllWindows).toHaveBeenCalledTimes(published);
+    506|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > keeps the same omitted icons live on a fresh stream after link retirement
+AssertionError: expected "request" to be called 13 times, but got 18 times
+ ❯ src/main/services/annex-client.test.ts:530:36
+    528|       subscriptions[1].handlers.onFrame(iconSnapshot());
+    529|       await new Promise((resolve) => setTimeout(resolve, 0));
+    530|       expect(annexControl.request).toHaveBeenCalledTimes(13);
+       |                                    ^
+    531|       expect(https.get).not.toHaveBeenCalled();
+    532|       expect(annexClient.getSatellite(fingerprint)?.snapshot).toMatchO…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed | 363 skipped (369)
+   Start at  19:16:45
+   Duration  439ms (transform 290ms, setup 4ms, import 336ms, tests 25ms, environment 0ms)
+
+2026-11-22T00:16:45Z END lane-p2 rc=1

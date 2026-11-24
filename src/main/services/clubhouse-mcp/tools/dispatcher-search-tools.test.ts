@@ -49,6 +49,11 @@ describe('search_memory', () => {
     expect(JSON.parse(result.content[0].text!)).toEqual({ query: 'safari', memory: [hit], transcripts: [] });
   });
 
+  it('exposes retained history only through the explicit history scope', async () => {
+    await callTool('chat', 'search_memory', { query: 'old decision', scope: 'history' });
+    expect(search).toHaveBeenCalledWith('old decision', { scope: 'history', limit: undefined });
+  });
+
   it('searches everything by default', async () => {
     await callTool('dispatcher', 'search_memory', { query: 'release' });
     expect(search).toHaveBeenCalledWith('release', { scope: 'all', limit: undefined });

@@ -1,5 +1,6 @@
 import { PERMISSION_LEVELS, PERMISSION_LEVEL_LABELS, type PermissionLevel } from './chat/capabilities';
 import type { FreeAgentPermissionMode } from './types';
+import { providerDescriptor } from './providers/descriptors';
 
 /**
  * An agent's Access (#2761): the one level its CLI starts at, on the same
@@ -96,26 +97,14 @@ export function accessForLegacyToggle(current: AccessLevel, on: boolean, legacyM
 export type AccessRuntime = 'chat' | 'terminal';
 
 /**
- * The levels each CLI can start at, per runtime. Chat follows each driver's
- * mapping. A terminal agent gets only the levels its CLI has a start flag
- * for: Claude Code has all five, Codex has no plan or accept-edits start mode,
- * and Copilot's free-agent flags (--yolo --autopilot) allow everything, so it
- * has no Auto either.
- */
-const LEVELS: Record<string, Record<AccessRuntime, readonly AccessLevel[]>> = {
-  'claude-code': { chat: ACCESS_LEVELS, terminal: ACCESS_LEVELS },
-  'codex-cli': { chat: ACCESS_LEVELS, terminal: ['ask', 'auto', 'full_access'] },
-  'copilot-cli': { chat: ['plan', 'ask', 'auto_edit', 'full_access'], terminal: ['ask', 'full_access'] },
-};
-
-/**
- * The levels a picker offers for this CLI. With no runtime, the levels either
+ * The levels a picker offers for this CLI, from its descriptor
+ * (`ProviderDescriptor.access`). With no runtime, the levels either
  * runtime has, since the agent's runtime isn't known yet; it starts at the
  * nearest lower level its runtime has (`startableAccess`). An unknown CLI,
  * or one that sets access itself, offers only Ask first.
  */
 export function accessLevelsFor(providerId: string | undefined, runtime?: AccessRuntime): readonly AccessLevel[] {
-  const row = providerId ? LEVELS[providerId] : undefined;
+  const row = providerDescriptor(providerId)?.access;
   if (!row) return ['ask'];
   if (runtime) return row[runtime];
   return ACCESS_LEVELS.filter((l) => row.chat.includes(l) || row.terminal.includes(l));

@@ -1,0 +1,534 @@
+{
+  "base": "63f140b2a0ba00e686fb727a931d6b340fc3ee7e",
+  "source": "fb21d4cca635ccdbb109acfb5f249ba291d00293",
+  "mobileFixtureCount": 103,
+  "unchanged": true,
+  "regenerated": false,
+  "files": [
+    {
+      "path": "test/fixtures/annex-mobile/agent-address.json",
+      "bytes": 566,
+      "sha256": "9eaa8ebcb4425e6f9447f08c540134e78413b277f4d91e40b9bde0f8164d1907"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-settings-context-window.json",
+      "bytes": 9101,
+      "sha256": "149bcec6a10c05c41d3238839a1c3a5c10b0a83337b9a2037480adb8750f7cbf"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-settings-dispatcher.json",
+      "bytes": 8254,
+      "sha256": "9d3142f54ee29643475719d400b4cd8b780c59019fccc1e44bff431b31471127"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-settings-errors.json",
+      "bytes": 235,
+      "sha256": "cdc1ae1776242f2d9cb4bac962fad6573350a62b223f7fa574a463c12a821aff"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-settings-helper.json",
+      "bytes": 8873,
+      "sha256": "dba64b50b219e5ab63cfca0450d8c57b77edf658ce45a93abfc45d3a0b63fdba"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-settings-running.json",
+      "bytes": 8884,
+      "sha256": "2fab91b523b43ff86cbc9dcfc13ba3f092141834d41ca7e3d53dfae2bbea6c4f"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-settings.json",
+      "bytes": 8869,
+      "sha256": "7ac31ef62aaee7126a4ce339003797d12591ee23ea743e1f7ac57ca3c1d4b9d2"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-sleep.json",
+      "bytes": 475,
+      "sha256": "3bc35928056547db1d4389a30ad162f8b62385e229b7e0ac11b8bae332c9b470"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/agent-state.json",
+      "bytes": 3317,
+      "sha256": "eb5a4921c4d54352b78c1109b4ff0a49a3520469d86721f93048661aabc26c08"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/app-update-check-events.json",
+      "bytes": 1615,
+      "sha256": "f06ec955807de1dd9523678366f4cd28fa453ef1256434c07528cbc3aed45a33"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/app-update-events.json",
+      "bytes": 4585,
+      "sha256": "6451d7d4d7984b09f8e100a22f8aa674bb251f32ed36f191c67752dd8e81a81a"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/app-update-statuses.json",
+      "bytes": 3193,
+      "sha256": "035d87e7e7e231b47497e2fea4e1e6c1375d72d026537022439743eaa5956abf"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/attachments.json",
+      "bytes": 5453,
+      "sha256": "43543ec7bddfdacc654ca5264df44d585e19c12d7a9004ce1567a1b6b1e839be"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/canvas-route.json",
+      "bytes": 1282,
+      "sha256": "128c2a1db9627a24428a8cd40166ab5504b54729b0f0adb23c47e9d837233ec3"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/capabilities.json",
+      "bytes": 10359,
+      "sha256": "66c96e8120f805f22a7c9f16258339398560c6f3e04182cbfdfcbef50f71b3c9"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-event-tool-call-preview.json",
+      "bytes": 1304,
+      "sha256": "fd5e93aa64c3107ac6a0c18f692b9aa146ead1ec1802b1a3630c81f54a948f2d"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-event-tool-output-preview.json",
+      "bytes": 1054,
+      "sha256": "b2e2f781189f8ed614fee80dc1298aea9bf9d47eaf1f0e4605de7f6a61c70023"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-events.json",
+      "bytes": 24578,
+      "sha256": "dd0646410ef35d9e59c499056658faeb90d5bba29a27f14434c3193f01fb20b8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-full-event.json",
+      "bytes": 4536,
+      "sha256": "33d544fdb0da7a166aa58953464752a44349f0d367068f2758a706fe9698ef20"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-links.json",
+      "bytes": 3877,
+      "sha256": "f9d7282aafa31f49c124a73638e2317309dbe1a890dc5d4df588e4394697af51"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-page.json",
+      "bytes": 6181,
+      "sha256": "f2f1002ddf26e2df932c1d264d1311dabda7465efdbb0fb25630fc32adb0ae50"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-pages.json",
+      "bytes": 6554,
+      "sha256": "8128e617f308ac4eed524fe261b8b34fbecbf6e201063d848d7ac24dcec7faee"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-permission-incomplete.json",
+      "bytes": 2252,
+      "sha256": "2b699ae969438c91567d07ce28fa9d7c37f80230e3993b464cbec97b03e28f9d"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-sessions.json",
+      "bytes": 851,
+      "sha256": "e868bad80bfbccf1b95bcb928553f6abbca62380f75a24d9bf8d0ac0f64202b8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-snapshot-errors.json",
+      "bytes": 469,
+      "sha256": "0a05de05da5d6d6582f740d3f0e80fc82d1f2a9daf517c4cf3dbd4a23c03c4a6"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-snapshot-sleeping.json",
+      "bytes": 1946,
+      "sha256": "79fb87b3fc03187228882080ce6a4dcf9351ec88161291039fd7c353e100bcc3"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-snapshot.json",
+      "bytes": 13380,
+      "sha256": "41aaca08b94b89e514b92d657b3914e4ec7f506cbe7360978162865c503a7f46"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/chat-start-model.json",
+      "bytes": 20553,
+      "sha256": "b5681e2bb5f6a5daa3a82b6a524fde09ad97444e1fa2203861d0aee366c5e025"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/command-too-large.json",
+      "bytes": 1049,
+      "sha256": "6429cc93b0fd4b9577929db541c42e73d7bd870703b2bba624e0eaaf9c055ad1"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/_common.json",
+      "bytes": 6796,
+      "sha256": "822595fd115a2b4218bcca14a81e2b88a6ed230e70a8baec890f3d3160b805c1"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/_fields.json",
+      "bytes": 6518,
+      "sha256": "33728ba9665e905758dac465f391609fabcc887fb59e42f417eb67a9ae9ce377"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.create.json",
+      "bytes": 28730,
+      "sha256": "de49a0611de5b89c006ca46753a09d5bf5c959b9ba3d82ac78f46edd66930c3e"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.providerChange.json",
+      "bytes": 2981,
+      "sha256": "63289a407276aca71e9b6ace82dbce8ffeadb3d39c10c04e637a3dd6bbba4050"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.providerPreview.json",
+      "bytes": 4379,
+      "sha256": "7ef55f444999c279e0bd12b52644d8472225fe62e69817cdb855818a2d3352f1"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.spawn.json",
+      "bytes": 2048,
+      "sha256": "84f8764fa4bdf24da6011903d95538fd2d8c89fd450900e88a7ddd077539a278"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.start.json",
+      "bytes": 5137,
+      "sha256": "42207b898640cbc84453319df91302706214cd5b3e77bd32292fe4d4b139fbb4"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.stop.json",
+      "bytes": 3760,
+      "sha256": "e95baa00d2fa82c6734993726b36f8c486b09c80925c79f5b540275bd35cb3a9"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/agent.update.json",
+      "bytes": 155136,
+      "sha256": "8de718ee973fa135ac219307532c3b12257cdaedd7b3e72b8ffdc241d614db21"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/app.update.cancel.json",
+      "bytes": 2787,
+      "sha256": "01436dd81da37d2beee8e3281d29af35dddcb87d2f8226a09435bca5f5edde2e"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/app.update.check.json",
+      "bytes": 5519,
+      "sha256": "c103c431b0d9b237b0509a5338719d839b759d15391d2f8139cea918f7b45acf"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/app.update.request.json",
+      "bytes": 4798,
+      "sha256": "b811c9a9dc0d90671dd5273758c7272578814b718cbc40ab8cf4f198355ef436"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.interrupt.json",
+      "bytes": 1231,
+      "sha256": "8c122479b0332004b0708fb52bfafc58539486b68e03692c968e1554a335d991"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.permission.json",
+      "bytes": 2126,
+      "sha256": "4bfacd613ff163c1187d602f2361edb2e13d283dbc8b112b239c8b553920ddc8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.question.json",
+      "bytes": 3586,
+      "sha256": "532de580da309e1ef5d72b902b1008d35920517c1c6899d7b4bed2f1e0a7af8f"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.queue.remove.json",
+      "bytes": 1433,
+      "sha256": "f435b94da75bb3f8103f1d3e79f5260a1fbd0853637d4f1e90efd9cf67c862b8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.send.json",
+      "bytes": 6761,
+      "sha256": "03e9d882beec405d13ba9974f645698d82510df1989e19d6b378832d6ed3057e"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.setLevel.json",
+      "bytes": 3279,
+      "sha256": "ffcef29284b7ee32aef5cad74641dba1432681a4950827afc9b8ab1969f45bfa"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/chat.setModel.json",
+      "bytes": 5491,
+      "sha256": "574dc596d4d1913a5d9bd8fd87b8e5ca064cec02a20959b3c1bf6da350a9869e"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/dispatcher.clearChat.json",
+      "bytes": 3276,
+      "sha256": "07bee692a6cabbda63da423e54b7f6585d2e019e88d43e13d91792a6e132957b"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/dispatcher.forgetEverything.json",
+      "bytes": 3327,
+      "sha256": "3424688f0cfa75824f48d1d2368baec8d116faa8cc4bf66efb497c4909e013d3"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/dispatcher.setEnabled.json",
+      "bytes": 2696,
+      "sha256": "a4c4351661bb97f7f5aa32df6b96c05776076b68499e3c707d07f4d08ce34bba"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/dispatcher.setModels.json",
+      "bytes": 21776,
+      "sha256": "845a182774e4a6e6b70a33696ba82c5b7c57fb66fc536077dedfd212adc90508"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/dispatcher.update.json",
+      "bytes": 16922,
+      "sha256": "5089bdb00ffd0011ad779db68e70589098cfa753e72842b944c7c66180480855"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/grant.answer.json",
+      "bytes": 9624,
+      "sha256": "a74d6589dfc8c3fac46cc766360a35c498fecfe72450270f71da4b95829dd3c8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/helper.approve.json",
+      "bytes": 11726,
+      "sha256": "f90523d4edea62c32394e5ea8f796030a19c437abaa826569c3c3e5b47c74763"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/helper.decline.json",
+      "bytes": 2036,
+      "sha256": "817623b9a8965fcaeab303a71332cace0f0e77e4535c3a9f940941fc297afa59"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/helperRouting.update.json",
+      "bytes": 254422,
+      "sha256": "3bba56ad1da7d1e0498432318652f70b982ae767ee934b9b942f67ab3d8f6260"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/project.setInactive.json",
+      "bytes": 3418,
+      "sha256": "c7ca7bcfdcff2badfef4717b26ef954237c252b5dab9813aa0383dac0bf6fcab"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/project.setPinned.json",
+      "bytes": 3500,
+      "sha256": "014af2f34fb534c20fa0c4084b9c773e8d9650ad4371195fa13fe72f6f062746"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/quick.clear.json",
+      "bytes": 1861,
+      "sha256": "1a71d3f322cbcfd72fb16991358678d08fe6924148942c5743fdac994b9ef87b"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/commands/quick.dismiss.json",
+      "bytes": 3232,
+      "sha256": "9c4dee70185f259a96e60f02d04be9c1cdc1bf2005dd8c7caef37a1d04eef643"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/create-options-errors.json",
+      "bytes": 247,
+      "sha256": "72c31f811b2989071ba4d6797dc943efe4a90edbea823c50f1ea5a6f08501486"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/create-options.json",
+      "bytes": 4350,
+      "sha256": "2a53c0585f2a5722dc9de797439b50ee6cdc3d65cec2754e3b309db592f21a0e"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-changed.json",
+      "bytes": 537,
+      "sha256": "5406c151cb4c5f446a494e746aa6a342af14729eccd55a18a8401e3e7b470a7f"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-group-chat.json",
+      "bytes": 27556,
+      "sha256": "959bd48de118aa6642931ffeddf69627b89c1789f6ce15080b2456515a9d16c8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-off-routes.json",
+      "bytes": 10101,
+      "sha256": "0d71b9c6d9c6043746d52eb2841a8eafe7b5155bcccd2b5667d1730d9243df04"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-off-states.json",
+      "bytes": 7180,
+      "sha256": "d5490def483fb9bfcbf63c89838f290d63a10f4d060cb4061251c40aa7bfb9d4"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-requests.json",
+      "bytes": 7066,
+      "sha256": "c8ff652a3bf60617eb30095799c5b66f9fa7ce2fa331a096ab370685df8b2cbe"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-routes.json",
+      "bytes": 2460,
+      "sha256": "c12fa98cbe6829cd1d9f181e3713cd697355820a1848da11b53d5617c32af423"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/dispatcher-settings.json",
+      "bytes": 11899,
+      "sha256": "b6cd8206c16050d990bc2fd4d05225edc4d67519d8d7d6fb5674013698a43624"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/frames-over-limit.json",
+      "bytes": 1051,
+      "sha256": "5c5164ac10fb2545aed3e9e3f1e92a08f9e16ab8653964ea3f84bf7079b9e1cb"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/grant-request-events.json",
+      "bytes": 1180,
+      "sha256": "8e4a5fdb6756e4274320a7edccc99d24e8c06c8920ae87ecd1ed79a48dbfe4b6"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/helper-routing-auto.json",
+      "bytes": 13972,
+      "sha256": "541286ee1ba05ea8523451f900225b355e9be295937d776d7766fdc17eeef227"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/helper-routing-changed.json",
+      "bytes": 179,
+      "sha256": "ebe85fcb73b1395061a6e6566f8d3d7260cf9d924696a3e725d44c136a4b52b0"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/helper-routing-helper.json",
+      "bytes": 5470,
+      "sha256": "fdc7d1ec833e4162ec626aba70a8870826eb7d83d987410a6cff6be3d512bf23"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/helper-routing-quota.json",
+      "bytes": 29157,
+      "sha256": "ac99f98c6ec40101122ddd38d1410db8a6d9591c0291e92134ab275593f105d0"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/helper-routing.json",
+      "bytes": 166603,
+      "sha256": "20a89b60cdafdb59915569ade9d7ccf48d702c5c991e37acbd44785c8155e7eb"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/icon-images.json",
+      "bytes": 1657,
+      "sha256": "06e4474c2075db55847d8d9f2015ccd0c1ea092bc80bc515d85909850814749e"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/icon-refs-cases.json",
+      "bytes": 6723,
+      "sha256": "5fee407f2d7c31e19f6e9991fa863e5491d4c797751622f60487256a2cd3a1ea"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/icon-route.json",
+      "bytes": 2811,
+      "sha256": "cf6857b0089c6736f8752c98cfedd6e31a103671b6a0325255dc6afb0f836e5b"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/index.json",
+      "bytes": 3315,
+      "sha256": "8ffb67aeb462eb4b9150945314fa255df48bcd74ce0b7e8c28b5c128456eb538"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/linked-project-state.json",
+      "bytes": 19055,
+      "sha256": "abfac2c12616cd53b1cc64a4864429b3c9ed1d12a5f9b718022062142a02bd1f"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/network-changed.json",
+      "bytes": 2555,
+      "sha256": "3d646fa4ce647f8b9502fc0f54b241b7b9be55e5a178b9e381930ea950e47ba9"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/network-list.json",
+      "bytes": 3833,
+      "sha256": "73884139cdd024f6543c2b6a8d380325957c59b170880a4a4eb7ddc4aa0cc473"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/network-members.json",
+      "bytes": 4908,
+      "sha256": "9c78b3555beea262cba735507d57ac0912b690cf87665e9560fd25cfebefeb51"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/network-pairing.json",
+      "bytes": 1027,
+      "sha256": "17566ab889f9579a8c04a1e52fe265e37e8ecac1e9fdfe1870e962e4e30520f8"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/pairing-revoke.json",
+      "bytes": 239,
+      "sha256": "0787d963912257d99d32fa398ad0f35a4a9c3465741a74a6c1cc0a3f8c70cb02"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/pairing.json",
+      "bytes": 750,
+      "sha256": "8feaeb899c490c04cfa632fe7f353913642a0eb345e9e7d59540bcc6ab4f4e7a"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/project-links.json",
+      "bytes": 3667,
+      "sha256": "c76129240021e76d3f7890af313b8fc5cf6fcb20777c13fa8aeb771271556aa4"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/provider-control-v2.json",
+      "bytes": 291947,
+      "sha256": "f512053386a79173a8fb638637d761435a7f65ddea9f578668b4a20b9f8ccce5"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/pty.json",
+      "bytes": 9569,
+      "sha256": "cf6430902f9488599c7dd662eb03e939e1921b655480b5f1857c82cd0b0512b1"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/queued-bursts.json",
+      "bytes": 16875,
+      "sha256": "d682d8f647eb1ef08f265d724a9a51c3cb77dab6f06eb64dc2089978278d4fdc"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/replay.json",
+      "bytes": 1882,
+      "sha256": "acf7c7bc159527d3065611b11d9c020ce3db417413bb08a1b20266012a2f8c1b"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/rest-catalog.json",
+      "bytes": 10450,
+      "sha256": "1083d2174366b6f27de52f39c28662bd1441c3a32eda5acd89d8593f93a82653"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/sender-identity.json",
+      "bytes": 81009,
+      "sha256": "6c35ed270d52e0ca022351c3ec963a0279cf51c71ef9981de435c3a74651cb46"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-app-update-approval.json",
+      "bytes": 1607,
+      "sha256": "a6b0e3bbc99d5920ac58a638508c7922eeeefa37f22dd297f1bf984d5ef82915"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-dispatcher.json",
+      "bytes": 1086,
+      "sha256": "b1c4578199cc56a614b439886f366cfdbf0f0d8ad586f39f511ca79129fc0ca9"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-grant-requests.json",
+      "bytes": 2035,
+      "sha256": "4f7e2f07ead916a5d6457f4b69d6727897198b7f1934927bb6196c7371c7a87d"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-helper-requests.json",
+      "bytes": 1562,
+      "sha256": "9f04494d870dab328ac3a58cf1d21fad64f2f456d6072a4e50f36bad9d8bcd90"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-icon-refs-changed.json",
+      "bytes": 564,
+      "sha256": "6a543f77d63da1bf44763cb6c1912b6897ce2af711ebabb93fd960d5b542290a"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-icon-refs.json",
+      "bytes": 1189,
+      "sha256": "936c6a1335355d42f73702beee9e73f8fc6127fb89ae651d4dfa9c3b2079c7a5"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot-truncated.json",
+      "bytes": 388,
+      "sha256": "e9ee486e14776d376c447beb57f98cb28ef8370bd3f9800798b83986bf3e8c1d"
+    },
+    {
+      "path": "test/fixtures/annex-mobile/snapshot.json",
+      "bytes": 15957,
+      "sha256": "5d1f727de11d2b7c7933a78093f7bb842498a12e4c8e2a550449ac34115109e1"
+    },
+    {
+      "path": "docs/annex-route-contract-3611.md",
+      "bytes": 24488,
+      "sha256": "0ef7005395de649ef67cd1f74348a4aea8984c1f11b39b82cacc89a7b72723cf"
+    },
+    {
+      "path": "src/shared/annex-control-protocol.ts",
+      "bytes": 15458,
+      "sha256": "572357f08535654bc6fe6ebffbe0bf6508363eab61c8c7170681d1efdd374f61"
+    }
+  ]
+}

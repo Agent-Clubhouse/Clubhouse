@@ -1,0 +1,4 @@
+2026-11-22T00:13:07Z START lane-p2 idle=85% unused=7245M avail=33907M freepct=87 comp=741M swap=3785M pid=33207 cmd=npx --no-install tsc --noEmit -p docs/annex-reverse-routes.tsconfig.json
+src/main/services/annex-client.test.ts(485,92): error TS2345: Argument of type '"aborted"' is not assignable to parameter of type 'ControlErrorCode'.
+src/main/services/annex-client.test.ts(512,92): error TS2345: Argument of type '"aborted"' is not assignable to parameter of type 'ControlErrorCode'.
+2026-11-22T00:13:16Z END lane-p2 rc=2

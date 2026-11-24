@@ -1,0 +1,12 @@
+{
+  "key": "07-exact-fixture-lint",
+  "cases": 68,
+  "expectedPrimaryFailures": 0,
+  "actualJUnitPackets": 1,
+  "rawPacketEquality": true,
+  "staticPayloadAndFiniteBounds": true,
+  "node": "v24.22.1",
+  "platform": "darwin",
+  "head": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+  "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

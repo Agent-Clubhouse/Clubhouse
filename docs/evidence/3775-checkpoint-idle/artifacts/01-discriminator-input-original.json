@@ -1,0 +1,7 @@
+{
+  "attempt": "01-discriminator",
+  "head": "adcb284b217030163574b2b094df2b482cdc8684",
+  "overlayFixtureSha256": "6684fb11d9e2104458cff668c1f5e382d955ee4d27bb86b8def12fba9b34e084",
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project main src/main/services/agent-runtime/checkpoint-tracker.test.ts -t \"runTurn producer-idle readiness discriminator\" --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/3775-checkpoint-idle/01-discriminator-original.xml",
+  "scope": "Only disposable two-case realGit .lock producer failure overlay; existing11 cases skipped, no mockGit/new framework"
+}

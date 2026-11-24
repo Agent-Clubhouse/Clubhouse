@@ -1,0 +1,274 @@
+2026-11-22T05:06:33Z START lane-p2 idle=82% unused=7790M avail=34197M freepct=87 comp=714M swap=3761M pid=39900 cmd=npx vitest run --project main src/main/services/managed-agents/delivery.test.ts --maxWorkers=2 -t phase proof|does not claim installation of a grant-gated skill left to the project --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3774-phase-observation/attempts/02-disposable-controls.xml
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.1606249999999818}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.6307500000000346}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":9.607041999999865,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":9.709959000000026}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":16.442791999999827,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":16.467666999999892,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":7,"event":"begin","phase":"body","offsetMs":16.672667000000047}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":8,"event":"begin","phase":"git.init","offsetMs":16.729208999999855}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":9,"event":"end","phase":"git.init","offsetMs":41.984833999999864,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":10,"event":"begin","phase":"git.add","offsetMs":42.25274999999988}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":11,"event":"end","phase":"git.add","offsetMs":55.03841699999998,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":12,"event":"begin","phase":"delivery","offsetMs":55.06379199999992}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":13,"event":"begin","phase":"git.async","offsetMs":56.75529199999983}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":14,"event":"end","phase":"git.async","offsetMs":67.4381249999999,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":15,"event":"end","phase":"delivery","offsetMs":2054.719709,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":16,"event":"begin","phase":"resolve","offsetMs":2055.112292}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":17,"event":"end","phase":"resolve","offsetMs":2056.637917,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":18,"event":"end","phase":"body","offsetMs":2056.8949999999995,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.1606249999999818},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.6307500000000346},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":9.607041999999865,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":9.709959000000026},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":16.442791999999827,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":16.467666999999892,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":16.672667000000047},{"seq":8,"event":"begin","phase":"git.init","offsetMs":16.729208999999855},{"seq":9,"event":"end","phase":"git.init","offsetMs":41.984833999999864,"threw":false},{"seq":10,"event":"begin","phase":"git.add","offsetMs":42.25274999999988},{"seq":11,"event":"end","phase":"git.add","offsetMs":55.03841699999998,"threw":false},{"seq":12,"event":"begin","phase":"delivery","offsetMs":55.06379199999992},{"seq":13,"event":"begin","phase":"git.async","offsetMs":56.75529199999983},{"seq":14,"event":"end","phase":"git.async","offsetMs":67.4381249999999,"threw":false},{"seq":15,"event":"end","phase":"delivery","offsetMs":2054.719709,"threw":false},{"seq":16,"event":"begin","phase":"resolve","offsetMs":2055.112292},{"seq":17,"event":"end","phase":"resolve","offsetMs":2056.637917,"threw":false},{"seq":18,"event":"end","phase":"body","offsetMs":2056.8949999999995,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":2057.075084,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":1,"observerUnavailable":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":2057.2548749999996,"elapsedMs":0.11879099999987375}
+stderr | src/main/services/managed-agents/delivery.test.ts > deliverManagedSetup > does not claim installation of a grant-gated skill left to the project (#3517)
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.1606249999999818},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.6307500000000346},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":9.607041999999865,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":9.709959000000026},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":16.442791999999827,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":16.467666999999892,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":16.672667000000047},{"seq":8,"event":"begin","phase":"git.init","offsetMs":16.729208999999855},{"seq":9,"event":"end","phase":"git.init","offsetMs":41.984833999999864,"threw":false},{"seq":10,"event":"begin","phase":"git.add","offsetMs":42.25274999999988},{"seq":11,"event":"end","phase":"git.add","offsetMs":55.03841699999998,"threw":false},{"seq":12,"event":"begin","phase":"delivery","offsetMs":55.06379199999992},{"seq":13,"event":"begin","phase":"git.async","offsetMs":56.75529199999983},{"seq":14,"event":"end","phase":"git.async","offsetMs":67.4381249999999,"threw":false},{"seq":15,"event":"end","phase":"delivery","offsetMs":2054.719709,"threw":false},{"seq":16,"event":"begin","phase":"resolve","offsetMs":2055.112292},{"seq":17,"event":"end","phase":"resolve","offsetMs":2056.637917,"threw":false},{"seq":18,"event":"end","phase":"body","offsetMs":2056.8949999999995,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":2057.075084,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":1,"observerUnavailable":true}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.012000000000170985}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.3002089999999953}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":10.502250000000004,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":10.572749999999814}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":10.593374999999924,"threw":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":10.597917000000052,"threw":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.012000000000170985},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.3002089999999953},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":10.502250000000004,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":10.572749999999814},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":10.593374999999924,"threw":true},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":10.597917000000052,"threw":true}],"abort":null,"final":{"event":"final","offsetMs":13.787374999999884,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":13.860959000000094,"elapsedMs":0.05524999999988722}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof setup failure
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.012000000000170985},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.3002089999999953},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":10.502250000000004,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":10.572749999999814},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":10.593374999999924,"threw":true},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":10.597917000000052,"threw":true}],"abort":null,"final":{"event":"final","offsetMs":13.787374999999884,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.011582999999973254}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.26841700000022684}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.336749999999938,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.380583000000115}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":9.649332999999842,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":9.659833000000162,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":7,"event":"begin","phase":"body","offsetMs":9.712875000000167}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":8,"event":"begin","phase":"proof.await","offsetMs":9.717375000000175}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"abort","offsetMs":5012.416417,"aborted":true,"active":[{"beginSeq":7,"phase":"body","startMs":9.712875000000167,"elapsedMs":5002.703542},{"beginSeq":8,"phase":"proof.await","startMs":9.717375000000175,"elapsedMs":5002.699042}]}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":9,"event":"end","phase":"proof.await","offsetMs":5012.69375,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":10,"event":"end","phase":"body","offsetMs":5012.710125,"threw":false}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof deadline abort
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.011582999999973254},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.26841700000022684},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.336749999999938,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.380583000000115},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":9.649332999999842,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":9.659833000000162,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":9.712875000000167},{"seq":8,"event":"begin","phase":"proof.await","offsetMs":9.717375000000175},{"seq":9,"event":"end","phase":"proof.await","offsetMs":5012.69375,"threw":false},{"seq":10,"event":"end","phase":"body","offsetMs":5012.710125,"threw":false}],"abort":{"event":"abort","offsetMs":5012.416417,"aborted":true,"active":[{"beginSeq":7,"phase":"body","startMs":9.712875000000167,"elapsedMs":5002.703542},{"beginSeq":8,"phase":"proof.await","startMs":9.717375000000175,"elapsedMs":5002.699042}]},"final":{"event":"final","offsetMs":5013.128499999999,"aborted":true,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.011582999999973254},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.26841700000022684},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.336749999999938,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.380583000000115},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":9.649332999999842,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":9.659833000000162,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":9.712875000000167},{"seq":8,"event":"begin","phase":"proof.await","offsetMs":9.717375000000175},{"seq":9,"event":"end","phase":"proof.await","offsetMs":5012.69375,"threw":false},{"seq":10,"event":"end","phase":"body","offsetMs":5012.710125,"threw":false}],"abort":{"event":"abort","offsetMs":5012.416417,"aborted":true,"active":[{"beginSeq":7,"phase":"body","startMs":9.712875000000167,"elapsedMs":5002.703542},{"beginSeq":8,"phase":"proof.await","startMs":9.717375000000175,"elapsedMs":5002.699042}]},"final":{"event":"final","offsetMs":5013.128499999999,"aborted":true,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":5013.273999999999,"elapsedMs":0.10116700000071432}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.04545899999902758}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.113374999998996}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":12.618542000000161,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":12.800833999999668}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":20.614666999999827,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":20.6349999999984,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":8,"event":"end","phase":"git.async","offsetMs":39.50249999999869,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.04545899999902758},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.113374999998996},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":12.618542000000161,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":12.800833999999668},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":20.614666999999827,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":20.6349999999984,"threw":false},{"seq":7,"event":"begin","phase":"git.async","offsetMs":22.44208399999843},{"seq":8,"event":"end","phase":"git.async","offsetMs":39.50249999999869,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":39.664333999999144,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":1,"observerUnavailable":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":39.714500000000044,"elapsedMs":0.025916000000506756}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof native forwarding metadata and writer failure
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.04545899999902758},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":1.113374999998996},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":12.618542000000161,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":12.800833999999668},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":20.614666999999827,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":20.6349999999984,"threw":false},{"seq":7,"event":"begin","phase":"git.async","offsetMs":22.44208399999843},{"seq":8,"event":"end","phase":"git.async","offsetMs":39.50249999999869,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":39.664333999999144,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":1,"observerUnavailable":true}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.021875000000363798}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.3668340000003809}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":6.154042000000118,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":6.2167090000002645}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":10.683584000000337,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":10.697249999999258,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":7,"event":"begin","phase":"body","offsetMs":10.804583999999522}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":9,"event":"end","phase":"git.async","offsetMs":10.894916999999623,"threw":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":10,"event":"begin","phase":"grant.cleanup","offsetMs":10.905167000000802}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":11,"event":"end","phase":"grant.cleanup","offsetMs":10.911459000000832,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":12,"event":"end","phase":"body","offsetMs":10.916291999999885,"threw":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.021875000000363798},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.3668340000003809},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":6.154042000000118,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":6.2167090000002645},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":10.683584000000337,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":10.697249999999258,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":10.804583999999522},{"seq":8,"event":"begin","phase":"git.async","offsetMs":10.844833999999537},{"seq":9,"event":"end","phase":"git.async","offsetMs":10.894916999999623,"threw":true},{"seq":10,"event":"begin","phase":"grant.cleanup","offsetMs":10.905167000000802},{"seq":11,"event":"end","phase":"grant.cleanup","offsetMs":10.911459000000832,"threw":false},{"seq":12,"event":"end","phase":"body","offsetMs":10.916291999999885,"threw":true}],"abort":null,"final":{"event":"final","offsetMs":10.999834000000192,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":1,"observerUnavailable":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":11.034750000000713,"elapsedMs":0.01920800000152667}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof native primary and real stop survive observer failure
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.021875000000363798},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.3668340000003809},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":6.154042000000118,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":6.2167090000002645},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":10.683584000000337,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":10.697249999999258,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":10.804583999999522},{"seq":8,"event":"begin","phase":"git.async","offsetMs":10.844833999999537},{"seq":9,"event":"end","phase":"git.async","offsetMs":10.894916999999623,"threw":true},{"seq":10,"event":"begin","phase":"grant.cleanup","offsetMs":10.905167000000802},{"seq":11,"event":"end","phase":"grant.cleanup","offsetMs":10.911459000000832,"threw":false},{"seq":12,"event":"end","phase":"body","offsetMs":10.916291999999885,"threw":true}],"abort":null,"final":{"event":"final","offsetMs":10.999834000000192,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":1,"observerUnavailable":true}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.01112499999908323}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.2757499999988795}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":5.073166999998648,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":5.114791999998488}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.811916999999085,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.823083999999653,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.01112499999908323},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.2757499999988795},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":5.073166999998648,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":5.114791999998488},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.811916999999085,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.823083999999653,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":9.452624999999898,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":9.501916999999594,"elapsedMs":0.03670799999963492}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"git.async","offsetMs":0.02712499999870488}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"git.async","offsetMs":0.007625000000189175}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"git.async","offsetMs":0.02712499999870488}],"abort":null,"final":{"event":"final","offsetMs":0.08149999999841384,"aborted":false,"active":[{"beginSeq":1,"phase":"git.async","startMs":0.02712499999870488,"elapsedMs":0.05437499999970896}]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":0.11720799999966403,"elapsedMs":0.025958000000173342}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"end","phase":"git.async","offsetMs":0.13433299999996962,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"git.async","offsetMs":0.007625000000189175},{"seq":2,"event":"end","phase":"git.async","offsetMs":0.13433299999996962,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":0.20233299999927112,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":0.2208329999994021,"elapsedMs":0.009707999999591266}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"body","offsetMs":0.007875000001149601}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"end","phase":"body","offsetMs":0.012083999999958905,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"begin","phase":"body","offsetMs":0.014624999999796273}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"end","phase":"body","offsetMs":0.017042000001310953,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"begin","phase":"body","offsetMs":0.019125000000713044}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"body","offsetMs":0.021125000001120497,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":7,"event":"begin","phase":"body","offsetMs":0.02291700000023411}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":8,"event":"end","phase":"body","offsetMs":0.024709000001166714,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":9,"event":"begin","phase":"body","offsetMs":0.026417000000947155}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":10,"event":"end","phase":"body","offsetMs":0.02820900000006077,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":11,"event":"begin","phase":"body","offsetMs":0.030042000000321423}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":12,"event":"end","phase":"body","offsetMs":0.03191700000024866,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":13,"event":"begin","phase":"body","offsetMs":0.0339590000003227}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":14,"event":"end","phase":"body","offsetMs":0.03591700000106357,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":15,"event":"begin","phase":"body","offsetMs":0.03779200000099081}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":16,"event":"end","phase":"body","offsetMs":0.03950000000077125,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":17,"event":"begin","phase":"body","offsetMs":0.04141700000036508}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":18,"event":"end","phase":"body","offsetMs":0.043375000001105946,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":19,"event":"begin","phase":"body","offsetMs":0.04533400000036636}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":20,"event":"end","phase":"body","offsetMs":0.0472090000002936,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":21,"event":"begin","phase":"body","offsetMs":0.04912500000136788}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":22,"event":"end","phase":"body","offsetMs":0.05095900000014808,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":23,"event":"begin","phase":"body","offsetMs":0.05275000000074215}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":24,"event":"end","phase":"body","offsetMs":0.05454199999985576,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":25,"event":"begin","phase":"body","offsetMs":0.056334000000788365}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":26,"event":"end","phase":"body","offsetMs":0.058250000000043656,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":27,"event":"begin","phase":"body","offsetMs":0.05995900000016263}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":28,"event":"end","phase":"body","offsetMs":0.061625000000276486,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":29,"event":"begin","phase":"body","offsetMs":0.06337499999972351}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":30,"event":"end","phase":"body","offsetMs":0.0650420000001759,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":31,"event":"begin","phase":"body","offsetMs":0.0667090000006283}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":32,"event":"end","phase":"body","offsetMs":0.06837500000074215,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"body","offsetMs":0.007875000001149601},{"seq":2,"event":"end","phase":"body","offsetMs":0.012083999999958905,"threw":false},{"seq":3,"event":"begin","phase":"body","offsetMs":0.014624999999796273},{"seq":4,"event":"end","phase":"body","offsetMs":0.017042000001310953,"threw":false},{"seq":5,"event":"begin","phase":"body","offsetMs":0.019125000000713044},{"seq":6,"event":"end","phase":"body","offsetMs":0.021125000001120497,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":0.02291700000023411},{"seq":8,"event":"end","phase":"body","offsetMs":0.024709000001166714,"threw":false},{"seq":9,"event":"begin","phase":"body","offsetMs":0.026417000000947155},{"seq":10,"event":"end","phase":"body","offsetMs":0.02820900000006077,"threw":false},{"seq":11,"event":"begin","phase":"body","offsetMs":0.030042000000321423},{"seq":12,"event":"end","phase":"body","offsetMs":0.03191700000024866,"threw":false},{"seq":13,"event":"begin","phase":"body","offsetMs":0.0339590000003227},{"seq":14,"event":"end","phase":"body","offsetMs":0.03591700000106357,"threw":false},{"seq":15,"event":"begin","phase":"body","offsetMs":0.03779200000099081},{"seq":16,"event":"end","phase":"body","offsetMs":0.03950000000077125,"threw":false},{"seq":17,"event":"begin","phase":"body","offsetMs":0.04141700000036508},{"seq":18,"event":"end","phase":"body","offsetMs":0.043375000001105946,"threw":false},{"seq":19,"event":"begin","phase":"body","offsetMs":0.04533400000036636},{"seq":20,"event":"end","phase":"body","offsetMs":0.0472090000002936,"threw":false},{"seq":21,"event":"begin","phase":"body","offsetMs":0.04912500000136788},{"seq":22,"event":"end","phase":"body","offsetMs":0.05095900000014808,"threw":false},{"seq":23,"event":"begin","phase":"body","offsetMs":0.05275000000074215},{"seq":24,"event":"end","phase":"body","offsetMs":0.05454199999985576,"threw":false},{"seq":25,"event":"begin","phase":"body","offsetMs":0.056334000000788365},{"seq":26,"event":"end","phase":"body","offsetMs":0.058250000000043656,"threw":false},{"seq":27,"event":"begin","phase":"body","offsetMs":0.05995900000016263},{"seq":28,"event":"end","phase":"body","offsetMs":0.061625000000276486,"threw":false},{"seq":29,"event":"begin","phase":"body","offsetMs":0.06337499999972351},{"seq":30,"event":"end","phase":"body","offsetMs":0.0650420000001759,"threw":false},{"seq":31,"event":"begin","phase":"body","offsetMs":0.0667090000006283},{"seq":32,"event":"end","phase":"body","offsetMs":0.06837500000074215,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":0.09350000000085856,"aborted":false,"active":[]},"overflow":true,"droppedTransitions":48,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":0.12316699999973935,"elapsedMs":0.01299999999901047}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof retired recorder isolation owned detach and bounds
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.01112499999908323},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.2757499999988795},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":5.073166999998648,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":5.114791999998488},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.811916999999085,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.823083999999653,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":9.452624999999898,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"git.async","offsetMs":0.02712499999870488}],"abort":null,"final":{"event":"final","offsetMs":0.08149999999841384,"aborted":false,"active":[{"beginSeq":1,"phase":"git.async","startMs":0.02712499999870488,"elapsedMs":0.05437499999970896}]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"git.async","offsetMs":0.007625000000189175},{"seq":2,"event":"end","phase":"git.async","offsetMs":0.13433299999996962,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":0.20233299999927112,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"body","offsetMs":0.007875000001149601},{"seq":2,"event":"end","phase":"body","offsetMs":0.012083999999958905,"threw":false},{"seq":3,"event":"begin","phase":"body","offsetMs":0.014624999999796273},{"seq":4,"event":"end","phase":"body","offsetMs":0.017042000001310953,"threw":false},{"seq":5,"event":"begin","phase":"body","offsetMs":0.019125000000713044},{"seq":6,"event":"end","phase":"body","offsetMs":0.021125000001120497,"threw":false},{"seq":7,"event":"begin","phase":"body","offsetMs":0.02291700000023411},{"seq":8,"event":"end","phase":"body","offsetMs":0.024709000001166714,"threw":false},{"seq":9,"event":"begin","phase":"body","offsetMs":0.026417000000947155},{"seq":10,"event":"end","phase":"body","offsetMs":0.02820900000006077,"threw":false},{"seq":11,"event":"begin","phase":"body","offsetMs":0.030042000000321423},{"seq":12,"event":"end","phase":"body","offsetMs":0.03191700000024866,"threw":false},{"seq":13,"event":"begin","phase":"body","offsetMs":0.0339590000003227},{"seq":14,"event":"end","phase":"body","offsetMs":0.03591700000106357,"threw":false},{"seq":15,"event":"begin","phase":"body","offsetMs":0.03779200000099081},{"seq":16,"event":"end","phase":"body","offsetMs":0.03950000000077125,"threw":false},{"seq":17,"event":"begin","phase":"body","offsetMs":0.04141700000036508},{"seq":18,"event":"end","phase":"body","offsetMs":0.043375000001105946,"threw":false},{"seq":19,"event":"begin","phase":"body","offsetMs":0.04533400000036636},{"seq":20,"event":"end","phase":"body","offsetMs":0.0472090000002936,"threw":false},{"seq":21,"event":"begin","phase":"body","offsetMs":0.04912500000136788},{"seq":22,"event":"end","phase":"body","offsetMs":0.05095900000014808,"threw":false},{"seq":23,"event":"begin","phase":"body","offsetMs":0.05275000000074215},{"seq":24,"event":"end","phase":"body","offsetMs":0.05454199999985576,"threw":false},{"seq":25,"event":"begin","phase":"body","offsetMs":0.056334000000788365},{"seq":26,"event":"end","phase":"body","offsetMs":0.058250000000043656,"threw":false},{"seq":27,"event":"begin","phase":"body","offsetMs":0.05995900000016263},{"seq":28,"event":"end","phase":"body","offsetMs":0.061625000000276486,"threw":false},{"seq":29,"event":"begin","phase":"body","offsetMs":0.06337499999972351},{"seq":30,"event":"end","phase":"body","offsetMs":0.0650420000001759,"threw":false},{"seq":31,"event":"begin","phase":"body","offsetMs":0.0667090000006283},{"seq":32,"event":"end","phase":"body","offsetMs":0.06837500000074215,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":0.09350000000085856,"aborted":false,"active":[]},"overflow":true,"droppedTransitions":48,"observerFailures":0,"observerUnavailable":false}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.007417000000714324}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.24675000000024738}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":4.527417000001151,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":4.567291999999725}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.44445799999994,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.452957999999853,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"observerUnavailable":true}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":8.595875000000888,"elapsedMs":0.02500000000145519}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof serialization failure reports unavailable without throwing
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"observerUnavailable":true}
+
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.004917000000205007}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.23704199999883713}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":3,"event":"end","phase":"seed.copy","offsetMs":5.121166999999332,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":5.164541999998619}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.673166999999012,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.682333999999173,"threw":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.004917000000205007},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.23704199999883713},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":5.121166999999332,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":5.164541999998619},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.673166999999012,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.682333999999173,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":8.761833999998998,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"event":"console.emitted","offsetMs":8.785291999998663,"elapsedMs":0.014916999998604297}
+stderr | src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof original captured cleanup was not skipped
+CLUBHOUSE_MANAGED_PHASE_V1 {"version":1,"platform":"darwin","node":"v24.22.1","transitions":[{"seq":1,"event":"begin","phase":"beforeEach","offsetMs":0.004917000000205007},{"seq":2,"event":"begin","phase":"seed.copy","offsetMs":0.23704199999883713},{"seq":3,"event":"end","phase":"seed.copy","offsetMs":5.121166999999332,"threw":false},{"seq":4,"event":"begin","phase":"builtins.ensure","offsetMs":5.164541999998619},{"seq":5,"event":"end","phase":"builtins.ensure","offsetMs":8.673166999999012,"threw":false},{"seq":6,"event":"end","phase":"beforeEach","offsetMs":8.682333999999173,"threw":false}],"abort":null,"final":{"event":"final","offsetMs":8.761833999998998,"aborted":false,"active":[]},"overflow":false,"droppedTransitions":0,"observerFailures":0,"observerUnavailable":false}
+
+ ❯ |main| src/main/services/managed-agents/delivery.test.ts (75 tests | 2 failed | 67 skipped) 7432ms
+     ↓ writes exactly the blocks in order with wildcards filled, and nothing else
+     ↓ every built-in template that is offered composes with no @@If and only wildcards delivery fills (#2902)
+     ↓ writes the built-in build, test, lint and validate skill folders for a Developer agent (#2902)
+     ↓ leaves @@SourceControlProvider and the build, test and lint wildcards as written, in delivery and Preview (#2902)
+     ↓ delivers conditional wildcards as written: a variant is its own block (#2901)
+     ↓ leaves @@Mission and @@Persona as written, and Preview shows the same bytes (D60)
+     ↓ copies skills whole, including binary files, and removes a skill dropped from the setup
+     ↓ delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)
+     ↓ reports current grant-gated skills and requires actual delivery evidence (#3517)
+     ✓ does not claim installation of a grant-gated skill left to the project (#3517)  2058ms
+     ↓ lets a chosen skill that installs to prepare-handoff/ win over the granted built-in, and says so (#3344, D75)
+     ↓ writes a supporting folder's files at their nested path, like .github/skills/sample-skill/assets/note.md (#3247)
+     ↓ never removes the skills folder itself for a "." in its manifest (#3101)
+     ↓ writes Codex skills to .agents/skills and removes only the ones it delivered to .codex/skills before
+     ↓ moves a skill folder Clubhouse did not write out of the way instead of deleting it
+     ↓ writes MCP servers to the JSON file without the Clubhouse part, and none for TOML CLIs
+     ↓ fingerprints change when a part is edited, so a running agent knows it is behind
+     ↓ skips a part that no longer exists instead of failing the start
+     ↓ matches what delivery writes, with line ranges per block
+     ↓ keeps separate raw ranges when a valid POSIX path expands across lines
+     ↓ says the level an agent starts at when its CLI has no start for the saved one in its runtime (#3004)
+     ↓ gives the text with wildcards as written for "Show wildcards", and a settings summary (#2895)
+     ↓ renders an agent that doesn't exist yet as delivery will, once it has its folder (#2895)
+     ↓ keeps the delivered text, parts and settings in the record for "Running now"
+     ↓ fingerprints the effort, which every launch passes
+     ↓ refuses explicit execution overrides on parts-only quick templates instead of dropping restrictions (#3686)
+     ↓ renders the template for the quick agent in its folder and writes nothing
+     ↓ gives a quick agent from a built-in template the working Identity, and skips its skills (#2902)
+     ↓ names a durable agent's worktree relative to the project, and says so when there is no branch
+     ↓ gives a template saved without the Clubhouse part no extra server: the bridge is added at launch (D69)
+     ↓ counts the parts the template names that no longer exist
+     ↓ refuses a template that doesn't exist
+       ↓ adds, leaves out and swaps parts for that launch only, and the next launch starts from the template
+       ↓ either Identity id names the one a quick agent gets, and leaving one out and adding it back is no change
+       ↓ can't grant what a person couldn't put in a setup
+     ↓ keeps the servers for a CLI with launch flags and drops them, logged, for one without
+     ↓ anchors the instructions file, the MCP file and Claude Code's local settings to the root
+     ↓ uses Copilot's paths in its config folder, and has no local settings for it
+     ↓ lists no MCP file for a TOML CLI, which gets its servers as launch flags
+     ↓ leaves out a file the worktree tracks
+     ↓ still lists them all outside a git checkout
+     ↓ moves every untracked skill folder the setup does not list to app data, and leaves tracked ones for Preview (D48)
+     ↓ leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)
+     ↓ says the same in a New agent draft's Preview, from the project checkout its worktree comes from (#2895)
+     ↓ matches a tracked folder to a built-in ignoring case, so a tracked Build/ is the project's build skill (D74)
+     ↓ never removes a folder it delivered once the project commits it, even after the skill leaves the setup (D74)
+     ↓ still replaces an untracked folder in a built-in skill's way, and leaves one it delivered once git tracks it (D74)
+     ↓ keeps today's behavior for a custom skill whose folder git tracks: the folder moves aside and the skill takes its place (D48, D74)
+     ↓ never delivers literal env values, even from a part stored with them (D46)
+     ↓ says which stored env values are no longer used, in Preview and once in the log, by name only (D46)
+     ↓ tells Claude Code not to read CLAUDE.md files above the worktree, keeping the local settings it has (D49)
+     ↓ leaves a local settings file it cannot read alone, and Preview says the parent files are read
+     ↓ writes no local settings when nothing above the worktree would be read
+     ↓ lists the instruction files Copilot also reads that git tracks in the worktree (D50)
+     ↓ moves nothing when the skills folder is a link to somewhere outside, and Preview lists the folders
+     ↓ moves nothing when .claude itself is a link, and refuses to move a clashing folder out of it
+     ↓ treats a submodule folder as tracked: git lists it with no trailing slash
+     ↓ moves nothing when git fails for a reason other than "not a git repository", logging the code only
+     ↓ moves nothing when git is missing
+     ↓ still moves untracked folders out when the agent folder is not a git checkout
+     ↓ replaces exactly the entries it added at each start and never touches the person's
+     ↓ removes its entries and the manifest on unmanage, keeping the rest of the settings
+     ↓ removes a settings file it created once nothing else is in it
+     ↓ keeps a settings file it created once the person adds to it
+     ↓ takes its entries out when the agent starts on a CLI that does not read them
+     ↓ leaves an unreadable settings file and its manifest alone on unmanage
+     ↓ compares folders after resolving links
+     ↓ ignores case only on Windows
+     × phase proof setup failure 14ms
+     × phase proof deadline abort 5014ms
+     ✓ phase proof native forwarding metadata and writer failure 40ms
+     ✓ phase proof native primary and real stop survive observer failure 11ms
+     ✓ phase proof retired recorder isolation owned detach and bounds 10ms
+     ✓ phase proof serialization failure reports unavailable without throwing 9ms
+     ✓ phase proof original captured cleanup was not skipped 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof setup failure
+Error: proof primary setup failure
+ ❯ src/main/services/managed-agents/delivery.test.ts:283:68
+    281|     let ensured = false;
+    282|     try {
+    283|       if (context.task.name === 'phase proof setup failure') throw new…
+       |                                                                    ^
+    284|       await service.ensureBuiltins(); ensured = true;
+    285|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/managed-agents/delivery.test.ts > disposable phase observer proof > phase proof deadline abort
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/main/services/managed-agents/delivery.test.ts:1344:3
+    1342|   it('phase proof setup failure', () => { expect.fail('proof setup bod…
+    1343|
+    1344|   it('phase proof deadline abort', async (context) => {
+       |   ^
+    1345|     const recorder = deliveryPhases.active!;
+    1346|     const body = recorder.begin('body');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 6 passed | 67 skipped (75)
+   Start at  00:06:33
+   Duration  8.64s (transform 905ms, setup 5ms, import 1.12s, tests 7.43s, environment 0ms)
+
+JUNIT report written to /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3774-phase-observation/attempts/02-disposable-controls.xml
+2026-11-22T05:06:42Z END lane-p2 rc=1

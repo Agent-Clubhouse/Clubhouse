@@ -30,7 +30,7 @@ it('resumes an artifact larger than 512 KiB in independently hashed bounded chun
     expect(reply.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
     expect(reply.eof).toBe(offset + bytes.length === f.bytes.length);
   }
-  expect(Buffer.concat(chunks)).toEqual(f.bytes); expect(f.options.verify).toHaveBeenCalledTimes(1); expect(f.options.open).toHaveBeenCalledTimes(1);
+  expect(Buffer.concat(chunks).equals(f.bytes)).toBe(true); expect(f.options.verify).toHaveBeenCalledTimes(1); expect(f.options.open).toHaveBeenCalledTimes(1);
   await f.service.close(); await Promise.resolve(); expect(f.descriptor.close).toHaveBeenCalled();
 });
 it('permits only the addressed machine and requires acceptance before exposing file content', async () => {

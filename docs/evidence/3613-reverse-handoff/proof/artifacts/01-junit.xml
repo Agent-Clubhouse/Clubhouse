@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="6" failures="1" errors="0" time="3.192285209">
+    <testsuite name="test/annex-v2/annex-reverse-consumers.test.ts" timestamp="2026-11-22T12:26:56.366Z" hostname="Masons-MacBook-Pro-13346.local" tests="1" failures="0" errors="0" skipped="0" time="0.389337834">
+        <testcase classname="test/annex-v2/annex-reverse-consumers.test.ts" name="preserves binary bytes through one forward and retires the whole owned consumer stream" time="0.388799708">
+        </testcase>
+    </testsuite>
+    <testsuite name="test/annex-v2/annex-reverse-handoff.test.ts" timestamp="2026-11-22T12:26:56.366Z" hostname="Masons-MacBook-Pro-13346.local" tests="5" failures="1" errors="0" skipped="0" time="2.802947375">
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="resumes exact agreement-bound bytes after an actual control cut at the fsynced chunk checkpoint" time="1.3161275">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="refuses a retired sender agreement after a durable chunk and leaves another agreement usable" time="0.177979916">
+            <failure message="expected Error: Handoff transfer refused: unknown. { diagnostic: &apos;…&apos; } to match object { diagnostic: &apos;record_state&apos; }" type="AssertionError">
+AssertionError: expected Error: Handoff transfer refused: unknown. { diagnostic: &apos;…&apos; } to match object { diagnostic: &apos;record_state&apos; }
+
+- Expected
++ Received
+
+- {
+-   &quot;diagnostic&quot;: &quot;record_state&quot;,
++ HandoffTransferRefused {
++   &quot;diagnostic&quot;: &quot;unknown&quot;,
+  }
+
+ ❯ test/annex-v2/annex-reverse-handoff.test.ts:271:8
+ ❯ withPair test/annex-v2/annex-reverse-handoff.test.ts:223:46
+ ❯ test/annex-v2/annex-reverse-handoff.test.ts:267:3
+            </failure>
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="refuses chunk corruption and removes receiving bytes" time="0.194348208">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="refuses final digest corruption and removes receiving bytes" time="0.204700292">
+        </testcase>
+        <testcase classname="test/annex-v2/annex-reverse-handoff.test.ts" name="never publishes a held old-link reply into a replacement and requires explicit receiver resume" time="0.909073959">
+        </testcase>
+    </testsuite>
+</testsuites>

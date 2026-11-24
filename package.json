@@ -21,6 +21,7 @@
     "check:test-coverage-ratchet": "node scripts/check-test-coverage-ratchet.mjs",
     "codex:generate-types": "node scripts/generate-codex-app-server-types.mjs",
     "codex:check-types": "node scripts/generate-codex-app-server-types.mjs --check",
+    "acp:check-schema": "node scripts/acp-schema-pin.mjs",
     "framebriar:vendor": "node scripts/vendor-framebriar.mjs --from",
     "framebriar:check": "node scripts/vendor-framebriar.mjs --check",
     "fixtures:annex-mobile": "node scripts/annex-mobile-fixtures.mjs",

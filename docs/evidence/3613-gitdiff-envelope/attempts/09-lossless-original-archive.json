@@ -1,0 +1,23 @@
+{
+  "artifacts": [
+    {
+      "originalPath": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method-original.txt",
+      "originalBytes": 109961156,
+      "originalSha256": "d9825d9cd0bcc7acecee174b7626c38795829b9fb6c8ea7dc3f198c2d603cfa2",
+      "archivePath": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method-original.txt.gz",
+      "archiveBytes": 231554,
+      "archiveSha256": "14a072c38f54327b5ac8ebcbb02d74bf5dd2dc7c70b88f29d716f4febf49d3b8",
+      "losslessVerified": true
+    },
+    {
+      "originalPath": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method.xml",
+      "originalBytes": 110084893,
+      "originalSha256": "01302b06f782aca2e31dcd8db17d7d3c62ef2b114509c1671f696b157a241666",
+      "archivePath": "docs/evidence/3613-gitdiff-envelope/attempts/09-missing-dispatch-method.xml.gz",
+      "archiveBytes": 234676,
+      "archiveSha256": "8a69754037c170d553f34c6d24bfe70e28380d5c2d13c1cb35665e2b0716a067",
+      "losslessVerified": true
+    }
+  ],
+  "limitation": "Original expected-failure output is retained byte-for-byte via lossless gzip; no application/test rerun. Uncompressed local copies stay in ignored private storage."
+}

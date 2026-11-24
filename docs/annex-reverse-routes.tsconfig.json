@@ -7,10 +7,13 @@
     "typeRoots": ["../node_modules/@types", "../node_modules"]
   },
   "files": [
+    "../src/main/ipc/annex-handlers.test.ts",
     "../src/main/services/annex-routes.test.ts",
     "../src/main/services/annex-control-reconnect.test.ts",
     "../src/main/services/annex-control.test.ts",
     "../src/main/services/annex-client.test.ts",
+    "../src/main/services/annex-client-buffer.test.ts",
+    "../test/annex-v2/annex-reverse-consumers.test.ts",
     "../src/main/services/annex-devices.test.ts",
     "../src/renderer/features/settings/AnnexDeviceList.test.tsx",
     "../src/renderer/features/settings/AnnexNetworkSettingsView.test.tsx",

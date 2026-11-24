@@ -1,0 +1,19 @@
+{
+  "head": "b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58",
+  "tree": "ed679c48ad8bd12dcbc9af562053761329643a5b",
+  "restored": [
+    {
+      "path": "src/main/services/annex-client.ts",
+      "sha256": "1e518e2c5eb4ae0ca0130fd11c7eae345c957eed0a4e4c1002d031694ad964b4",
+      "byteRestoredToC2": true
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "sha256": "136506b035ec088b98e84ba8cf98044fe7e97b4691f94c96ca73c3c1c095bfd6",
+      "byteRestoredToC2": true
+    }
+  ],
+  "selector": "reverse Details admission|owns one reverse subscription|retires the owned stream before late frames|keeps bounded controller reads separate|local positive snapshot receipts|discards .*responses across an in-place disconnect|fences a role response across an in-place reconnect|reads only the fixed Settings route|represents an older Settings host|reads bounded exact-agent Details|reads only an exact selected-agent Changes|binds bounded selected-source Details|binds managed inventory pages|binds helper-only Details|binds Actions inventory GETs|binds Canvas inventory GETs|withholds a schema-valid prior Details",
+  "gateMinimumGiB": 4,
+  "workers": 1
+}

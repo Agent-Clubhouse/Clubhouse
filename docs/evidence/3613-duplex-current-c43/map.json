@@ -1,0 +1,180 @@
+{
+  "task": "3613-resume",
+  "kind": "Current source and capability reconciliation; no new execution or implementation",
+  "goal": "Full current remote control parity through one forward route with reverse direct blocked: live chat/sidebar/approvals/lifecycle/terminals/current files including supported binary content/handoffs, security, confinement, cleanup, exact-head E2E and closure of known product defects.",
+  "main": {
+    "commit": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+    "tree": "0193de3b749c243667983176c9807b9fe9749f8e",
+    "remoteReadback": "GitHub main ref and local origin/main agree",
+    "physicalReadback": "Physical source matches immutable c43 Git objects; both worktrees clean",
+    "httpRouteTableEntries": 82,
+    "routeCensusLimit": "Static table count, not 82 accepted executions. Historical 76/79 inventories are not the current census.",
+    "q5": "Paused and separate. Merged unwired P1 and proposed P2 documentation confer no duplex consumer, journal, ACK or recovery acceptance."
+  },
+  "landed": [
+    {
+      "surface": "Verified directional routes, identity/pins and authorization",
+      "prs": [3611, 3639, 3647],
+      "commits": ["ae56577af786b0db79f21d137d0b334a5f7847dc", "65a36c0cee099f90b11029a7c749717edaf39efc", "9d9adbe5e9768f087b5e57abb10ddefe3c0386a2"],
+      "limit": "Foundation and request target API; not all desktop consumer wiring."
+    },
+    {
+      "surface": "Reverse subscription, ws-control/private terminals and bulk targets",
+      "prs": [3670, 3684, 3688],
+      "commits": ["35e4130c48496d6daf9da28bba694a7b2c4f80fa", "aa193423d0f81798337ac5d3652cffe6fec3ea5a", "1b14045252e5af2240046a0e18c050c6dc5b23aa"],
+      "limit": "Existing authorized APIs and target fences are landed; ordinary satellite client does not yet consume a reverse subscription."
+    },
+    {
+      "surface": "Independent peer-bound control reconnect and directional Settings readiness",
+      "prs": [3748, 3752, 3753],
+      "commits": ["6130b29669f58c8a7bad112aa745d4ca43775971", "53524110b90d053053d6ed49fd480816b8fcaee6", "072925fc300300943daa7a42994e53ef66707c57"],
+      "limit": "Readiness is not full-surface parity. No wholesale historical P7w/P8 ancestry was imported."
+    },
+    {
+      "surface": "Read-only desktop controller transcript/history/sessions over reverse control",
+      "pr": 3757,
+      "commit": "78092f9b213d80698f758e709a23feac60374380",
+      "source": "d0b59fbc8e7274ad1679ca15c5ee0c0776421590",
+      "delivery": "0af3f079dbf86c25824a237431ec24c033e96f96",
+      "proof": "Historical scoped 951 passes, typing/lint, independent review and hosted44889180446 33success/4skip on exact delivery composition; no current c43 rerun claimed",
+      "limit": "Only controller GET consumers; no normal live chat/PTY/files/writes migration."
+    },
+    {
+      "surface": "Sidebar startup hydration; upload cold-cache/benign-eviction defect; callable hydration identity",
+      "prs": [3744, 3750, 3751],
+      "commits": ["3b906cb3e32c510c96beffd891b122cdf3c4d033", "c0cf2f1974b98a9418f1682284c6535d1a1e396b", "daa7dab5e3db78280ba845602bbcfd7e5f73cf0c"],
+      "closedIssues": [3695, 3715, 3738],
+      "limit": "Bugfixes are on main. Earlier P8 docs saying 3715/3738 unresolved are historical; reverse/E2E composition is still separate."
+    },
+    {
+      "surface": "Current remote read-only Details/role/Actions producers and consumer validation",
+      "prs": [3749, 3755, 3756, 3759, 3761],
+      "limit": "Owned by Details; current client requestAgentSettings/DispatcherDetails/AgentDetails/AgentChanges remain direct-connected gated. Preserve their shape, selected-role, receipt, epoch and page guards."
+    }
+  ],
+  "preservedNotIntegrated": [
+    {
+      "branch": "feat/3613-p7w-consumer-wiring",
+      "head": "23e71ebbd20585b77f9aac2221b215edd4d638ff",
+      "scope": "Common single-send request seam, seven specialized adapters, reverse stream identity/subscription/device availability",
+      "limit": "Useful reviewed prior art, not a c43 implementation or accepted integration."
+    },
+    {
+      "branch": "feat/3613-p7w-gitdiff",
+      "head": "fde1fa0481022216f15ff71fac1d2d1363bb8f5a",
+      "scope": "Uncapped existing GET Git diff response budget"
+    },
+    {
+      "branch": "feat/3613-p7w-largereads",
+      "head": "edf1425b5c36feca186104a329c4f2f3955b110d",
+      "scope": "Existing large bulletin/topic/transcript response budgets and directly dependent visible failures"
+    },
+    {
+      "branch": "feat/3613-bulk-late-offer",
+      "head": "21081aed6a2de9f65f56178baafefb50899b7a29",
+      "scope": "One-use 30s/64-entry per-link legitimate local-cancel tombstone prevents a late response offer taking down unrelated work",
+      "limit": "Not an ancestor of c43. Current makeBulkLane rejects unknown late response offers as whole-link protocol errors."
+    },
+    {
+      "branch": "feat/3613-federation-ready",
+      "head": "966a91abfb934ac1a9a3ec0841efab851375aa4b",
+      "scope": "Final-send controller-publication authority and startup race",
+      "limit": "Specific production review provider-refused HTTP422, no verdict. Do not replay, rephrase, reroute or substitute that review; do not import its changes or infer approval."
+    },
+    {
+      "branch": "feat/3613-p8-parity-inventory",
+      "remoteHead": "346753c8028b4f7be8853b161278947c82da57c0",
+      "localHead": "a55bd0e708ce43a64c65089cc30d8c9320e62ad6",
+      "limit": "Different preserved refs; do not treat local as pushed or remote as current integrated acceptance."
+    },
+    {
+      "branch": "feat/3613-owned-diagnostic-contract-v2",
+      "head": "233a669e7f38ed52a5f93e080537eccbce1cd7ab",
+      "limit": "Natural owned Node-pair exit/calibration and transferred-record integrity only; raw post-ack samples absent. No production, current routes or whole-tree/native/Electron confinement acceptance."
+    }
+  ],
+  "hostedDrafts": [
+    {
+      "pr": 3721,
+      "head": "4315db00a20928d7046f8fffb1887471b2094700",
+      "run": 44420227044,
+      "state": "OPEN DRAFT DO NOT MERGE",
+      "jobs": {"success": 28, "failure": 13, "skipped": 4},
+      "limit": "Historical failing throwaway stack; no current main acceptance."
+    },
+    {
+      "pr": 3736,
+      "head": "e72831fbf2e415be8c5b464f96e22b9813bf794a",
+      "tree": "bf23bbd35d7ad352eddc4d69eccd11a10f9258df",
+      "run": 44506257649,
+      "actualCheckout": "fae6daf2bd113106515d6ce702647c7d314cbb33",
+      "state": "OPEN DRAFT DO NOT MERGE",
+      "jobs": {"success": 41, "failure": 0, "skipped": 4},
+      "limit": "Historical112 first-attempt cases, eight raw F/sentinel captures and16 main exit receipts; bounded happy-path export only. No current c43, failed-export, whole-tree confinement, full matrix or product acceptance."
+    }
+  ],
+  "capabilityAndGateMap": [
+    {"surface": "Controller transcript GETs", "state": "LANDED bounded desktop read-only", "remaining": "Current integrated E2E, not new hidden-controller mutation or phone authority"},
+    {"surface": "Normal live chat/sidebar/approvals/questions", "state": "REVERSE TARGET/APIs LANDED; ordinary consumer MISSING", "source": "annex-client.ts:1060-1230,2495-2558,2759-2829", "remaining": "Owned reverse subscription feeds existing snapshots/events; single-route pages/commands/answers, lost-reply/no replay, stale publication fences"},
+    {"surface": "Lifecycle/group/Git writes", "state": "TARGET/APIs LANDED; common consumer DIRECT ONLY", "source": "annex-client.ts:2416-2463,2831-2966", "remaining": "Single captured route and request id, original authority, cancellation and indeterminate/no-fallback; current effect assertions"},
+    {"surface": "Current file tree/text/Git/session reads", "state": "DIRECT ONLY desktop adapters", "source": "annex-client.ts:2088-2143,2831-2923", "remaining": "Reverse bytes/status/headers parity, correct existing uncapped reads, active I/O cancellation evidence; no fabricated binary-to-text success"},
+    {"surface": "Supported binary content/icons/full events/attachments", "state": "P6 TARGET and existing policies LANDED; consumer/route composition MISSING", "source": "annex-control.ts:476-491; annex-chat-content.ts; annex-client.ts:444-530", "remaining": "Exact bytes/digest and route budgets, before-credit local limits, revocation/discard. files/read is text; supported media/PDF content and handoff artifact bytes use their existing APIs. Do not claim an arbitrary-binary text-file API"},
+    {"surface": "Private terminals/PTY scrollback/input", "state": "P5 TARGET LANDED; consumer subscription/seed DIRECT ONLY", "source": "annex-client.ts:487-618,2037-2076", "remaining": "Reverse ws-control capability, single owned stream, no shell migration/input replay, digest/seq/geometry, cleanup on every retirement"},
+    {"surface": "Handoff manifests/artifact chunks/resume", "state": "TARGET/receiver LANDED; postToMachine DIRECT ONLY", "source": "handoff-transfer-transport.ts:7-38; annex-client.ts:2475-2478,2495-2538", "remaining": "Existing maxResponseBytes/signal and final digest across one-forward both orientations; actual mid-transfer cut/fsynced resume/apply effects"},
+    {"surface": "Settings/Details/Changes", "state": "CURRENT PRODUCERS LANDED; four client reader gates DIRECT ONLY", "source": "annex-client.ts:2613-2743", "remaining": "Details owner exact transport/positive snapshot admission concurrence; retain all page/role/schema/receipt/epoch guards and no cached/new-link receipt adoption"},
+    {"surface": "Network publication/federation/outbox/replicas", "state": "EXISTING DIRECT implementation; remaining reverse readiness/races UNACCEPTED", "remaining": "Do not broaden isMachineConnected/onSatelliteConnected into publication authority. Hold specific966a review boundary; preserve current wire, grants, controller readiness and outbox policies"},
+    {"surface": "Legacy removal defect3711", "state": "OPEN product defect", "source": "annex-handlers.ts legacy REMOVE_PEER/REMOVE_ALL_PEERS; client outgoing socket ownership", "remaining": "Close/forget outgoing client by same supported removal semantics; send/state/late-frame zero-effects regression. Disjoint from Naming SAVE/emergency regions"},
+    {"surface": "Well-formed route-budget blast radius3714", "state": "OPEN product defect", "source": "annex-control.ts:makeBulkLane rejectStart", "remaining": "Exact known owned over-budget response request-only refusal before credit; retain whole-link authority/ownership/metadata/replay/sequence/digest failures. Narrow new-delta review, not federation review substitution"},
+    {"surface": "Companion Naming3720 and full Details3733", "state": "OPEN; owned separately, partial primitives/producers landed", "remaining": "Naming convergence/store/race implementation and full Details field/card/current-app acceptance belong to their owners. Their open status is not closed by this transport milestone; coordinate only actual shared hunks"},
+    {"surface": "P8 one-forward end-to-end and confinement", "state": "REVERSE P8 specs/fixture NOT ON MAIN", "remaining": "Current exact-head 82-route and caller/effect grid, Windows/Ubuntu Electron renderer+main+descendant dial auditing, sentinel, owned cleanup, complete failed and success export. Existing nonreverse Annex suites remain on main"},
+    {"surface": "Phone hidden-controller/recovery", "state": "SEPARATE3760 docs-only privacy gate", "remaining": "Human Off/Ask decision and reviewed executable policy/backend prerequisites. No phone privacy, Go adoption, grant or federation bypass"},
+    {"surface": "Public release", "state": "3706 OPEN HOLD", "remaining": "Go receiver publicly available/user gate. Implementation merge never equals release clearance"}
+  ],
+  "nextCoherentMilestone": {
+    "name": "Current-main P7w remaining desktop consumer integration, not another Q5 piece or wholesale old-stack merge",
+    "base": "c43ffb37d20650c542e449a8a04a9fd84e65b655",
+    "sourceGoal": "Existing desktop request/read/subscription/device surfaces work through one authorized captured route, including binary/terminal/handoff consumers; preserve direct defaults and all current authority/Details/settings guards.",
+    "hunks": [
+      {"file": "src/main/services/annex-client.ts", "ranges": ["163-232", "444-618", "645-706", "1060-1230", "1338-1459", "1831-2076", "2088-2270", "2416-2609", "2613-2743 transport/admission calls only", "3260-3380"], "work": "Main-only request and stream identity, exactly one direct-priority route, seven specialized header-time adapters, original-trust/link epoch cancellation, one reverse subscription routed into existing message handler, positive receipt only after accepted compatible nonpaused snapshot, retirement before deferred callbacks"},
+      {"file": "src/main/services/annex-control.ts", "ranges": ["Pending/Link private state", "476-548 response budgets/rejectStart", "request giveUp/close cleanup"], "work": "Port directly dependent Git/bulletin/transcript budget and legitimate late-cancel fixes.3714 request-only over-budget rejection is separately identified narrow defect; preserve P5/P6 fences and current8MiB controller local cap"},
+      {"file": "src/main/services/annex-devices.ts", "ranges": ["Sources/current direct observation", "reachFor/buildDeviceList current availability"], "work": "Use exactly authorized current consumer/stream observations; do not conflate request capability, live snapshot, subscription, terminal-control or publication authority"},
+      {"file": "Existing annex-client/control/devices/buffer test files and small new reverse-consumer fixture tests", "work": "Real two-peer pinned stack, one forward and blocked opposite direct dial, deterministic fake native shells, refusal/currentness/binary/cleanup controls"},
+      {"file": "docs/annex-reverse-routes.md and docs/annex-reverse-binary.md", "work": "Update implementation limits and current evidence only, never phone contract3611"},
+      {"file": "src/main/ipc/annex-handlers.ts legacy removal blocks only, with existing tests", "work": "3711 is an explicit required defect closure candidate, no SAVE/emergency/store rewrite; parent coordinates separate owner if already assigned"}
+    ],
+    "detailsBoundary": "Only original transport eligibility/capture/call/currentness integration in the four c43 readers and snapshot receipt/stream ownership plumbing; no producer DTO, card schema, role agent, page query, selected identity, refusal mapping or authority widening. Await actual owner concurrence on this dependency while independent host work proceeds.",
+    "namingBoundary": {
+      "proposal": "a2c6b9ab5846692510b211c1493f40cfb5dc6ac3",
+      "proof": "63c76cdb89f92feb58433e856987c472545c9267",
+      "checkpoint": "75b1292b663d5b7106bd8aa73ffc50b1ac6a4892",
+      "readmeSHA256": "46ac252f976e059939076ec073b33eeadd8756c1045a7f4ead9dc59deefcdf20",
+      "result": "No concrete overlap. Only two new store/recovery modules plus settings-store imports/options overload/pendingWrite facet/notifyLoad source capture reserved; README explicitly excludes client/server/handlers/MCP/runtime consumers. Source proposal only, no QA store/race/security verdict from this helper.",
+      "futureCoordination": "Any actual Naming facade/SAVE/MCP/emergency consumer migration must preserve clone plus settingsWrites persist/apply ordering and network-disabled abortControllerReads before device notification, as well as independent stopClient effects. No whole-file veto."
+    },
+    "proof": [
+      "Capture current-source RED first for remaining direct-only consumers, not replay historical counts.",
+      "Both opener orientations: exactly one permitted forward endpoint, opposite direct dial deliberately blocked, listener audit plus independent sentinel; original failure records preserved.",
+      "Actual existing client/control/request and subscription paths: file text bytes; supported binary icon/content/full-event/upload and handoff bytes/digests; correct current route caps; Git/session/bulletin large reads.",
+      "Hold body/media/icon/canvas/buffer/Details awaits; revoke/disable/forget/pin change/control replacement; late frames and receipts cannot mutate new stream/session/card. No old positive receipt adoption.",
+      "Request-only/no-subscribe/no-ws-control/old peers retain defaults; direct header-time404/503/nonimage dispositions retained; no reverse fallback on error, timeout, cancellation or lost write reply.",
+      "One subscription, first-snapshot freshness and seq ordering; direct replacement closes previous owned private shell, clears buffer/request state and never migrates or replays input; retired frame callbacks invoke zero effects.",
+      "Actual cancelled bulk offer versus unknown/expired/oversized/replayed/authority/digest failures; each exact negative must distinguish owned request refusal from whole-link security failure.",
+      "Normal gated targeted Vitest <=2workers min4, all production/fixture tsc min6GiB, scoped ESLint min4; installs only actual missing dependency and min6; structured before/after source/config/gate seals and unchanged current phone fixtures.",
+      "Independent exact consumer/new-delta review and normal exact-head hosted CI before PR/landing; reverse P8 hosted current application/confinement/cleanup remains a distinct acceptance milestone. No local E2E/full suite, live app restart, firewall changes or paid provider work here."
+    ],
+    "estimate": {
+      "candidate": "8-16 focused engineering hours for a frozen source + targeted-proof candidate once Details boundary is resolved",
+      "reviewAndHosted": "1-3 working days including normal resource admission, independent review and ordinary hosted CI; not a deadline guarantee",
+      "confidence": "Medium-low: current receipts/stream replacement, large-read cancellation and legacy removal are concrete risks; resource/reviewer queues not predictable",
+      "fullGoal": "No defensible release/complete-duplex date from this source inventory. Expect additional multi-day P8 current-app/confinement/fault work; privacy/human/release and refused federation gates have no promised duration."
+    }
+  },
+  "currentSourceSHA256": {
+    "src/main/services/annex-client.ts": "f19f6d5308c851f325e3f2feb1f3aceb5feaec4c9105a3a060e0b9c835e43a60",
+    "src/main/services/annex-control.ts": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+    "src/main/services/annex-control-bulk.ts": "4553088eb240028de1780b151667e2e3efb2c31bbff558207f7a18da8fb0bdee",
+    "src/main/services/annex-devices.ts": "9500d0cd06aeaee11be17043b6b7e5abddc58e805ef6045a007df7403260da72",
+    "src/main/services/annex-server.ts": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500"
+  },
+  "evidenceLimit": "Read-only Git/GitHub/source reconciliation. No product source changed, test/compiler/lint/install/calibration/E2E run, new helper/reviewer, phone/privacy/permission/host action, merge/deletion/release or new runtime acceptance."
+}

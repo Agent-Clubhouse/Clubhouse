@@ -1,0 +1,5 @@
+{
+  "extends": "../../../tsconfig.json",
+  "include": ["../../../src/main/services/agent-runtime/runtime-coordinator.test.ts"],
+  "exclude": []
+}

@@ -1,0 +1,292 @@
+{
+  "issue": 3711,
+  "base": "7dfc8b1541bc8c77980faaff782f573c2fa85a15",
+  "executionSource": "2ec597518433a1aca5625e61d01b183a31c01b31",
+  "executionTree": "a6435fdb4bc205ade5c8ebc849d9534e675a869b",
+  "negativeControlSource": "8ad8363bb4cec974b57b2ae889a697689e03a97f",
+  "negativeControlTree": "33e9fd37888382d8b5c32056fb008def4d8b67fd",
+  "negativeControlProductionByteIdenticalToBase": true,
+  "gate": {
+    "path": "~/.clubhouse/orch/desktop-test-gate.sh",
+    "sha256": "d45cbfb0449abc1ce34bbc84960292dca70e6b551944beb9109b79d11fe9a7d3",
+    "compilerMinimumGiB": 6,
+    "testLintMinimumGiB": 4
+  },
+  "inputs": [
+    {
+      "path": "src/main/ipc/annex-handlers.ts",
+      "blob": "8a5ccf9527c6e4890734c949e41935b311fa659f",
+      "sha256": "7fddae8cc70697c7815358fc9fe1d4ad5658d2c06b541910f5056810d360cf21",
+      "bytes": 14160
+    },
+    {
+      "path": "src/main/ipc/annex-handlers.test.ts",
+      "blob": "e7131da22fbcbe17a2323ac4f4a1e2e331f71884",
+      "sha256": "624a6149d9ab05ddf875ba6952118119f0912cf0728a3a564e8b6c979121ea70",
+      "bytes": 22117
+    },
+    {
+      "path": "src/main/ipc/validation.ts",
+      "blob": "8336e5ca024ad600517a7bbed6d42882cbc4b5cd",
+      "sha256": "a707b2e8460759abcacd142fa386a6f27543af2d0049fed921cffd3001c58b09",
+      "bytes": 7587
+    },
+    {
+      "path": "src/main/services/annex-client.ts",
+      "blob": "77cfe1328ce8b05ed4df5243a3683938e98a9670",
+      "sha256": "aa88745f6fd69c5260220ec157a2b96f157e19ec50b8395c5e09956c3c4dbb98",
+      "bytes": 173595
+    },
+    {
+      "path": "src/main/services/annex-client.test.ts",
+      "blob": "7ecb6894da0a1587df4a034fa22d6cadb17882b2",
+      "sha256": "0d438fd55564f23a34a7ec0db7edd509a278e2ab0c8fb4b51b3910f5be9b36f6",
+      "bytes": 295529
+    },
+    {
+      "path": "src/main/services/annex-server.ts",
+      "blob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+      "bytes": 361313
+    },
+    {
+      "path": "src/main/services/annex-peers.ts",
+      "blob": "b85f7eece758f9d1bf400d6ab85bf1b51bbd764d",
+      "sha256": "92c62decad2d6da566065abef20611dbed75529b9f20a2230db35cc65cb8b503",
+      "bytes": 26245
+    },
+    {
+      "path": "src/main/services/annex-devices.ts",
+      "blob": "a03e862e2f389c8a252432c2a59c0c3fb123c4fb",
+      "sha256": "279f326f95cad34e65ffe3035900f5d67618bce961ebedaf08b0f0e0091a0b2a",
+      "bytes": 15458
+    },
+    {
+      "path": "src/main/services/annex-devices.test.ts",
+      "blob": "41b88df093a7ed09195d7f6fc6a1e91a9f1d59dc",
+      "sha256": "098253ae7d6dcc2a051f48ca8e164a518a40e5476f234b57e0feebfb35d1f914",
+      "bytes": 27718
+    },
+    {
+      "path": "src/main/services/annex-device-signal.ts",
+      "blob": "9b23750124ddfc79612a0bc87216b001fa995e81",
+      "sha256": "31e25abf98c78e7ce5721c9c9391e0d657ff9e670b9ac0939e9e0001f5cd04bf",
+      "bytes": 1990
+    },
+    {
+      "path": "src/main/services/annex-control.ts",
+      "blob": "d398a97162e3eb4c554828dde82e863e0505bea9",
+      "sha256": "4d69cb8bd02dc20d00e03c7685878d09ab0e2c228e44217e477aa775539ffbba",
+      "bytes": 78498
+    },
+    {
+      "path": "src/main/services/annex-network-membership.ts",
+      "blob": "4d4777ffaa3003f385db42efd6565ec08240cbed",
+      "sha256": "313b1aa6ae0cd889112bfbfc67de51d378918e05324a651577db2beafbbc5c55",
+      "bytes": 43610
+    },
+    {
+      "path": "src/main/services/annex-network-channel.ts",
+      "blob": "239df9e8f206c3bd15646c1389ac4652c561d4b8",
+      "sha256": "a57bf637c67c04654c494431259c9a7715d4fc4cfec6ad20a7fae91396e1f684",
+      "bytes": 20467
+    },
+    {
+      "path": "src/main/services/settings-audit.ts",
+      "blob": "3a1e8232b725dcb2d107d1fbca12ecc936b632b0",
+      "sha256": "a0890a817e2f95c66bddd2ffdc9d45b8adde1ed36a1ce05637a0bba18d2f6fb5",
+      "bytes": 9483
+    },
+    {
+      "path": "src/shared/types.ts",
+      "blob": "d1b0d86fda1037c8262e12503bdfb0c8e63acde0",
+      "sha256": "7a17859ac7ccff7f81e0ff156665815c5c53f4372730f5b57eeb1d64e081e9fa",
+      "bytes": 76632
+    },
+    {
+      "path": "src/shared/ipc-channels.ts",
+      "blob": "94b3aea072c72996d4ecd5b921346e8037ae3a0a",
+      "sha256": "f4c5158c1573a361e48e7b9841459e85b148eea8b67f3d384f6ca4c91577f287",
+      "bytes": 48129
+    },
+    {
+      "path": "src/__mocks__/electron.ts",
+      "blob": "a5f6b589b27ec53af4369bace4f2be89c6d79817",
+      "sha256": "b3fa8e75740492dae26e51dfa6fa81f6d5aca90ecc53b1a1af1724d8c13c4ec4",
+      "bytes": 2809
+    },
+    {
+      "path": "src/__mocks__/ws.ts",
+      "blob": "54afa363db970783a3e00bfd93f3e372d24e14e4",
+      "sha256": "44a1a1a2622403d7b2bf6396efff56a539c923706bd3e15115969738458b3a60",
+      "bytes": 1062
+    },
+    {
+      "path": "test/global-setup.ts",
+      "blob": "f80eac131998f792ca0f271f80eb606215c942af",
+      "sha256": "21a96e859edd6c204550d9930e132c05f2f11a606f5a757dd636c0223eb4362e",
+      "bytes": 658
+    },
+    {
+      "path": "test/standard-runtime-boundary.ts",
+      "blob": "0a2d496ec59195a46b27a4b5394d4fab9111f62d",
+      "sha256": "eacfd64b46dc0ca1b2011de9edfc23486d9cc47ab0e1a833a3cbc747ce0b0680",
+      "bytes": 379
+    },
+    {
+      "path": "vitest.config.ts",
+      "blob": "e371e57159be74b4f5baf9aadcb0339fa6034025",
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "bytes": 3220
+    },
+    {
+      "path": "tsconfig.json",
+      "blob": "c04b8bc31abbcfb275ead0c1b3da1df31e389bef",
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "bytes": 530
+    },
+    {
+      "path": "docs/annex-reverse-routes.tsconfig.json",
+      "blob": "31137e6846a46b3ad0f8890b2e10bc2b39620112",
+      "sha256": "26b864ea875ec6db8bc65c0e514f6103314a7133639b44b2e185d62d06a3de4a",
+      "bytes": 921
+    },
+    {
+      "path": "package.json",
+      "blob": "c09166b9b6094c9e87d8a9642b4a2d2dea455ac8",
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "bytes": 5782
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "7e45389f84ca58c5c7832cab169aa5674320d25d",
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "bytes": 690814
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "attempts/01-red-original.txt",
+      "sha256": "bd5f4144955a0e535c961558f139fa1595e20744c6264dfabbcabdbe8f8e9062",
+      "bytes": 6539
+    },
+    {
+      "path": "attempts/01-red-source.txt",
+      "sha256": "acf5e1309cc761ea33fe52af85193b13a62f7b4487d44639d8e5223b125b87e3",
+      "bytes": 82
+    },
+    {
+      "path": "attempts/02-red-original.txt",
+      "sha256": "45c77c5c61270a4d5aabe0c0728741bbbdd072bf5d7be9e368d961d8829cdcaf",
+      "bytes": 9409
+    },
+    {
+      "path": "attempts/02-red-source.txt",
+      "sha256": "d4838c42960596e7eaec3080f509f8c52b8a6064bef2543d011ddb09850076c9",
+      "bytes": 82
+    },
+    {
+      "path": "attempts/03-red-original.txt",
+      "sha256": "0b455d69c2685ce42ef87ea34e492eeb9acf49e005c18cba70b369621568b50d",
+      "bytes": 10708
+    },
+    {
+      "path": "attempts/03-red-source.txt",
+      "sha256": "d9366884b646c84b9a5b00fe45553b367cb4eb056bc3594c59b9bf6fe0ddc0c7",
+      "bytes": 82
+    },
+    {
+      "path": "attempts/04-green-original.txt",
+      "sha256": "a9d5d3620b9d238e14e260fe4de860d8c1ad8553d891f345c6d393d9c2904c76",
+      "bytes": 1005
+    },
+    {
+      "path": "attempts/04-green-source.txt",
+      "sha256": "c061a59045fdff8f999325e6faeb4e6c090fc931e80c2dfa4bb143d8089c1186",
+      "bytes": 82
+    },
+    {
+      "path": "attempts/05-compiler-source.txt",
+      "sha256": "c061a59045fdff8f999325e6faeb4e6c090fc931e80c2dfa4bb143d8089c1186",
+      "bytes": 82
+    },
+    {
+      "path": "attempts/05-root-types-original.txt",
+      "sha256": "9ff4d5cdd3afe6c606dd013ec44b4da6aec304aa305c4ce1cead5b9159282607",
+      "bytes": 171
+    },
+    {
+      "path": "attempts/06-fixture-types-original.txt",
+      "sha256": "e72510f3fd741411001f372480cb1717118dc06e314650ed794a086ed41c9b48",
+      "bytes": 8329
+    },
+    {
+      "path": "attempts/07-lint-original.txt",
+      "sha256": "676d5d3835b1d46ba3c473941ab20ff9a2f047081c79e49bcaee41d0ee431e1d",
+      "bytes": 416582
+    },
+    {
+      "path": "attempts/08-final-source.txt",
+      "sha256": "942b6bc5f7871705b6b33821a0fc09c23b0e3b0cdd5bef0254957213f5edc9f5",
+      "bytes": 82
+    },
+    {
+      "path": "attempts/08-fixture-types-original.txt",
+      "sha256": "1ec620e44dff989449905d5b8f447f1281cdbbc589366386c39a29722a5a10ea",
+      "bytes": 221
+    },
+    {
+      "path": "attempts/09-final-vitest-original.txt",
+      "sha256": "5d61b67b6af8c8ff4be988bcb158fa4d4449ec97f76adcb7306a03c2a37041a7",
+      "bytes": 1005
+    },
+    {
+      "path": "attempts/10-final-root-types-original.txt",
+      "sha256": "09ee52fe7010853415cdcaa43116cc7e5c341b5f1205a831d60b95f0a9f9cde7",
+      "bytes": 171
+    },
+    {
+      "path": "attempts/11-final-lint-original.txt",
+      "sha256": "ede786e13a8797bdb2ae0b4237db805fabe2321224641b4740b88686b6444eb8",
+      "bytes": 417008
+    },
+    {
+      "path": "attempts/12-lint-baseline-original.txt",
+      "sha256": "55c060d6012f6f8f13ab0adc6474d0523682f4b3f61257021cb1017d019df364",
+      "bytes": 408877
+    },
+    {
+      "path": "attempts/13-lint-comparison-original.txt",
+      "sha256": "6355954ea3663fea95fa25153627dc7797942e7ce73beacad30037a799d0e54d",
+      "bytes": 266
+    },
+    {
+      "path": "attempts/14-lint-line-bridge-original.txt",
+      "sha256": "5829839d7ddb6a1f0a3cd891f7305a149d0ca08f8c9b06002287a99f26df137d",
+      "bytes": 348
+    }
+  ],
+  "results": {
+    "negativeControl03": {
+      "failed": 5,
+      "skipped": 405
+    },
+    "final09": {
+      "passed": 457,
+      "files": 3
+    },
+    "finalRoot10": "PASS",
+    "finalCompleteFixture08": "PASS",
+    "finalLint11": {
+      "errors": 0,
+      "existingWarnings": 146,
+      "introducedDiagnostics": 0
+    }
+  },
+  "limits": [
+    "deterministic peer and socket wire fixtures, not real TCP/TLS",
+    "not current-app/Electron/phone/native PTY/federation/handoff acceptance",
+    "independent review and ordinary exact-head hosted CI pending",
+    "no release or branch deletion"
+  ]
+}

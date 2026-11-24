@@ -1,0 +1,116 @@
+{
+  "sourceHead": "15f54f5ec7eac7e6d8ef0f14a730d8dac4413181",
+  "sourceTree": "69a47d66e02836cba39436cf3bfe235e1273b58f",
+  "sourceFixtureSha256": "2ed920f7c4350dd68fbbe57652627a9aea6314846635f1efa983feaf2d2c41b2",
+  "previousSource": "7d816673ec91e3588c190e4900cebbb3cd4d87c6",
+  "previousEvidence": "43a20457f8091ebe5d450b6e52953ec30d005554",
+  "previousManifestSha256": "99438287d9668360f0bdd332641c4a2041cfd98a3fa4536d082672787638499d",
+  "sourceBlock": "611f19a65030fdff8787089aa03dff22cffded0c",
+  "sourceBlockReportSha256": "d302a195d9a0f4824fa053d2571f2c581a22f6ab1752e322f99a041c69bed3bb",
+  "originalFailingRun": 44981401024,
+  "prUnchangedExpectedHead": "e56648cb0952cb29c5045107b635d81f662dae74",
+  "artifacts": [
+    {
+      "path": "docs/evidence/3774-phase-observation/08-final-output-controls.patch",
+      "bytes": 3322,
+      "sha256": "16c7a0e070096c133d520a9c5aa873beb0a4f89f69b9391baed74d1dcdb1df3f",
+      "gitBlob": "b741145ceabef2eaf32f36c657b5f7f1db11dfda"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/09-final-output-fixed-controls.patch",
+      "bytes": 4580,
+      "sha256": "f931cb7fde05fe9f18b560254615a055e8bcf89dc0edd245742917d33cfb76f9",
+      "gitBlob": "5dab14cd841f2b30ecad05675e30434aefd51f3b"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/08-final-output-red-original.txt",
+      "bytes": 18647,
+      "sha256": "f56e00fd6b6cd71d53804f505b5499f56268f77dffa1af37fd00db93eb6c487b",
+      "gitBlob": "16b7b5db5acc9f8dc77d7203b4117769d2e4d04c"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/08-final-output-red-receipt.json",
+      "bytes": 23800,
+      "sha256": "bdffd5dac5ed29abbf58267bf31694bd76c49d876397e7b360683a55ca1f35cc",
+      "gitBlob": "bb284c79901628efd1d863889ecece74cba46a79"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/08-final-output-red.xml",
+      "bytes": 25144,
+      "sha256": "7df831883c64288ea43d1e5d9b81ae25dd1ac99ad18e2726ef364a703d86a30e",
+      "gitBlob": "219e9f3413bb2331763c624dcc158cb9a81fe43b"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/09-final-output-fixed-original.txt",
+      "bytes": 9620,
+      "sha256": "af574b2dbea61ea5140b5b332d01cbabb7ee6ce69189782d1c8dd23e088bb244",
+      "gitBlob": "f5882096c3ca02b21cde3670cd663d427f296ef6"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/09-final-output-fixed-receipt.json",
+      "bytes": 23802,
+      "sha256": "ec75073432f151d79b21d3f5bc34e6c3499fbeaa23e78759ed3782625217e7e3",
+      "gitBlob": "2f4736f53470fd3a0ba85e6c1c8bc6aab897f2c2"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/09-final-output-fixed.xml",
+      "bytes": 22851,
+      "sha256": "abe4d49ee62e7582c364d0bf4c92ebb9e3f8b292871ab1810309ef37b736f316",
+      "gitBlob": "880ebdf5f4efa088a25dda9c93f05147245097e2"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/09-r1-verification.json",
+      "bytes": 245,
+      "sha256": "6432a48721feabb61f18e96669d9637a7f5f819523e82cbb0eb8b90597822748",
+      "gitBlob": "187aaddb427cc8422d3828ab19b487e364befd92"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/10-rone-types-lint-original.txt",
+      "bytes": 305,
+      "sha256": "86bee0ba5e26ebfdc6074ade2989526b791a625db010f5019c3145dd78948191",
+      "gitBlob": "f9b83546f9202cd4a7ce440f68c8cf7e32dbab80"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/10-rone-types-lint-receipt.json",
+      "bytes": 23477,
+      "sha256": "e69867b5da54b0b467620a8a65fa486db3f0defe5d5b6e8d87062f33ae4a3caf",
+      "gitBlob": "eda93011faef6664f9d417b2b3415adb4512d20d"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/11-rone-exact-target-original.txt",
+      "bytes": 7837,
+      "sha256": "e8b27ca1adae55c0faf1b09a386c6a14fc3782e3be70a5b3ac151146cc747150",
+      "gitBlob": "8013ca21972925d9660499d5844d63cc5ffccc2f"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/11-rone-exact-target-receipt.json",
+      "bytes": 23684,
+      "sha256": "f377f0fe701b803e1c32608aa0213100c31686dd3f89d851ed065b0e9caf5d7e",
+      "gitBlob": "28763b4ff585822b836398641ef5b9414ad966a0"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/11-rone-exact-target.xml",
+      "bytes": 21455,
+      "sha256": "25ae42a5caf47ee09f893d3a124274cb019cf6bad54967a6dd85c5ec790d6009",
+      "gitBlob": "a5183868edf47669452c3cea539d8fd8d7d911d6"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/attempts/12-r1-attribution.json",
+      "bytes": 12806,
+      "sha256": "7160aaa2a80cc96dfffe52d5c0f033be45e8da6e05f27b6aadbea3523c486e83",
+      "gitBlob": "17dc186ad0136f78d1aa16222be1c0e4afed1990"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/r1-audit.py",
+      "bytes": 5120,
+      "sha256": "3ecb702ea2c43943f06ec2de24ab12fc566cdb3ae8c6e3cdd0346eb2572d7730",
+      "gitBlob": "2c6f22eeee8ef70788d4f1ca51429acd7cddfb91"
+    },
+    {
+      "path": "docs/evidence/3774-phase-observation/r1-correction.md",
+      "bytes": 5920,
+      "sha256": "288811055b1de2558ea184d2466bac621012e90951eec7a7f6ee5868770ec6fd",
+      "gitBlob": "2a9964d5c113de02b2f401676cb382d12b4068cd"
+    }
+  ]
+}

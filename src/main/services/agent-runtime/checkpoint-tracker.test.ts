@@ -88,10 +88,12 @@ function turnEvent(type: 'turn_started' | 'turn_ended', turnId: string, agentId 
 }
 async function runTurn(turnId: string, edit: () => void, agentId = 'agent-1'): Promise<void> {
   handleChatEventForCheckpoints(turnEvent('turn_started', turnId, agentId));
-  await settle(async () => (await listTurns(agentId)).some((t) => t.turnId === turnId));
+  await whenCheckpointsIdle();
+  expect((await listTurns(agentId)).some((t) => t.turnId === turnId)).toBe(true);
   edit();
   handleChatEventForCheckpoints(turnEvent('turn_ended', turnId, agentId));
-  await settle(async () => !!(await listTurns(agentId)).find((t) => t.turnId === turnId)?.end);
+  await whenCheckpointsIdle();
+  expect(!!(await listTurns(agentId)).find((t) => t.turnId === turnId)?.end).toBe(true);
 }
 async function settle(check: () => Promise<boolean>): Promise<void> {
   for (let i = 0; i < 100; i++) {

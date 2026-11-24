@@ -1,0 +1,784 @@
+2026-11-22T09:34:36Z START lane-p2 idle=89% unused=6721M avail=33594M freepct=87 comp=712M swap=3737M pid=35183 cmd=npx vitest run --project main src/main/services/annex-client.test.ts -t reverse Details admission --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/details-transport/01-baseline-original.xml
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-client.test.ts (381 tests | 9 failed | 372 skipped) 28ms
+     ↓ passes through IPv4 addresses
+     ↓ passes through hostnames
+     ↓ brackets IPv6 addresses
+     ↓ does not double-bracket an already-bracketed IPv6 address
+       ↓ returns complete enlarged JSON through the actual single-route adapter and control pair
+       ↓ routes the tree adapter once without an outgoing connection
+       ↓ routes the digest adapter once without an outgoing connection
+       ↓ routes the topic adapter once without an outgoing connection
+       ↓ routes the messages adapter once without an outgoing connection
+       ↓ preserves UTF-8 file bytes and the completed reverse 404 disposition
+       ↓ preserves status, headers, UTF-8 bodies and caller receive limits on one POST
+       ↓ retains the original indeterminate write failure without a route fallback
+       ↓ does not send an already aborted request
+       ↓ refuses a completed response from a replaced accepted link without sending again
+       ↓ does not mint a snapshot or live publication from request capability
+         × routes request-only 'settings' once without minting snapshot authority 9ms
+         × routes request-only 'role' once without minting snapshot authority 2ms
+         × routes request-only 'details' once without minting snapshot authority 4ms
+         × routes request-only 'changes' once without minting snapshot authority 2ms
+         × preserves old-host 'settings' unavailability without fallback or admission 2ms
+         × preserves old-host 'role' unavailability without fallback or admission 2ms
+         × preserves old-host 'details' unavailability without fallback or admission 2ms
+         × preserves old-host 'changes' unavailability without fallback or admission 2ms
+         × mints and exports a local receipt only from the accepted current reverse snapshot 3ms
+       ↓ owns one reverse subscription and accepts its lower-sequence replacement snapshot
+       ↓ retires the owned stream before late frames after stop
+       ↓ retires the owned stream before late frames after disconnect
+       ↓ retires the owned stream before late frames after forget
+       ↓ retires the owned stream before late frames after pin
+       ↓ retires the owned stream before late frames after link
+       ↓ does not resubscribe a refused stream until a new link epoch or explicit retry
+       ↓ never sends queued reverse icons directly after stop retirement
+       ↓ never sends queued reverse icons directly after disconnect retirement
+       ↓ never sends queued reverse icons directly after forget retirement
+       ↓ never sends queued reverse icons directly after pin retirement
+       ↓ never sends queued reverse icons directly after link retirement
+       ↓ keeps the same omitted icons live on a fresh stream after link retirement
+       ↓ does not close the independently maintained control connection when /ws drops
+       ↓ seeds only eligible pinned desktop members and keeps their saved forward local
+       ↓ keeps a negotiated control connection usable after the ordinary main socket drops
+       ↓ closes control exactly once on explicit disconnect and does not reopen it on refresh bursts
+       ↓ withdraws independent control authority on forget and ignores stale callbacks
+       ↓ withdraws independent control authority on pin-mismatch and ignores stale callbacks
+       ↓ withdraws independent control authority on pairing-loss and ignores stale callbacks
+       ↓ withdraws independent control authority on client-off and ignores stale callbacks
+       ↓ withdraws independent control authority on network-off and ignores stale callbacks
+       ↓ withdraws independent control authority on stop and ignores stale callbacks
+       ↓ fences an old route handshake and its callbacks when the saved host is replaced
+       ↓ does not let explicit control Retry bypass client-off settings
+       ↓ retires negotiated control on saved-host withdrawal after a main drop and refuses stale writes
+       ↓ ignores an old main refusal after Retry while independently authenticated control stays usable
+       ↓ does not browse in an environment-selected loopback profile, including scan and wake
+       ↓ does not browse in an environment-selected selected interface profile, including scan and wake
+       ↓ does not identify a service after an environment isolation profile is enabled
+       ↓ ignores an identity response when the environment becomes isolated while it is pending
+       ↓ aborts in-flight discovery identity requests when loopback mode is enabled
+       ↓ does not browse in loopback mode, even after a manual scan or wake
+       ↓ stops browsing when loopback is enabled and resumes when disabled without forgetting a paired connection
+       ↓ ignores a discovery result that finishes after loopback mode is enabled
+       ↓ starts Bonjour discovery
+       ↓ does not start twice when called again
+       ↓ stops Bonjour and clears state
+       ↓ adds unpaired services to discoveredServices instead of dropping them
+       ↓ skips our own identity
+       ↓ updates host/port for already-discovered services
+       ↓ adds paired services to satellites and auto-connects
+       ↓ moves a service from discovered to satellites when it becomes paired
+       ↓ clears discovered services and restarts discovery
+       ↓ returns empty array initially
+       ↓ returns empty array initially
+       ↓ disconnects, removes peer, and clears satellite from state
+       ↓ is a no-op for unknown fingerprints
+       ↓ REMOVE_PEER retires sends and late frames without reviving its outgoing owner
+       ↓ REMOVE_ALL_PEERS retires sends and late frames without reviving its outgoing owner
+       ↓ disconnects all, removes the satellite pairings, and clears all state
+       ↓ rejects mismatched protocolVersion and keeps the last accepted snapshot intact
+       ↓ drops an older snapshot on one connection, but always takes a new connection's first
+       ↓ says so until a snapshot arrives, and stays connected
+       ↓ is not set by any other error
+       ↓ starts clear on a new connection
+       ↓ a controller connecting fresh still gets them, through the routes, as a snapshot
+       ↓ fetches once per connection, and keeps them through later truncated snapshots
+       ↓ does not fetch when nothing was left out
+       ↓ stays connected if a satellite can not serve them, and tries on the next snapshot
+         ↓ a later truncated snapshot does not put the old canvas back
+         ↓ keeps the other canvases and wires when one changes
+         ↓ keeps a change made while the fetch was running
+         ↓ updates a full snapshot too, and app canvases by scope
+         ↓ does not make up a whole project from one canvas it knows nothing else about
+         ↓ fetches only that project, and sends it on as a snapshot
+         ↓ asks once, however many truncated snapshots follow, even when it has no canvases
+         ↓ fetches each of several, one at a time, including one that appears during the first
+         ↓ picks up one that appeared while the first fetch was running
+         ↓ tries again on the next snapshot if the fetch fails, one request each time
+         ↓ keeps a change made to it during its fetch
+         ↓ does not fetch one a snapshot already gave it
+         ↓ fetches that one project, and sends it on as a snapshot
+         ↓ fetches the app's for a global one
+         ↓ keeps a change made during the fetch on top of what it returns
+         ↓ fetches once more for a marker during a fetch, not once each
+         ↓ does not put a fetch over a full snapshot that came meanwhile
+         ↓ keeps what it has and stays connected when the fetch fails, and tries on the next marker
+         ↓ fetches again after the first fetch, if a marker came during it
+       ↓ does not put an older fetch over a full snapshot that came meanwhile
+       ↓ its late close leaves the new connection able to send
+       ↓ its late error does not bring the new connection down or start another
+       ↓ its last frames are not taken as the new connection's
+       ↓ the current socket closing still reconnects
+       ↓ attempts connection for discovered paired satellite without bearer token
+       ↓ retry works without bearer token
+       ↓ does not auto-connect to peers with role "controller"
+       ↓ auto-connects to peers with role "satellite"
+       ↓ lists a legacy peer without a role as a satellite that needs pairing again, and never dials it
+       ↓ returns { sent: false, error: "not_connected" } when WS is not open
+       ↓ returns { sent: false, error } when ws.send() throws
+       ↓ returns { sent: true } on successful send (backward-compat truthy check)
+       ↓ adds a traceparent (tc) to agent:spawn and agent:wake only while telemetry is on
+       ↓ logs warning with preview when satellite sends invalid JSON
+       ↓ transitions to disconnected and schedules reconnect on ping throw
+       ↓ keeps last seen at the last confirmed heartbeat of a long-lived connection, written once at disconnect (#3349)
+       ↓ bridges a pong timeout to telemetry with no attributes
+       ↓ requestFileTree logs warn on network error
+       ↓ requestFileTree logs warn on JSON parse failure
+       ↓ requestBulletinDigest logs warn on network error
+       ↓ requestBulletinTopicMessages logs warn on network error
+       ↓ sends no cutoff params when since is omitted
+       ↓ sends a single timestamp as `since`
+       ↓ sends a per-channel map as JSON in `sinceChannels`, not `since`
+       ↓ omits the cutoff and warns when the map is too large for a URL
+       ↓ sends no params for an empty map
+       ↓ calls clearInterval on heartbeat before reconnecting after pong timeout
+       ↓ resolves cleanly when timeout fires and then error fires (req.destroy side-effect)
+       ↓ resolves cleanly when error fires before timeout is cancelled
+       ↓ applies snapshot with higher sequence number
+       ↓ discards snapshot with lower sequence number (stale on reconnect)
+       ↓ applies first snapshot when no snapshot exists yet
+       ↓ does not broadcast when stale snapshot is discarded
+         ↓ invalidates only positive snapshot admission on agent denial, not retained cache or repeated-denial loops
+         ↓ invalidates only positive snapshot admission on role denial, not retained cache or repeated-denial loops
+         ↓ invalidates positive admission once on a Canvas page 401 across selections, keeping the cached snapshot
+         ↓ invalidates positive admission once on a Canvas page 403 across selections, keeping the cached snapshot
+         ↓ a late same-epoch agent denial read under an older receipt keeps the newer receipt
+         ↓ a late same-epoch canvas denial read under an older receipt keeps the newer receipt
+         ↓ a late same-epoch role-page denial read under an older receipt keeps the newer receipt
+         ↓ a late same-epoch role-actions-page denial read under an older receipt keeps the newer receipt
+         ↓ a late agent denial still revokes the receipt it was read under
+         ↓ a late canvas denial still revokes the receipt it was read under
+         ↓ a late role-page denial still revokes the receipt it was read under
+         ↓ a late role-actions-page denial still revokes the receipt it was read under
+         ↓ ignores a stale prior-epoch agent denial rather than clearing a fresh connection receipt
+         ↓ ignores a stale prior-epoch role denial rather than clearing a fresh connection receipt
+         ↓ ignores a stale prior-epoch canvas denial rather than clearing a fresh connection receipt
+         ↓ power-resume revalidation withdraws the receipt and fences an in-flight agent read until the new socket attests
+         ↓ power-resume revalidation withdraws the receipt and fences an in-flight canvas read until the new socket attests
+         ↓ power-resume revalidation withdraws the receipt and fences an in-flight role read until the new socket attests
+         ↓ mints only on accepted current-socket snapshots, not cached serialization or ignored older frames
+         ↓ keeps offline caches but cannot reattest them on pairing return, transport open, old-socket messages or state broadcasts
+         ↓ does not expose a receipt on a closing socket even before its close callback
+         ↓ drops admission on snapshot failure while preserving its cache, then requires a real new snapshot
+         ↓ does not restore admission on resume or a paused snapshot
+         ↓ requires a new pinned connection after sleep even when the old socket still reports connected
+         ↓ replaces a handshake crossing sleep and ignores its captured callbacks
+         ↓ leaves the client off on resume
+         ↓ preserves the CERT_HAS_EXPIRED stop across resume
+         ↓ preserves the ERR_ANNEX_PIN_MISMATCH stop across resume
+         ↓ allows the existing pinned clock-recovery attempt on wake without bypassing certificate checks
+           ↓ ignores an old 503/'busy' body after resume while the replacement is connecting
+           ↓ ignores an old 401/'needs_pairing' body after resume while the replacement is connecting
+           ↓ ignores an old 401/'peer_not_paired' body after resume while the replacement is connecting
+           ↓ ignores an old 503/'busy' body after resume while the replacement is connected
+           ↓ ignores an old 401/'needs_pairing' body after resume while the replacement is connected
+           ↓ ignores an old 401/'peer_not_paired' body after resume while the replacement is connected
+           ↓ still applies a current 503/'busy' refusal after resume
+           ↓ still applies a current 401/'needs_pairing' refusal after resume
+           ↓ still applies a current 401/'peer_not_paired' refusal after resume
+           ↓ does not apply a pending refusal after manual disconnect keeps the same record
+         ↓ preserves a removed-pairing refusal across resume
+         ↓ keeps the current socket pong effective
+         ↓ retires heartbeat timers after the current socket reports close with reconnect off
+         ↓ retires heartbeat timers after the current socket reports error with reconnect off
+         ↓ does not let a replaced socket pong cancel the current socket heartbeat deadline
+         ↓ ignores a captured heartbeat interval callback belonging to a replaced socket
+         ↓ ignores a captured heartbeat deadline callback belonging to a replaced socket
+       ↓ opens the WebSocket with options pinned to the stored certificate, and no token
+       ↓ never dials a pairing from before pinning, and shows it needs pairing again
+       ↓ stops for good when the satellite answers 401 needs_pairing
+       ↓ stops for good when the satellite answers 401 peer_not_paired
+       ↓ says what a socket error ECONNREFUSED means and what to do
+       ↓ says what a socket error EHOSTUNREACH means and what to do
+       ↓ says what a socket error ETIMEDOUT means and what to do
+       ↓ clears the problem once a snapshot arrives
+       ↓ Retry on a paired satellite not seen since startup starts looking for it, and connects once it is found
+       ↓ says what a 403 for the wrong role means, and keeps retrying
+       ↓ retries after any other refusal
+       ↓ stops reconnecting when the satellite closes the socket because the pairing was removed
+       ↓ treats an expired satellite certificate as needing pairing again
+       ↓ stops on another certificate at the address, and tries once more only at a newly announced address
+       ↓ waits for a retry when the satellite certificate is not valid yet (a clock difference)
+       ↓ treats a REST 401 needs_pairing or peer_not_paired like the same refusal on the WebSocket
+       ↓ never moves a connected satellite to an address discovery announces
+       ↓ tries an announced address while disconnected, through the same pin
+       ↓ builds every outbound connection from pinned options (source check)
+       ↓ probes an introduced desktop over membership only, retries, then connects after confirmation
+       ↓ keeps pending probes alive when channels close out then in
+       ↓ keeps pending probes alive when channels close in then out
+       ↓ connects to a paired satellite at its remembered address at startup, without waiting for discovery
+       ↓ connects to a satellite reachable only by a typed host
+       ↓ leaves a satellite with no address at all to discovery, and one that needs pairing alone
+       ↓ remembers where it was reached
+       ↓ tries each address in turn, then backs off and keeps retrying
+       ↓ reconnects through a saved forward without borrowing its port for direct hosts
+       ↓ reaches the legacy direct port after an older build leaves a stale per-host port
+       ↓ picks a routable address from an announcement, IPv6 when that is all there is, never link-local
+       ↓ remembers an address the device announced as shared, and a known one without saying so (#3608)
+       ↓ takes a typed host, refuses one that is not a host, and tries it at once
+       ↓ can reuse a remembered address-specific port when no legacy default is stored
+         ↓ rejects the save when its pinned certificate changes while the address is checked, keeping the old address
+         ↓ rejects the save when its pairing changes while the address is checked, keeping the old address
+         ↓ rejects the save when its join time changes while the address is checked, keeping the old address
+         ↓ saves the exact verified endpoint when the default port changes during and after its probe
+         ↓ saves the exact verified endpoint when the per-host port changes during and after its probe
+         ↓ persists an inferred IPv6 port with brackets so the checked endpoint remains unambiguous
+           ↓ saves one route to each other computer on distinct local ports, none of them its own
+           ↓ refuses a second computer on a local port already used, naming the first, and one on this computer's own port
+           ↓ saves one route to each other computer on distinct local ports, none of them its own
+           ↓ refuses a second computer on a local port already used, naming the first, and one on this computer's own port
+         ↓ saves when nothing changed, recording the certificate it was checked against
+         ↓ checks the pinned certificate before saving, and keeps the old route when it does not match
+         ↓ keeps the old route when the new address cannot be reached in time
+         ↓ saves nothing when the pairing changed while the address was checked
+         ↓ adds a route for an existing member with no pairing and no membership change
+         ↓ refuses this computer's own Annex port without touching any listener
+         ↓ refuses a local port already saved for another computer, naming it
+         ↓ refuses while the device needs pairing again
+         ↓ keeps "showed a different certificate" when the pairing changed during the check, even though the address passed
+         ↓ keeps "showed a different certificate" when the new address fails its check
+         ↓ after a restart with no discovery, reconnects through the saved forward, and again after it drops and returns
+         ↓ says a loopback address on this computer's own port reaches this computer, not that it was reset
+       ↓ goes to an address announced during an attempt next, at once, instead of the stale one again
+       ↓ moves on when one of several addresses shows another certificate, and stops only when all do
+       ↓ a new address that shows the pinned certificate clears "showed a different certificate" and tries again
+       ↓ asks for a port when it has never reached the satellite
+       ↓ saves a checked typed host without connecting while Connect to satellites is off
+       ↓ keeps a typed address as typed: connecting through it is not remembered as a found address
+       ↓ starts nothing more for a refusal that arrives after the client stopped
+       ↓ opens the membership channel with the main connection, and closes it when that drops (#3060)
+       ↓ connects a member waiting to be found as soon as it has an address (#3061)
+       ↓ forgetting a network member removes it everywhere first (#3061)
+       ↓ never sets a typed host on a device that controls this machine
+       ↓ does nothing on wake while Connect to satellites is off
+     ↓ accepts exactly 16 KiB and rejects a response 0 byte(s) beyond the cap
+     ↓ accepts exactly 16 KiB and rejects a response 1 byte(s) beyond the cap
+     ↓ aborts a trickling capacity request at its total deadline even while response data keeps arriving
+         ↓ uses only the selected pinned host and fixed metadata GET, retaining no role response on satellites
+         ↓ keeps legacy/unbound/changed, denied and busy responses distinct without fallback URLs or error text
+         ↓ rejects wrong role/id, private wrapper fields and every partial page kind
+         ↓ pages role Connections bound to the first page's role agent, with older hosts unavailable
+         ↓ pages role Actions relationships bound to the role agent and the requested page, with older hosts unavailable (#14)
+         ↓ captures the connections page query before any await: later caller mutation changes neither the URL nor the response binding
+         ↓ captures the actions page query before any await: later caller mutation changes neither the URL nor the response binding
+         ↓ reads each caller query field once: a getter changing on a later read cannot desynchronize validation, URL and response binding
+         ↓ fences an in-flight response after peer pin changes, including in-place peer mutation
+         ↓ fences an in-flight response after peer kind changes, including in-place peer mutation
+         ↓ fences an in-flight response after peer role changes, including in-place peer mutation
+         ↓ fences an in-flight response after peer pending changes, including in-place peer mutation
+         ↓ fences an in-flight response after peer removed changes, including in-place peer mutation
+         ↓ fences a role response across an in-place reconnect generation
+         ↓ preserves read revision across one actual notification burst without revising unrelated presence
+         ↓ retires only the old accepted-link epoch while a newly-owned read remains valid
+           ↓ retires the old lease across sequential network disable/re-enable without injecting a device event
+           ↓ retires the old lease across overlapping network disable/re-enable without injecting a device event
+           ↓ keeps the current lease through a failed settings save
+           ↓ keeps the current lease through a no-op settings save
+           ↓ retires a committed disable after an overlapping optimistic disable failed
+           ↓ keeps the successful disable when a queued optimistic re-enable fails, then accepts a fresh successful retry
+           ↓ does not revise already-disabled reads for repeated or unrelated settings saves
+           ↓ does not reset a main socket or cancel an already-sent direct controller request while retiring reverse leases
+           ↓ retires leases on actual client-off and does not clear a manual pause on network re-enable
+         ↓ keeps bounded controller reads separate from common requests on an authorized reverse route without a main address
+         ↓ keeps direct requests preferred and never retries a failed direct request on control
+         ↓ preserves reverse controller status 404 without route retries
+         ↓ preserves reverse controller status 405 without route retries
+         ↓ preserves reverse controller status 401 without route retries
+         ↓ preserves reverse controller status 403 without route retries
+         ↓ preserves reverse controller status 429 without route retries
+         ↓ preserves reverse controller status 500 without route retries
+         ↓ never treats phone as reverse read authority
+         ↓ never treats pending as reverse read authority
+         ↓ never treats unpaired as reverse read authority
+         ↓ never treats one-way as reverse read authority
+         ↓ never treats opposite as reverse read authority
+         ↓ retains old-peer direct reads and does not retry a failed reverse request
+         ↓ cancels a reverse controller lease on disconnect without accepting its late response
+         ↓ cancels a reverse controller lease on stop without accepting its late response
+         ↓ cancels a reverse controller lease on off without accepting its late response
+         ↓ cancels a reverse controller lease on forget without accepting its late response
+         ↓ cancels a reverse controller lease on pin without accepting its late response
+         ↓ cancels a reverse controller lease on pairing without accepting its late response
+         ↓ cancels a reverse controller lease on revocation without accepting its late response
+         ↓ cancels a reverse controller lease on host without accepting its late response
+         ↓ keeps a reverse lease across an ordinary main connection epoch withdrawal
+         ↓ requires an explicit connect after a manual pause, without redefining main connectivity
+       ↓ discards requestAgentSettings responses across an in-place disconnect/reconnect epoch
+       ↓ discards requestAgentDetails responses across an in-place disconnect/reconnect epoch
+       ↓ discards requestAgentChanges responses across an in-place disconnect/reconnect epoch
+       ↓ binds bounded selected-source Details pages and refuses malformed/old-host page responses
+       ↓ binds managed inventory pages to exact source, ordered selection, offset and page-only envelope
+       ↓ binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes
+       ↓ binds Actions inventory GETs to selected source/offset/order and connection epochs without default-body reuse
+       ↓ binds Canvas inventory GETs to selected source/offset/order and connection epochs without default-body reuse
+       ↓ reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly
+       ↓ withholds a schema-valid prior Details snapshot after the same record reconnects
+       ↓ reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses
+       ↓ represents an older Settings host (404) without retries or local fallback
+       ↓ represents an older Settings host (405) without retries or local fallback
+       ↓ reads only the fixed Settings route and rejects malformed or wrong-agent data
+       ↓ represents an old controller-chat server (404) without retrying
+       ↓ represents an old controller-chat server (405) without retrying
+       ↓ reads controller pages and archives only over the dedicated GET routes
+       ↓ represents offline, refused and failing controller reads safely
+       ↓ returns a retryable controller 429 honoring Retry-After='3'
+       ↓ returns a retryable controller 429 honoring Retry-After='Tue, 14 Nov 2023 22:13:24 GMT'
+       ↓ returns a retryable controller 429 honoring Retry-After='invalid'
+       ↓ returns a retryable controller 429 honoring Retry-After=undefined
+       ↓ reads a chat page through the satellite's phone route, and remembers its epoch
+       ↓ withdraws the cached command epoch on a main drop without closing independent control
+       ↓ sends a terminal answer to its original agent over the pinned permission endpoint
+       ↓ preserves host refusal authority for late, mismatched and incomplete terminal answers
+       ↓ reads the epoch from capabilities when it has none, and sends again once after a stale epoch
+       ↓ sends a person’s grant answer over the pinned authenticated Annex command route (#3654)
+       ↓ answers a refusal as its receipt, and refuses anything but a chat command
+       ↓ pairs from a link: PIN only to the certificate it names, binding sent, answer checked, pin stored
+       ↓ pairs only through the override and saves both its port and the original link ports
+       ↓ pairs without a link using a full fingerprint "abababababababababababababababababababababababababababababababab" and the same pinned request
+       ↓ pairs without a link using a full fingerprint "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB" and the same pinned request
+       ↓ pairs without a link using a full fingerprint "aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB" and the same pinned request
+         ↓ a plain link pairing on a LAN address stays shared, with nothing private
+         ↓ a non-loopback override address is this computer's own, while the link hosts stay shared
+         ↓ the address used to pair without a link is this computer's own
+         ↓ pairing again through a private remapped port keeps the old default port for the same certificate
+         ↓ carries saved routes over only for the same pinned certificate
+       ↓ pairs manually using bracketed IPv6 and remembers the unbracketed host with its port
+       ↓ never sends a manual PIN when the presented certificate differs
+       ↓ rejects malformed manual fingerprint "" before dialing
+       ↓ rejects malformed manual fingerprint "AB12 CD34 EF56 7890" before dialing
+       ↓ rejects malformed manual fingerprint "abababababababababababababababababababab" before dialing
+       ↓ rejects malformed manual fingerprint "ababababababababababababababababababababababababababababababab" before dialing
+       ↓ rejects malformed manual fingerprint "ababababababababababababababababababababababababababababababababab" before dialing
+       ↓ rejects malformed manual fingerprint "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" before dialing
+       ↓ rejects missing or invalid manual port "localhost"
+       ↓ rejects missing or invalid manual port "localhost:"
+       ↓ rejects missing or invalid manual port "localhost:0"
+       ↓ rejects missing or invalid manual port "localhost:65536"
+       ↓ rejects missing or invalid manual port "localhost:1.5"
+       ↓ rejects missing or invalid manual port "localhost:-1"
+       ↓ rejects missing or invalid manual port "https://localhost:7443"
+       ↓ rejects missing or invalid manual port "user@localhost:7443"
+       ↓ rejects missing or invalid manual port "localhost:7443/pair"
+       ↓ rejects missing or invalid manual port "localhost:7443?pin=123456"
+       ↓ rejects missing or invalid manual port "localhost:7443#fragment"
+       ↓ rejects missing or invalid manual port "localhost\\other:7443"
+       ↓ rejects missing or invalid manual port "[::1]:0"
+       ↓ rejects missing or invalid manual port "[::1]:65536"
+       ↓ reports an invalid manual PIN before dialing, and a wrong PIN from the server
+       ↓ reports an unreachable manual endpoint without sending its PIN
+       ↓ uses the link TLS port when the override is just a host
+       ↓ rejects invalid override "https://127.0.0.1:7443" before dialing
+       ↓ rejects invalid override "127.0.0.1:0" before dialing
+       ↓ rejects invalid override "127.0.0.1:65536" before dialing
+       ↓ rejects invalid override "localhost:" before dialing
+       ↓ rejects invalid override "not a host" before dialing
+       ↓ never sends the PIN or falls back to link hosts when the override presents another certificate
+       ↓ suggests checking the forward when a loopback override refuses the connection
+       ↓ joins as a network member when the satellite agrees, and stays one-to-one when Annex Network is off (#3061)
+       ↓ sends nothing to an address showing another certificate, and tries the next
+       ↓ refuses an answer whose identity does not check out, and saves nothing
+       ↓ shows the satellite's own message when it refuses
+       ↓ says the certificate changed, not to retry blindly, when it changes between the check and the pairing
+       ↓ says what happened and what to do when no address in the link answers
+       ↓ rejects something that is not a pairing link without dialling anything
+       ↓ pairs a discovered service only after its certificate was read, and only to that certificate
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > routes request-only 'settings' once without minting snapshot authority
+AssertionError: expected { status: 'offline' } to deeply equal { status: 'ok', value: { …(11) } }
+
+- Expected
++ Received
+
+  {
+-   "status": "ok",
+-   "value": {
+-     "access": "paired",
+-     "agentId": "details /agent",
+-     "autoSleep": null,
+-     "context": null,
+-     "executionPolicy": "read-only",
+-     "model": "test",
+-     "provider": "test",
+-     "readOnly": true,
+-     "runtime": "chat",
+-     "setup": {
+-       "instructions": "",
+-       "managed": false,
+-       "mcps": null,
+-       "skills": null,
+-       "state": "ok",
+-       "template": null,
+-     },
+-     "version": 1,
+-   },
++   "status": "offline",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+    517|         expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFa…
+    518|         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt)…
+    519|         expect(result).toEqual({ status: 'ok', value: body });
+       |                        ^
+    520|         expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(f…
+    521|           expect.objectContaining({ method: 'GET', path }),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > routes request-only 'role' once without minting snapshot authority
+AssertionError: expected { status: 'offline' } to deeply equal { status: 'ok', value: { …(4) } }
+
+- Expected
++ Received
+
+  {
+-   "status": "ok",
+-   "value": {
+-     "agentId": "details /agent",
+-     "details": {
+-       "agentId": "details /agent",
+-       "cards": [
+-         {
+-           "id": "settings",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "settings",
+-         },
+-         {
+-           "id": "dispatcher",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "dispatcher",
+-         },
+-         {
+-           "id": "orchestrate",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "orchestrate",
+-         },
+-         {
+-           "id": "connections",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "connections",
+-         },
+-         {
+-           "id": "actions",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "actions",
+-         },
+-         {
+-           "id": "skills-mcp",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "skills-mcp",
+-         },
+-         {
+-           "id": "session",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "session",
+-         },
+-         {
+-           "id": "canvases",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "canvases",
+-         },
+-         {
+-           "id": "changes",
+-           "notes": [],
+-           "observedAt": 1,
+-           "omitted": 0,
+-           "rows": [],
+-           "state": "ok",
+-           "summary": "",
+-           "title": "changes",
+-         },
+-       ],
+-       "nativeSessionId": null,
+-       "providerId": "test",
+-       "readAt": 1,
+-       "readOnly": true,
+-       "running": false,
+-       "sessionId": null,
+-       "settings": null,
+-       "spawnedAt": null,
+-       "status": "sleeping",
+-       "version": 1,
+-     },
+-     "role": "dispatcher",
+-     "version": 1,
+-   },
++   "status": "offline",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+    517|         expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFa…
+    518|         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt)…
+    519|         expect(result).toEqual({ status: 'ok', value: body });
+       |                        ^
+    520|         expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(f…
+    521|           expect.objectContaining({ method: 'GET', path }),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > routes request-only 'details' once without minting snapshot authority
+AssertionError: expected { status: 'offline' } to deeply equal { status: 'ok', value: { …(12) } }
+
+- Expected
++ Received
+
+  {
+-   "status": "ok",
+-   "value": {
+-     "agentId": "details /agent",
+-     "cards": [
+-       {
+-         "id": "settings",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "settings",
+-       },
+-       {
+-         "id": "dispatcher",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "dispatcher",
+-       },
+-       {
+-         "id": "orchestrate",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "orchestrate",
+-       },
+-       {
+-         "id": "connections",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "connections",
+-       },
+-       {
+-         "id": "actions",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "actions",
+-       },
+-       {
+-         "id": "skills-mcp",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "skills-mcp",
+-       },
+-       {
+-         "id": "session",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "session",
+-       },
+-       {
+-         "id": "canvases",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "canvases",
+-       },
+-       {
+-         "id": "changes",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "changes",
+-       },
+-     ],
+-     "nativeSessionId": null,
+-     "providerId": "test",
+-     "readAt": 1,
+-     "readOnly": true,
+-     "running": false,
+-     "sessionId": null,
+-     "settings": null,
+-     "spawnedAt": null,
+-     "status": "sleeping",
+-     "version": 1,
+-   },
++   "status": "offline",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+    517|         expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFa…
+    518|         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt)…
+    519|         expect(result).toEqual({ status: 'ok', value: body });
+       |                        ^
+    520|         expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(f…
+    521|           expect.objectContaining({ method: 'GET', path }),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > routes request-only 'changes' once without minting snapshot authority
+AssertionError: expected { status: 'offline' } to deeply equal { status: 'ok', value: { …(20) } }
+
+- Expected
++ Received
+
+  {
+-   "status": "ok",
+-   "value": {
+-     "agentId": "details /agent",
+-     "base": null,
+-     "branch": "main",
+-     "files": [],
+-     "live": true,
+-     "nextOffset": null,
+-     "observedAt": 1,
+-     "offset": 0,
+-     "readOnly": true,
+-     "scope": "branch",
+-     "sessionId": null,
+-     "shared": false,
+-     "skippedLarge": [],
+-     "skippedOmitted": 0,
+-     "skippedRepos": [],
+-     "state": "ok",
+-     "totalFiles": 0,
+-     "turnId": null,
+-     "uncompared": 0,
+-     "version": 1,
+-   },
++   "status": "offline",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+    517|         expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFa…
+    518|         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt)…
+    519|         expect(result).toEqual({ status: 'ok', value: body });
+       |                        ^
+    520|         expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(f…
+    521|           expect.objectContaining({ method: 'GET', path }),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > preserves old-host 'settings' unavailability without fallback or admission
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > preserves old-host 'role' unavailability without fallback or admission
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > preserves old-host 'details' unavailability without fallback or admission
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > preserves old-host 'changes' unavailability without fallback or admission
+AssertionError: expected { status: 'offline' } to deeply equal { status: 'unavailable' }
+
+- Expected
++ Received
+
+  {
+-   "status": "unavailable",
++   "status": "offline",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:530:24
+    528|         expect(https.request).not.toHaveBeenCalled();
+    529|         expect(annexClient.getSatellite(fingerprint)?.snapshotReceipt)…
+    530|         expect(result).toEqual({ status: 'unavailable' });
+       |                        ^
+    531|         expect(annexControl.request).toHaveBeenCalledOnce();
+    532|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > reverse Details admission > mints and exports a local receipt only from the accepted current reverse snapshot
+AssertionError: expected undefined to deeply equal Any<String>
+
+- Expected:
+Any<String>
+
++ Received:
+undefined
+
+ ❯ src/main/services/annex-client.test.ts:544:42
+    542|         expect(current?.state).toBe('connected');
+    543|         expect(current?.snapshot?.lastSeq).toBe(1);
+    544|         expect(current?.snapshotReceipt).toEqual(expect.any(String));
+       |                                          ^
+    545|         expect(current?.snapshotReceipt).not.toBe('HOST_FORGED');
+    546|         expect(annexClient.getSatellites().find((sat) => sat.fingerpri…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 372 skipped (381)
+   Start at  04:34:36
+   Duration  480ms (transform 301ms, setup 5ms, import 358ms, tests 28ms, environment 0ms)
+
+JUNIT report written to /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/node_modules/.cache/details-transport/01-baseline-original.xml
+2026-11-22T09:34:37Z END lane-p2 rc=1

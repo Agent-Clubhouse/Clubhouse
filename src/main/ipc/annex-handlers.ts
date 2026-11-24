@@ -213,15 +213,18 @@ export function registerAnnexHandlers(): void {
   ipcMain.handle(IPC.ANNEX.REMOVE_PEER, withValidatedArgs(
     [stringArg()],
     (_event, fingerprint) => {
-      // Revokes before anything can reconnect, and closes its open connections.
+      // Revoke first so a removed phone is notified before its connections close.
       const removed = annexServer.revokePeer(fingerprint);
+      annexClient.forgetSatellite(fingerprint);
       if (removed) broadcastPeersChanged();
       return removed;
     },
   ));
 
   ipcMain.handle(IPC.ANNEX.REMOVE_ALL_PEERS, () => {
+    const fingerprints = annexPeers.listPeers().map((peer) => peer.fingerprint);
     annexServer.revokeAllPeers();
+    for (const fingerprint of fingerprints) annexClient.forgetSatellite(fingerprint);
     broadcastPeersChanged();
   });
 

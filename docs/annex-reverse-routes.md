@@ -1,5 +1,192 @@
 # Desktop reverse-control routes and readiness (#3613 P2/P7/P7w)
 
+## Landed transport and remaining composed proof
+
+At source checkpoint `c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc`, common
+reverse requests/subscriptions are present, the bounded Git diff envelope landed
+in #3775, and the narrow Details continuation landed in #3776. These are scoped
+desktop changes, not full-duplex, handoff-product or release acceptance.
+
+The historical capability inventory is in
+[`evidence/3613-duplex-current-c43/README.md`](evidence/3613-duplex-current-c43/README.md).
+Its source-specific missing/candidate labels are not a current-main inventory.
+Original evidence and its execution limits remain unchanged.
+
+The existing reverse-consumer fixture's 81,937-byte handoff-shaped envelope is
+transport fidelity only: its custom handler accepts `op: chunk`, not the actual
+handoff `manifest`/`read` operations. The separate reverse-handoff fixture composes
+the existing pinned transport and request adapter with the actual source/receiver
+and real disk I/O. Agreement/preparation lookup, application route dispatch and
+agent-grant admission remain fixtures; offer, acceptance, apply, renderer and
+two-host product behavior are not exercised. Its bounded source/proof
+`a4074c7f5e76714bbe346ecee1acfc434307de0e` /
+`be01f8bd511dba2a625462021732c119ce6b170e` was independently accepted at
+`74d2ed4f64c1e9d539339e5a75b7c3c31171e8b3`, without upgrading those limits.
+
+### Bounded handoff synchronization candidate
+
+The four-file successor follows the independently approved desktop contract
+[`6385c5ead`](https://github.com/Agent-Clubhouse/Clubhouse/blob/6385c5ead359d3b46bfc7895e889d4a486dedc4e/docs/evidence/3613-handoff-sync-contract-r2/README.md).
+This is an unlanded candidate, not approval of its implementation. A handoff-local
+attempt can use request readiness without a snapshot when the direct connection
+is absent. It retains the original host and observation revision; every primary
+and secondary cancellation POST keeps that capture. Existing positive outgoing
+authorization and pending-cancellation/history exceptions remain. Only a fresh
+local sender's offered record without pending cancellation takes the additional
+negative authority lease. Global connectivity, grant scope, phone fields,
+the 30-second sweep and its 10-slot fairness are unchanged.
+
+History adoption and ACK/removal checks run inside their actual private queues,
+before admitting the decision/save. Retirement before admission refuses without
+that mutation; retirement after admission can complete the save and publish
+matching committed memory. No post-save fake refusal or guessed disk rollback
+is used. Reverse ACK memory advances only after actual guarded durable success.
+Storage errors remain errors, including ambiguous IO that may have replaced the
+file before reporting failure.
+
+An enclosing sync holds its queued work. Each deadline-wrapped POST also holds
+the actual operation until settlement, not merely until the outer five-second
+deadline. Stop retires admissions and drains enclosing writers before replacement;
+an expired outstanding POST retains its reference but cannot later admit writes.
+Notifications retain their ordinary committed-history semantics, not continuous
+transport liveness through notification/provider awaits. No shared-store or notice
+ledger redesign is included.
+
+The new paired fixture exercises actual hosts/coordinators/history and command
+stores over pinned TLS/control with opposite direct reach blocked and no received
+snapshot. Grant callbacks, preparation binding, worker/provider delivery and route
+dispatch remain explicit fixtures. It does not replay the separately accepted
+content proof or claim native grants, offer/accept/apply UI, two-host or full
+handoff-product acceptance. Exact candidate proof and independent source review
+are still required before a PR and ordinary hosted gates.
+
+Common REST requests capture one route before sending: a live direct connection
+wins, otherwise an already-authorized accepted control link is used. Each request
+retains its original trust, direct connection or accepted-link epoch, cancellation,
+deadline and local receive limit. A retired response is rejected; an original
+control write error keeps its request ID and indeterminate disposition. No error
+causes transport fallback, operation replay or a new dial. Existing statuses,
+headers, UTF-8/JSON bodies and Retry-After handling are preserved.
+
+The specialized icon, PTY-buffer, file-tree/text-read and bulletin adapters retain
+their direct implementations and can use reverse requests when direct is absent.
+This text-read API is not an arbitrary binary decoder. Current binary content and
+handoff verification still require their separate byte-exact acceptance evidence.
+
+Each missing-icon worker rechecks its originally captured stream before sending
+and before recording a result. Retired reverse work cannot become a direct request
+or attach to a replacement accepted link. Retirement also retires the icon batch
+state, so a fresh stream's first snapshot can fetch the same icons immediately,
+even before old abort promises settle; the cached offline snapshot is retained.
+
+A subscription belongs to one current stream and original accepted-link epoch.
+Its first compatible snapshot starts a fresh sequence; old frames and asynchronous
+icon/canvas completions cannot modify a replacement. Direct availability retires
+the owned reverse subscription rather than migrating shells or replaying input.
+Stop, disconnect, forget, trust replacement and link loss retire subscriptions,
+pending requests and tracked reverse terminal handles. A refused/ended stream is
+not subscribed again in the same epoch without explicit Retry.
+
+Only a compatible current stream snapshot projects live renderer consumer state.
+Request capability alone does not mint a snapshot or live state. The existing
+direct connectivity/publication predicate remains direct-only, and device reach
+uses that observation rather than treating reverse consumer state as a direct
+route. The narrow Details continuation below separately extends its request
+transport and positive snapshot receipts. Selected-board query/import/inventory
+hunks remain reserved; Naming's pure alias getter is separate, and its full-list
+label notification is held.
+
+### Landed Details transport and positive admission (#3776)
+
+The four existing Settings, selected dispatcher, agent Details and Changes GET
+readers can use an already-authorized accepted reverse request link when direct
+is absent. Existing endpoints, encoded targets, caller caps, statuses, body/page
+validators and the common one-route/no-fallback request implementation are
+unchanged. Old-host route refusals remain unavailable; successful request-only
+responses neither mint nor restore a snapshot receipt or populate snapshot cache.
+
+Two private helpers implement this bounded continuation. `captureDetailsRead`
+captures the original satellite, selected direct/reverse transport, socket,
+stream (including absence), connection generation, pinned trust, role, kind and
+pending state before the first await. Reverse reads additionally retain accepted
+link epoch and local readiness revision. The same capture is checked before send
+and before post-await statuses/body/receipt effects; replacements cannot be
+recaptured as the original. Legacy raw-connected direct reader behavior is
+retained; socket `OPEN` is a snapshot admission guard, not a new GET permission.
+
+The selected dispatcher reader retains its existing receipt-equality fence.
+Ordinary agent Details intentionally does **not** acquire that fence: its captured
+receipt is only the exact target for denial invalidation. A late403 cannot revoke
+a newer same-stream receipt; a new same-stream snapshot does not alone invalidate
+an ordinary successful Details body. Shared structured401 pairing revocation is
+unchanged.
+
+`snapshotAdmissionCurrent` requires an owned current `snapshotAccepted` stream,
+a compatible nonpaused snapshot, and no pairing/unavailable condition. Direct
+admission also requires the existing socket `OPEN` guard. Only the existing
+accepted snapshot handler can generate a local UUID; public export only checks
+provenance and cannot mint. Wire receipts, request readiness, cached serialization,
+resume, retired frames and replacement streams cannot attest retained cache.
+Existing retirement clears stream and receipt before close/disposal/publication.
+
+This is the host-authorized transport/currentness and mint/export continuation
+mapped in `db46fc6eae9ecd1153dbb9c97b816f002ba5ad86`, not whole-function or
+selected-board clearance. No producer, DTO, renderer, Naming, phone/wire, grant,
+shared authorization/retirement helper or release changes are included.
+The [genuine test-only baseline](evidence/3613-details-transport/baseline/README.md)
+retains9FAIL/0PASS/372SKIP on landed `edcd915763a2ec73f0e8149917b4683ced06ecd6`.
+Its downstream assertions remain unexecuted. The
+[frozen original proof](evidence/3613-details-transport/proof/README.md)
+records95 targeted passes on `b1f2ce9b1b360f1ca0fedc2b93af53d67c158a58`;
+the actual full fixture compiler remains54FAIL, exactly matching its separate
+baseline by complete diagnostic/3956-input comparison. This is not compilerPASS.
+Independent review
+[`bd4b9fe`](https://github.com/Agent-Clubhouse/Clubhouse/blob/bd4b9feff8aee6e4b03f9d7303ab4cc4fb3e7df0/docs/qa-transfer/2026-11-22/reports/details-b1f2-independent-source-review.md)
+accepted the exact source and that separate54FAIL nonregression disposition.
+The [hosted packet](https://github.com/Agent-Clubhouse/Clubhouse/blob/63978a2e9213a61795c6a8381e7191c6d7cbabd3/docs/evidence/3613-details-transport/hosted-45017029171/README.md)
+records actual checkout and both-platform client results. Those client tests
+still mock request/readiness/subscription ports; neither full duplex nor real
+paired application acceptance follows from their hosted passes.
+
+### Existing GET Git diff response envelope
+
+With negotiated bulk, the exact existing GET
+`/api/v1/projects/:projectId/git/diff` route admits up to **32 MiB of encoded
+JSON response bytes**, including its ordinary query string. This rule uses the
+original request method/path, before legacy query-sensitive response rules.
+Other methods/routes and no-bulk frame limits are unchanged. A stricter caller
+receive limit still refuses the owned response before credit; no error retries
+or switches routes. Larger responses remain explicitly refused, so this is not
+arbitrary-size direct/reverse parity.
+
+Credit bounds each chunk, not the complete process allocation. Four transfers,
+complete finish buffers, JSON decoding and target disk/string/serialization
+have separate costs. Target clipping retains a logical subarray that can keep
+the full backing allocation alive; the route cap is not a target/global RSS
+guarantee. Current targeted implementation/proof is subject to independent
+exact-source review.
+
+This candidate changes no handler permissions, phone/control/network fields,
+P5/P6 fence or grant. #3711 is documented separately below; #3714's narrow security gate, current-app/P8 cleanup
+and confinement acceptance, #3760 and the release hold remain separate. Historical
+proofs do not transfer. All TypeScript compiler checks require gate minimum 6 GiB;
+targeted tests (at most two workers) and scoped lint require minimum 4 GiB.
+
+## Legacy paired-peer removal (#3711)
+
+The legacy `REMOVE_PEER` IPC now revokes the pairing and then calls the existing
+client-side forget operation, including when the pairing was already absent.
+This retires the retained outgoing socket, requests and stream before returning;
+late socket frames and callbacks cannot revive it. The revocation result and
+peer-list notification behavior are unchanged. Revoking first preserves the
+existing removed-phone notification ordering.
+
+`REMOVE_ALL_PEERS` captures the paired fingerprints before server revocation
+clears the peer store, then forgets each outgoing owner. It does not stop the
+client, remove unrelated discovered devices, change pairing consent or grants,
+or introduce a new removal channel. The unified device-removal and membership
+paths are unchanged.
+
 ## Route and reconnect slice (P2)
 
 This is a partial implementation slice, not full reverse-parity acceptance.

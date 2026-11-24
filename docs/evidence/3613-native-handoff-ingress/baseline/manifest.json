@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "base": "70eff94e9042ccc304e68282e76afc9065497858",
+  "baseTree": "208fb893fcc36e7154efdb2df07206f85d65f6ed",
+  "fixture": {
+    "file": "test/annex-v2/annex-native-handoff-admission.test.ts",
+    "blob": "a4bbbba418561c6f4718a0bb1d6bfdf179f22c95",
+    "sha256": "6aa21c76a3b600e4c7ba98cd9698f1283be2d0cf5dde5bcd73be7e8983693e23",
+    "bytes": 15274,
+    "identity": "after-execution observation for attempt03 only; attempts01/02 historical fixture identities not claimed"
+  },
+  "source": [
+    {
+      "file": "src/main/services/annex-server.ts",
+      "blob": "c0204b228fc1f4b52ffbdaf0e1a331b882c3d54b",
+      "sha256": "94131b85fe0971d8c0c002996f92f18fc9b271a727c0655e1f631395cbd3b500",
+      "bytes": 361313
+    },
+    {
+      "file": "src/main/services/handoff-host.ts",
+      "blob": "c5a27d178161c3faeaf196e1112574e1c9922fc2",
+      "sha256": "c3382f3cfe1b677eeaebae67fbc92314ae13d1bd6b65d4c913d048fe7333cbda",
+      "bytes": 44114
+    },
+    {
+      "file": "src/main/services/handoff-coordinator.ts",
+      "blob": "dfb28e612c7514a9056279c40e2926c3006b1aad",
+      "sha256": "63949fa8ce3913f0ff3c3b9f40798a7745cf70e846817fa4dbc76f9f6dc6d1a2",
+      "bytes": 21321
+    },
+    {
+      "file": "src/main/services/handoff-service.ts",
+      "blob": "2d885a737347f731aef0b60cfa3e0e769eecba90",
+      "sha256": "88b1a9b0562577879a54fcfc922bf66f78918b7c48cfed88f27edd699bf16363",
+      "bytes": 14312
+    }
+  ],
+  "review": {
+    "commit": "3e06e4f4e6a3c7ce9bc290a889fc06a02bd46dac",
+    "blob": "cc7b465f4ae08f90d24c3b28c8795becadd4f16e",
+    "bytes": 22075
+  },
+  "command": "~/.clubhouse/orch/desktop-test-gate.sh lane-p2 4 -- npx vitest run --project integration test/annex-v2/annex-native-handoff-admission.test.ts --maxWorkers=1",
+  "nodeAfter": "v24.22.1",
+  "artifacts": [
+    {
+      "file": "01-native-baseline-original.log.gz",
+      "rawBytes": 7341,
+      "rawSha256": "e840dcbe841982fd3d62138dfb6dfcf5719505df0507bce0b16db9810101b803",
+      "storedBytes": 2056,
+      "storedSha256": "c796744d0a6ce87d5f2b7501d7dfaf11fe71207eff7c6772904539f040666a29",
+      "result": "5FAIL incorrect fixture authority witness; no semantic credit"
+    },
+    {
+      "file": "02-native-baseline-original.log.gz",
+      "rawBytes": 6806,
+      "rawSha256": "a908eb3d709327d7c6361f874fa1252719302986df43ecdc20d472e6e31d465c",
+      "storedBytes": 1895,
+      "storedSha256": "024453328f5cfceb3a258c06211a959d004eb094a74d25b574b4fab5f651e9ac",
+      "result": "5FAIL incorrect fixture authority witness; no semantic credit"
+    },
+    {
+      "file": "03-native-baseline-original.log.gz",
+      "rawBytes": 6424,
+      "rawSha256": "91244d7c4955b81dc3c7e30e87c3c46fe5606ae252e37fcd64fe8d73aa036523",
+      "storedBytes": 2860,
+      "storedSha256": "bb001947483de7329de0da025a61fd8c22bf8a0cad0442a1148cec7ca208e6bc",
+      "result": "3PASS/2FAIL meaningful native queue and stop failures"
+    }
+  ],
+  "limits": [
+    "one process and loopback TLS, not actual two hosts",
+    "synthetic metadata producer; no MCP saved grant/preparation execution",
+    "real native dispatch/authorizer/history stores; authorizer export witness calls actual implementation",
+    "Dispatcher fixture availability and absent runtime; no notice/provider/human gate credit",
+    "current positive, refusal and cancellation-retained samekey controls passed; downstream failed-test assertions uncredited",
+    "no accepted100/lowerproof rerun; original01 cleanup warning preserved"
+  ]
+}

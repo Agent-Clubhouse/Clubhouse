@@ -3816,14 +3816,30 @@ async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void>
   if (ctx.requireMtls()) { ctx.req.resume(); return; }
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  const principal = { ...ctx.principal }, server = tlsServer, generation = serverGeneration;
+  const trust = () => {
+    const peer = annexPeers.getPeer(principal.fingerprint);
+    return peer && JSON.stringify([annexPeers.trustOf(peer), peer.kind]);
+  };
+  const originalTrust = trust();
+  let retired = false;
+  const currentRequest = principal.via === 'reverse' ? () => {
+    if (!server || server !== tlsServer || generation !== serverGeneration || !reverseRequestLive(ctx.req)
+      || !stillAuthorized(principal, authorizerDeps) || agentCallPeer(ctx) !== machine || trust() !== originalTrust) retired = true;
+    return !retired;
+  } : undefined;
   const body = await readAgentCallBody(ctx);
   if (body === undefined) return;
-  if (ctx.requireMtls()) return;
-  if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
-  try {
-    const record = await receiveNetworkHandoff(machine, body);
+  if (!currentRequest) {
     if (ctx.requireMtls()) return;
     if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  }
+  try {
+    const record = await receiveNetworkHandoff(machine, body, ...(currentRequest ? [currentRequest] as const : []));
+    if (!currentRequest) {
+      if (ctx.requireMtls()) return;
+      if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+    }
     sendJson(ctx.res, 200, record);
   } catch { // telemetry-exempt: never return peer content, task text or storage diagnostics
     sendJson(ctx.res, 400, { error: 'handoff_refused' });
@@ -5815,6 +5831,44 @@ export async function startVerified(): Promise<void> {
     if (!interrupted) stop();
     throw new AnnexStartFailure(err, generation + (interrupted ? 0 : 1), interrupted);
   }
+}
+
+// expectedHost is computed by an admitted main-process caller from its owned committed settings/profile.
+// This predicate confirms only listener ownership/readiness, never caller authority or peer reachability.
+export function captureSecureListenerReadiness(expectedHost: string): () => boolean {
+  const generation = serverGeneration;
+  const main = tlsServer, pairing = pairingServer;
+  const mainPort = serverPort, pairPort = pairingPort, host = boundHost;
+  const wasReady = !!main && !!pairing && main.listening && pairing.listening
+    && mainPort > 0 && pairPort > 0 && host.length > 0 && host === expectedHost;
+  return () => wasReady && generation === serverGeneration
+    && main === tlsServer && pairing === pairingServer && main.listening && pairing.listening
+    && serverPort === mainPort && pairingPort === pairPort && boundHost === host;
+}
+
+/** Opt-in verified attempt; default start()/startVerified() callers remain unchanged. */
+export async function startVerifiedWithReceipt(expectedHost: string): Promise<() => boolean> {
+  if (typeof expectedHost !== 'string' || !expectedHost) throw new TypeError('Invalid Annex expected listener host.');
+  const starting = startVerified();
+  // startVerified invokes startServer synchronously before its first await.
+  const generation = serverGeneration;
+  const main = tlsServer, pairing = pairingServer;
+  await starting; // Existing strict readiness and owned failure cleanup, unchanged.
+  if (generation !== serverGeneration || main !== tlsServer || pairing !== pairingServer) {
+    throw new AnnexStartFailure(new Error('Annex listener attempt was superseded before confirmation.'), generation, true);
+  }
+  if (boundHost !== expectedHost) {
+    // The current profile may belong to a newer committed writer outside settingsWrites.
+    // Identity/generation alone never authorize stopping it. Do not refresh expectedHost.
+    throw new AnnexStartFailure(new Error('Annex expected listener profile changed before confirmation.'), generation, true);
+  }
+  const current = captureSecureListenerReadiness(expectedHost);
+  if (!current()) {
+    // No await between identity/generation check and cleanup. Retire only this still-owned attempt.
+    stop();
+    throw new AnnexStartFailure(new Error('Annex owned secure listeners were not ready at confirmation.'), generation + 1, false);
+  }
+  return current;
 }
 
 function startServer(strict = false): Promise<void> {

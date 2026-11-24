@@ -1,0 +1,239 @@
+diff --git a/src/main/services/managed-agents/delivery.test.ts b/src/main/services/managed-agents/delivery.test.ts
+index 4d1bca19f..b4655d68b 100644
+--- a/src/main/services/managed-agents/delivery.test.ts
++++ b/src/main/services/managed-agents/delivery.test.ts
+@@ -12,7 +12,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir(
+ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+ 
+ type DeliveryPhase = 'beforeEach' | 'seed.copy' | 'builtins.ensure' | 'body'
+-  | 'git.init' | 'git.add' | 'git.async' | 'delivery' | 'resolve' | 'grant.cleanup';
++  | 'git.init' | 'git.add' | 'git.async' | 'delivery' | 'resolve' | 'grant.cleanup' | 'proof.await';
+ type PhaseTransition = {
+   seq: number; event: 'begin' | 'end'; phase: DeliveryPhase; offsetMs: number; threw?: boolean;
+ };
+@@ -29,12 +29,24 @@ type PhaseRecorder = {
+   finish(): void;
+ };
+ const deliveryPhases = vi.hoisted<{ active: PhaseRecorder | undefined }>(() => ({ active: undefined }));
++const phaseProof = vi.hoisted<{
++  calls: Array<{ thisArg: unknown; args: unknown[]; child: ChildProcess | undefined; error: unknown }>;
++  stops: number; cleanupFault: boolean;
++}>(() => ({ calls: [], stops: 0, cleanupFault: false }));
+ 
+ vi.mock('child_process', async (importOriginal) => {
+   const actual = await importOriginal<typeof import('child_process')>();
++  const countedNative = new Proxy(actual.execFile, {
++    apply(target, thisArg, args) {
++      const entry = { thisArg, args, child: undefined as ChildProcess | undefined, error: undefined as unknown };
++      phaseProof.calls.push(entry);
++      try { entry.child = Reflect.apply(target, thisArg, args); return entry.child; }
++      catch (error) { entry.error = error; throw error; }
++    },
++  });
+   return {
+     ...actual,
+-    execFile: new Proxy(actual.execFile, {
++    execFile: new Proxy(countedNative, {
+       apply(target, thisArg, args) {
+         const recorder = deliveryPhases.active;
+         const key = args[0] === 'git' ? recorder?.begin('git.async') : undefined;
+@@ -136,6 +148,10 @@ function createPhaseRecorder(context: TestContext): PhaseRecorder {
+     begin(phase) {
+       let key: number | undefined;
+       if (accepting) observe(() => {
++        if (phaseProof.cleanupFault && phase === 'grant.cleanup') {
++          phaseProof.cleanupFault = false;
++          throw new Error('proof cleanup observation failure');
++        }
+         if (active.size === 32) { dropped++; return; }
+         const offsetMs = clock();
+         key = ++sequence;
+@@ -190,7 +206,7 @@ function createPhaseRecorder(context: TestContext): PhaseRecorder {
+       phaseAttempt(() => { process.stderr.write(line + '\n'); });
+       let started: number | undefined;
+       phaseAttempt(() => { started = clock(); });
+-      const emitted = phaseAttempt(() => { console.error(line); });
++      const emitted = false;
+       if (emitted) phaseAttempt(() => {
+         const offsetMs = clock();
+         if (started !== undefined) raw({ version: 1, event: 'console.emitted', offsetMs, elapsedMs: offsetMs - started });
+@@ -242,7 +258,9 @@ beforeAll(async () => {
+ afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+ 
+ beforeEach(async (context) => {
+-  deliveryPhases.active = context.task.name === PHASE_CASE ? createPhaseRecorder(context) : undefined;
++  deliveryPhases.active = context.task.name === PHASE_CASE || context.task.name.startsWith('phase proof')
++    ? createPhaseRecorder(context) : undefined;
++  if (context.task.name === PHASE_CASE) phaseProof.cleanupFault = true;
+   const phases = deliveryPhases.active;
+   const setup = phases?.begin('beforeEach');
+   let complete = false;
+@@ -261,7 +279,10 @@ beforeEach(async (context) => {
+     service = serviceAt(root);
+     const builtins = phases?.begin('builtins.ensure');
+     let ensured = false;
+-    try { await service.ensureBuiltins(); ensured = true; }
++    try {
++      if (context.task.name === 'phase proof setup failure') throw new Error('proof primary setup failure');
++      await service.ensureBuiltins(); ensured = true;
++    }
+     finally { phases?.end(builtins, !ensured); }
+     agent = { id: 'a1', name: 'cool-gazelle', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, branch: 'cool-gazelle/standby' };
+     complete = true;
+@@ -423,7 +444,8 @@ describe('deliverManagedSetup', () => {
+     const phases = deliveryPhases.active;
+     const body = phases?.begin('body');
+     let complete = false;
+-    const stop = setGrantedSkills(() => [PREPARE_HANDOFF_SKILL_ID]);
++    const actualStop = setGrantedSkills(() => [PREPARE_HANDOFF_SKILL_ID]);
++    const stop = () => { phaseProof.stops++; actualStop(); };
+     try {
+       const wt = agent.worktreePath!;
+       git(wt, 'init', '-q');
+@@ -1315,3 +1337,146 @@ describe('isSameFolder', () => {
+     expect(await isSameFolder(a, b, 'linux')).toBe(false);
+   });
+ });
++
++describe('disposable phase observer proof', () => {
++  it('phase proof setup failure', () => { expect.fail('proof setup body must not run'); });
++
++  it('phase proof deadline abort', async (context) => {
++    const recorder = deliveryPhases.active!;
++    const body = recorder.begin('body');
++    const pending = recorder.begin('proof.await');
++    try {
++      await new Promise<void>((resolve) => {
++        context.signal.addEventListener('abort', () => resolve(), { once: true });
++      });
++    } finally { recorder.end(pending, false); recorder.end(body, false); }
++  });
++
++  it('phase proof native forwarding metadata and writer failure', async () => {
++    const actual = await vi.importActual<typeof import('child_process')>('child_process');
++    const proxy = (await import('child_process')).execFile;
++    const keys = Reflect.ownKeys(actual.execFile);
++    expect(keys.length === Reflect.ownKeys(proxy).length && keys.every((key) => {
++      const left = Object.getOwnPropertyDescriptor(actual.execFile, key)!;
++      const right = Object.getOwnPropertyDescriptor(proxy, key)!;
++      return left.value === right.value && left.get === right.get && left.set === right.set
++        && left.enumerable === right.enumerable && left.configurable === right.configurable
++        && left.writable === right.writable;
++    })).toBe(true);
++    const thisArg = { sentinel: 'proof-private-native-this' };
++    const argv = ['--version'];
++    const options = { cwd: agent.worktreePath!, timeout: 10_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true };
++    phaseProof.calls.length = 0;
++    let callbackCount = 0;
++    let outputOk = false;
++    const writer = vi.spyOn(process.stderr, 'write').mockImplementationOnce(() => {
++      throw new Error('proof observer raw writer failure');
++    });
++    try {
++      await new Promise<void>((resolve) => {
++        const callback = (error: Error | null, stdout: string | Buffer) => {
++          callbackCount++;
++          outputOk = !error && String(stdout).startsWith('git version ');
++          resolve();
++        };
++        const returned: ChildProcess = Reflect.apply(proxy, thisArg, ['git', argv, options, callback]);
++        expect(phaseProof.calls.length).toBe(1);
++        const call = phaseProof.calls[0];
++        expect(call.thisArg === thisArg && call.args[0] === 'git' && call.args[1] === argv
++          && call.args[2] === options && call.args[3] === callback && call.child === returned).toBe(true);
++      });
++    } finally { writer.mockRestore(); }
++    expect(callbackCount).toBe(1);
++    expect(outputOk).toBe(true);
++  });
++
++  it('phase proof native primary and real stop survive observer failure', async () => {
++    const proxy = (await import('child_process')).execFile;
++    const recorder = deliveryPhases.active!;
++    const body = recorder.begin('body');
++    const stop = setGrantedSkills(() => []);
++    phaseProof.calls.length = 0;
++    let primary: unknown;
++    let stopped = 0;
++    const writer = vi.spyOn(process.stderr, 'write').mockImplementationOnce(() => {
++      throw new Error('proof observer writer failure before native throw');
++    });
++    try {
++      try { Reflect.apply(proxy, { sentinel: 'proof-native-error-this' }, ['git', 42]); }
++      catch (error) { primary = error; }
++    } finally {
++      const cleanup = recorder.begin('grant.cleanup');
++      try { stop(); stopped++; }
++      finally { recorder.end(cleanup, false); recorder.end(body, true); writer.mockRestore(); }
++    }
++    expect(phaseProof.calls.length).toBe(1);
++    expect(primary instanceof TypeError && primary === phaseProof.calls[0].error).toBe(true);
++    expect(stopped).toBe(1);
++  });
++
++  it('phase proof retired recorder isolation owned detach and bounds', async (context) => {
++    const actual = await vi.importActual<typeof import('child_process')>('child_process');
++    const originalConsole = console.error;
++    const lines: string[] = [];
++    const consoleSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
++      if (typeof args[0] === 'string') lines.push(args[0]);
++      Reflect.apply(originalConsole, console, args);
++    });
++    const signalDetach = vi.spyOn(context.signal, 'removeEventListener');
++    deliveryPhases.active!.finish();
++    deliveryPhases.active = undefined;
++    const retired = createPhaseRecorder(context);
++    const child = new actual.ChildProcess();
++    const shared = vi.fn();
++    child.on('close', shared);
++    const retiredKey = retired.begin('git.async');
++    retired.watch(child, retiredKey);
++    const retiredClose = child.listeners('close').find((listener) => listener !== shared)!;
++    const fresh = createPhaseRecorder(context);
++    const freshKey = fresh.begin('git.async');
++    fresh.watch(child, freshKey);
++    deliveryPhases.active = fresh;
++    try {
++      retired.finish();
++      expect(retired.owner === undefined && deliveryPhases.active === fresh).toBe(true);
++      expect(child.listenerCount('close')).toBe(2);
++      expect(child.listeners('close').includes(shared)).toBe(true);
++      const beforeLate = lines.length;
++      Reflect.apply(retiredClose, child, []);
++      retired.end(retiredKey, false);
++      retired.finish();
++      expect(lines.length).toBe(beforeLate);
++      child.emit('close', 0, null);
++      expect(shared).toHaveBeenCalledTimes(1);
++      expect(child.listenerCount('close')).toBe(1);
++      deliveryPhases.active = undefined;
++      fresh.finish();
++      expect(lines.at(-1)!.includes('"active":[]')).toBe(true);
++      const bounded = createPhaseRecorder(context);
++      for (let i = 0; i < 40; i++) { const key = bounded.begin('body'); bounded.end(key, false); }
++      bounded.finish();
++      expect(lines.at(-1)!.includes('"droppedTransitions":48')).toBe(true);
++      expect(signalDetach.mock.calls.length).toBe(4);
++    } finally {
++      deliveryPhases.active = undefined;
++      fresh.finish();
++      consoleSpy.mockRestore();
++      signalDetach.mockRestore();
++    }
++  });
++
++  it('phase proof serialization failure reports unavailable without throwing', () => {
++    const recorder = deliveryPhases.active!;
++    deliveryPhases.active = undefined;
++    const serialization = vi.spyOn(JSON, 'stringify').mockImplementationOnce(() => {
++      throw new Error('proof observer serialization failure');
++    });
++    try { recorder.finish(); expect(recorder.owner).toBeUndefined(); }
++    finally { serialization.mockRestore(); }
++  });
++
++  it('phase proof original captured cleanup was not skipped', () => {
++    expect(phaseProof.stops).toBe(1);
++    expect(phaseProof.cleanupFault).toBe(false);
++  });
++});

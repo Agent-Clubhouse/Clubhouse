@@ -1,0 +1,4 @@
+annex-handlers.ts baseline= 0 0 final= 0 0 new= 0
+annex-handlers.test.ts baseline= 0 3 final= 0 3 new= 0
+annex-client.test.ts baseline= 0 143 final= 0 143 new= 0
+Exact path-keyed baseline comparison PASS: 0 errors / 146 existing warnings / 0 introduced diagnostics.

@@ -1,0 +1,115 @@
+2026-11-22T00:09:28Z START lane-p2 idle=83% unused=6492M avail=33064M freepct=87 comp=741M swap=3785M pid=30909 cmd=npm test -- --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t never sends queued reverse icons directly
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t never sends queued reverse icons directly
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-client.test.ts (368 tests | 5 failed | 363 skipped) 25ms
+       × never sends queued reverse icons directly after stop retirement 13ms
+       × never sends queued reverse icons directly after disconnect retirement 4ms
+       × never sends queued reverse icons directly after forget retirement 3ms
+       × never sends queued reverse icons directly after pin retirement 2ms
+       × never sends queued reverse icons directly after link retirement 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > never sends queued reverse icons directly after stop retirement
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > never sends queued reverse icons directly after disconnect retirement
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > never sends queued reverse icons directly after forget retirement
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > never sends queued reverse icons directly after link retirement
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 5 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "https://:0/api/v1/icons/project/icon-4",
+      Object {
+        "pinned": true,
+        "timeout": 10000,
+      },
+      [Function anonymous],
+    ]
+
+  2nd vi.fn() call:
+
+    Array [
+      "https://:0/api/v1/icons/project/icon-5",
+      Object {
+        "pinned": true,
+        "timeout": 10000,
+      },
+      [Function anonymous],
+    ]
+
+  3rd vi.fn() call:
+
+    Array [
+      "https://:0/api/v1/icons/project/icon-6",
+      Object {
+        "pinned": true,
+        "timeout": 10000,
+      },
+      [Function anonymous],
+    ]
+
+  4th vi.fn() call:
+
+    Array [
+      "https://:0/api/v1/icons/project/icon-7",
+      Object {
+        "pinned": true,
+        "timeout": 10000,
+      },
+      [Function anonymous],
+    ]
+
+  5th vi.fn() call:
+
+    Array [
+      "https://:0/api/v1/icons/project/icon-8",
+      Object {
+        "pinned": true,
+        "timeout": 10000,
+      },
+      [Function anonymous],
+    ]
+
+
+Number of calls: 5
+
+ ❯ src/main/services/annex-client.test.ts:500:29
+    498|       expect(signals.every((signal) => signal.aborted)).toBe(true);
+    499|       await new Promise((resolve) => setTimeout(resolve, 0));
+    500|       expect(https.get).not.toHaveBeenCalled();
+       |                             ^
+    501|       expect(https.request).not.toHaveBeenCalled();
+    502|       expect(annexControl.request).toHaveBeenCalledTimes(4);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > never sends queued reverse icons directly after pin retirement
+AssertionError: expected "request" to be called 4 times, but got 8 times
+ ❯ src/main/services/annex-client.test.ts:502:36
+    500|       expect(https.get).not.toHaveBeenCalled();
+    501|       expect(https.request).not.toHaveBeenCalled();
+    502|       expect(annexControl.request).toHaveBeenCalledTimes(4);
+       |                                    ^
+    503|     });
+    504|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 363 skipped (368)
+   Start at  19:09:29
+   Duration  455ms (transform 301ms, setup 4ms, import 342ms, tests 25ms, environment 0ms)
+
+2026-11-22T00:09:29Z END lane-p2 rc=1

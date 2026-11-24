@@ -1,0 +1,172 @@
+2026-11-21T22:58:17Z START lane-p2 idle=90% unused=4864M avail=31188M freepct=87 comp=741M swap=3801M pid=416 cmd=npx --no-install eslint src/main/services/annex-client.ts src/main/services/annex-client.test.ts src/main/services/annex-client-buffer.test.ts src/main/services/annex-devices.ts src/main/services/annex-devices.test.ts --max-warnings=0
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/annex-client.test.ts
+    33:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    38:57   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    41:55   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    41:64   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   214:88   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   220:52   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   220:95   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   225:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   242:48   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   260:55   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   261:49   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   261:64   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   261:73   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   264:63   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   270:52   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1119:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1136:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1156:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1159:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1213:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1216:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1219:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1273:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1276:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1279:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1330:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1335:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1338:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1348:43   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1352:45   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1376:48   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1436:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1481:73   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1490:68   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1597:45   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1601:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1619:82   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1619:121  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1681:40   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1716:46   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1727:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1731:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1780:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1991:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1994:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2004:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2037:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2040:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2050:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2071:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2074:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2084:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2141:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2142:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2145:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2156:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2208:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2210:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2215:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2225:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2267:22   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2268:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2272:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2279:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2325:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2328:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2338:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2389:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2392:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2402:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2413:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2413:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2413:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2415:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2422:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2427:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2427:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2427:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2431:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2439:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2530:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2533:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2543:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2556:53   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2556:65   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2556:74   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2561:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2568:91   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2664:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2667:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2677:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2743:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2746:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2756:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2772:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2772:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2772:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2774:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2781:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2803:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2803:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2803:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2805:62   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2812:23   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2854:30   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2856:60   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2859:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2870:12   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2948:61   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2952:56   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2953:50   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2955:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  2959:113  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3559:94   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3567:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3612:74   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3618:56   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3619:50   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3621:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3625:113  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3626:81   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  3943:94   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4059:107  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4119:107  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4194:63   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4200:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4200:84   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4201:19   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4218:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4711:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4715:146  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4795:379  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4817:379  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4850:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4853:146  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5026:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5026:58   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5029:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5029:84   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5041:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5245:163  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5281:96   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  5285:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/src/main/services/annex-client.ts
+   349:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1151:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1266:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1306:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1520:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1562:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1606:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1643:7   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1657:31  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1815:25  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1966:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1978:36  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  1986:40  warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  2231:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  2291:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  2369:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  2407:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  2470:9   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+  2489:5   warning  This catch swallows the error. Report it (tel.exception / tel.event, or a ui.action_failed event), rethrow it, or add `// telemetry-exempt: <reason>`  clubhouse-telemetry/catch-must-report
+
+✖ 162 problems (0 errors, 162 warnings)
+
+ESLint found too many warnings (maximum: 0).
+2026-11-21T22:58:19Z END lane-p2 rc=1

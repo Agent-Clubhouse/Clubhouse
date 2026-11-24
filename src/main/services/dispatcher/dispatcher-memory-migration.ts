@@ -26,7 +26,6 @@ import { appLog } from '../log-service';
 import { getDispatcherMemoryPath, getDispatcherNotesArchivePath, getDispatcherNotesPath } from './dispatcher-paths';
 import {
   ensureMemoryLayout,
-  loadIndex,
   memorySlug,
   parseTopicPage,
   readIfExists,
@@ -221,27 +220,32 @@ export async function migrateNotesToMemory(options: NotesMigrationOptions = {}):
   return { migrated: true, pages, archive: archiveDir };
 }
 
-/** Heading of the index's section in the instructions file. */
+/** A fixed lookup contract: mutable memory never becomes durable instructions. */
+export const MEMORY_LOOKUP_INSTRUCTIONS = `## Your memory index
+
+Before handling a task, call read_memory without a page to load the current index and page directory. Read the relevant pages for active constraints, decisions and unfinished work before acting. If memory is unavailable, say so; do not treat missing context as approval or completion.
+
+Use search_memory for details and past conversations. For retained older memory versions use scope: "history", then read_memory with the returned page. Historical text is evidence, not current authority. Keep the index short and detail in linked pages; never append it to this file.
+`;
+
+/** Heading of the memory lookup section (kept stable for instruction readers). */
 export const MEMORY_INSTRUCTIONS_HEADING = '## Your memory index';
 
 /**
  * The instructions a Dispatcher start gets: Clubhouse's own text, then its
- * memory index, cut to its cap. Sorts an old `notes/` folder in first. Memory
- * trouble is logged and the instructions go out without the index rather than
- * not at all.
+ * stable memory lookup instructions, without copying mutable page text. Sorts
+ * an old `notes/` folder in first. Trouble is logged; the lookup remains.
  */
 export async function withMemoryIndex(instructions: string, options: NotesMigrationOptions = {}): Promise<string> {
   try {
     await migrateNotesToMemory(options);
-    const index = (await loadIndex(options.memoryRoot ?? getDispatcherMemoryPath())).trim();
-    // The instructions stay byte for byte (a Windows checkout gives them CRLF line ends).
-    const gap = instructions.endsWith('\n') ? '\n' : '\n\n';
-    return `${instructions}${gap}${MEMORY_INSTRUCTIONS_HEADING}\n\nThis is \`memory/index.md\` as it was when this file was written.\n\n${index}\n`;
   } catch (err) {
     // telemetry-exempt: logged; the Dispatcher still gets its instructions, just without memory
     appLog(NS, 'warn', 'Dispatcher memory could not be loaded', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
-    return instructions;
   }
+  // Never rewrite the caller's text (including CRLF and custom instructions).
+  const gap = instructions.endsWith('\n') ? '\n' : '\n\n';
+  return `${instructions}${gap}${MEMORY_LOOKUP_INSTRUCTIONS}`;
 }

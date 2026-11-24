@@ -1,0 +1,199 @@
+2026-11-21T22:46:35Z START lane-p2 idle=88% unused=4637M avail=30978M freepct=87 comp=740M swap=3809M pid=94087 cmd=npm test -- --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t remaining reverse consumers
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/annex-client.test.ts --maxWorkers=2 -t remaining reverse consumers
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-client.test.ts (363 tests | 16 failed | 346 skipped) 39ms
+       × routes the tree adapter once without an outgoing connection 8ms
+       × routes the digest adapter once without an outgoing connection 2ms
+       × routes the topic adapter once without an outgoing connection 2ms
+       × routes the messages adapter once without an outgoing connection 2ms
+       × preserves UTF-8 file bytes and the completed reverse 404 disposition 2ms
+       × preserves status, headers, UTF-8 bodies and caller receive limits on one POST 4ms
+       × retains the original indeterminate write failure without a route fallback 3ms
+       × does not send an already aborted request 2ms
+       × refuses a completed response from a replaced accepted link without sending again 2ms
+       × owns one reverse subscription and accepts its lower-sequence replacement snapshot 2ms
+       × retires the owned stream before late frames after stop 2ms
+       × retires the owned stream before late frames after disconnect 1ms
+       × retires the owned stream before late frames after forget 2ms
+       × retires the owned stream before late frames after pin 1ms
+       × retires the owned stream before late frames after link 2ms
+       × does not resubscribe a refused stream until a new link epoch or explicit retry 2ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 16 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > routes the tree adapter once without an outgoing connection
+AssertionError: expected "request" to be called once with arguments: [ 'remaining-peer', …(2) ]
+
+Number of calls: 0
+
+ ❯ src/main/services/annex-client.test.ts:353:36
+    351|     ] as const)('routes the %s adapter once without an outgoing connec…
+    352|       await expect(read()).resolves.toEqual([]);
+    353|       expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(fin…
+       |                                    ^
+    354|         expect.objectContaining({ method: 'GET', path }), expect.objec…
+    355|       expect(https.get).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > routes the digest adapter once without an outgoing connection
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > routes the topic adapter once without an outgoing connection
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > routes the messages adapter once without an outgoing connection
+AssertionError: expected "request" to be called once with arguments: [ 'remaining-peer', …(2) ]
+
+Number of calls: 0
+
+ ❯ src/main/services/annex-client.test.ts:353:36
+    351|     ] as const)('routes the %s adapter once without an outgoing connec…
+    352|       await expect(read()).resolves.toEqual([]);
+    353|       expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(fin…
+       |                                    ^
+    354|         expect.objectContaining({ method: 'GET', path }), expect.objec…
+    355|       expect(https.get).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > preserves UTF-8 file bytes and the completed reverse 404 disposition
+AssertionError: expected '' to be 'file é\n' // Object.is equality
+
+- Expected
++ Received
+
+- file é
+-
+
+ ❯ src/main/services/annex-client.test.ts:361:73
+    359|     it('preserves UTF-8 file bytes and the completed reverse 404 dispo…
+    360|       vi.mocked(annexControl.request).mockResolvedValueOnce({ status: …
+    361|       await expect(annexClient.requestFileRead(fingerprint, 'p', 'f /'…
+       |                                                                         ^
+    362|       vi.mocked(annexControl.request).mockResolvedValueOnce({ status: …
+    363|       await expect(annexClient.requestFileRead(fingerprint, 'p', 'f'))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > preserves status, headers, UTF-8 bodies and caller receive limits on one POST
+AssertionError: promise rejected "Error: Satellite not connected" instead of resolving
+ ❯ src/main/services/annex-client.test.ts:372:126
+    370|         status: 429, headers: { 'retry-after': '3' }, body: Buffer.fro…
+    371|       });
+    372|       await expect(annexClient.postToMachine(fingerprint, '/api/v1/net…
+       |                                                                                                                              ^
+    373|         .resolves.toEqual({ status: 429, body: { error: 'rate_limited'…
+    374|       expect(annexControl.request).toHaveBeenCalledExactlyOnceWith(fin…
+
+Caused by: Error: Satellite not connected
+ ❯ Module.postToMachine src/main/services/annex-client.ts:2477:35
+ ❯ src/main/services/annex-client.test.ts:372:32
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > retains the original indeterminate write failure without a route fallback
+AssertionError: expected Error: Satellite not connected to be ControlRequestError: timeout: the request… { …(3) } // Object.is equality
+
+- Expected
++ Received
+
+- ControlRequestError {
+-   "message": "timeout: the request may have been carried out",
+-   "code": "timeout",
+-   "indeterminate": true,
+-   "requestId": "original-write",
+-   "name": "ControlRequestError",
++ Error {
++   "message": "Satellite not connected",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:383:87
+    381|       const error = new annexControl.ControlRequestError('timeout', tr…
+    382|       vi.mocked(annexControl.request).mockRejectedValueOnce(error);
+    383|       await expect(annexClient.postToMachine(fingerprint, '/api/v1/net…
+       |                                                                                       ^
+    384|       expect(annexControl.request).toHaveBeenCalledOnce();
+    385|       expect(https.request).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > does not send an already aborted request
+AssertionError: expected [Function] to throw error including 'aborted' but got 'Satellite not connected'
+
+Expected: "aborted"
+Received: "Satellite not connected"
+
+ ❯ src/main/services/annex-client.test.ts:391:113
+    389|       const abort = new AbortController();
+    390|       abort.abort();
+    391|       await expect(annexClient.postToMachine(fingerprint, '/api/v1/net…
+       |                                                                                                                 ^
+    392|       expect(annexControl.request).not.toHaveBeenCalled();
+    393|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > refuses a completed response from a replaced accepted link without sending again
+AssertionError: expected "request" to be called once, but got 0 times
+ ❯ src/main/services/annex-client.test.ts:400:36
+    398|       const pending = annexClient.postToMachine(fingerprint, '/api/v1/…
+    399|       const observed = pending.catch((error: unknown) => error);
+    400|       expect(annexControl.request).toHaveBeenCalledOnce();
+       |                                    ^
+    401|       epoch++;
+    402|       devicesChanged();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > owns one reverse subscription and accepts its lower-sequence replacement snapshot
+AssertionError: expected "subscribe" to be called once, but got 0 times
+ ❯ src/main/services/annex-client.test.ts:418:38
+    416|       subscriptionCapable = true;
+    417|       devicesChanged();
+    418|       expect(annexControl.subscribe).toHaveBeenCalledOnce();
+       |                                      ^
+    419|       const snapshot = (lastSeq: number) => ({
+    420|         type: 'snapshot', payload: { protocolVersion: 2, lastSeq, proj…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > retires the owned stream before late frames after stop
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > retires the owned stream before late frames after disconnect
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > retires the owned stream before late frames after forget
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > retires the owned stream before late frames after pin
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > retires the owned stream before late frames after link
+AssertionError: expected "subscribe" to be called once, but got 0 times
+ ❯ src/main/services/annex-client.test.ts:438:38
+    436|       subscriptionCapable = true;
+    437|       devicesChanged();
+    438|       expect(annexControl.subscribe).toHaveBeenCalledOnce();
+       |                                      ^
+    439|       subscriptions[0].handlers.onFrame({ type: 'pty:data', payload: {…
+    440|       if (reason === 'stop') annexClient.stopClient();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/16]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > remaining reverse consumers > does not resubscribe a refused stream until a new link epoch or explicit retry
+AssertionError: expected "subscribe" to be called once, but got 0 times
+ ❯ src/main/services/annex-client.test.ts:454:38
+    452|       subscriptionCapable = true;
+    453|       devicesChanged();
+    454|       expect(annexControl.subscribe).toHaveBeenCalledOnce();
+       |                                      ^
+    455|       subscriptions[0].handlers.onEnd('not_supported');
+    456|       devicesChanged();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/16]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  16 failed | 1 passed | 346 skipped (363)
+   Start at  17:46:35
+   Duration  492ms (transform 278ms, setup 4ms, import 348ms, tests 39ms, environment 0ms)
+
+2026-11-21T22:46:36Z END lane-p2 rc=1

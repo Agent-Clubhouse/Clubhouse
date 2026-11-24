@@ -27,6 +27,7 @@ import checkIns from './skills/work/check-ins/SKILL.md';
 import delegatingWork from './skills/work/delegating-work/SKILL.md';
 import memoryUpkeep from './skills/work/memory-upkeep/SKILL.md';
 import passingOnNews from './skills/work/passing-on-news/SKILL.md';
+import toolProcedures from './skills/work/tool-procedures/SKILL.md';
 
 export interface DispatcherSkill {
   /** The folder the CLI gets, and the front matter's `name`. */
@@ -64,6 +65,7 @@ export const DISPATCHER_SKILLS: readonly DispatcherSkill[] = [
   parseSkill(checkIns, 'work'),
   parseSkill(agentCards, 'work'),
   parseSkill(memoryUpkeep, 'work'),
+  parseSkill(toolProcedures, 'work'),
 ];
 
 export function dispatcherSkills(role: DispatcherRole): DispatcherSkill[] {
@@ -157,7 +159,18 @@ export async function writeDispatcherSkills(
   await fsp.writeFile(path.join(root, MANAGED_SKILLS_MANIFEST), `${JSON.stringify({ skills: skills.map((s) => s.name) }, null, 2)}\n`, 'utf-8');
 }
 
-/** What an agent's instructions file holds before memory: Clubhouse's instructions, then its skills. */
+/** Built-in context budget, excluding the separately preserved user name/personality. */
+export const DISPATCHER_BUILTIN_CAP_BYTES = 16 * 1024;
+
+/** Never silently trim authority or custom text when a shipped template grows. */
+export function boundBuiltinInstructions(text: string): string {
+  if (Buffer.byteLength(text, 'utf8') > DISPATCHER_BUILTIN_CAP_BYTES) {
+    throw new Error('Dispatcher built-in instructions exceed their context budget. Move procedures into a linked skill.');
+  }
+  return text;
+}
+
+/** What an agent's instructions file holds before its user text and memory lookup. */
 export function instructionsWithSkills(base: string, role: DispatcherRole, conventions: SkillsConventions | undefined): string {
-  return conventions ? appendSection(base, skillsSection(role, conventions)) : base;
+  return boundBuiltinInstructions(conventions ? appendSection(base, skillsSection(role, conventions)) : base);
 }

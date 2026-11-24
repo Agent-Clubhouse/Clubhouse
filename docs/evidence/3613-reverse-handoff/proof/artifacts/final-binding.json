@@ -1,0 +1,107 @@
+{
+  "source": "a4074c7f5e76714bbe346ecee1acfc434307de0e",
+  "sourceTree": "2281eb788e825e12c2e3b70b160b4c50863a7e36",
+  "base": "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+  "currentMain": "c2a59f9f2c872bf2cb1fe9852adf8c92f2a996fc",
+  "measuredFiles": [
+    {
+      "path": "test/annex-v2/annex-reverse-handoff.test.ts",
+      "sha256": "b8d69ef339122724e4d31c48d0f306dd6c404f54c009663a836a10309271ec51",
+      "bytes": 22099,
+      "blob": "b6a3356166393780985f794a91d8ce687c142b43"
+    },
+    {
+      "path": "test/annex-v2/reverse-desktop-fixture.ts",
+      "sha256": "e4ebc0a491226c641e6cadd971f53e283702a15a4fd5eb4afb459637d3c61a90",
+      "bytes": 3441,
+      "blob": "4d7856b881d8136bf8c72d3266f98a7254eb8dcb"
+    },
+    {
+      "path": "test/annex-v2/annex-reverse-consumers.test.ts",
+      "sha256": "2459a1a1f6e6ea620da9ba5cc1ce6efab3b942f5803c5175d80df85f15f35566",
+      "bytes": 12606,
+      "blob": "ffd4beb988aa2b7add9e8952679f02305cffb480"
+    },
+    {
+      "path": "docs/annex-reverse-routes.md",
+      "sha256": "c9057bf82fff280ff8526c26d5fd286b423a76acff924b4099934ce3c14d4e02",
+      "bytes": 22857,
+      "blob": "aa9fc8317e08717f8162bbba10cbf08d2dc0fa7a"
+    }
+  ],
+  "fixtureCompiler": {
+    "exit": 0,
+    "diagnostics": 0,
+    "inputs": 3958,
+    "actualChangedFixturesIncluded": true,
+    "rootIncludeAndOptionsInheritedUnmodified": true,
+    "configSha256": "ddcfe68d70a36768ba6f4e4d0a98ea0a41ef7602cbd989a70899ac34b84d96f3",
+    "inputContentIdentityMeasuredAfterExecutionNotAtomicReadTracing": true
+  },
+  "lint": {
+    "exit": 0,
+    "errors": 0,
+    "warnings": 0,
+    "scope": [
+      "test/annex-v2/annex-reverse-handoff.test.ts",
+      "test/annex-v2/reverse-desktop-fixture.ts",
+      "test/annex-v2/annex-reverse-consumers.test.ts"
+    ]
+  },
+  "cases": [
+    {
+      "classname": "test/annex-v2/annex-reverse-consumers.test.ts",
+      "name": "preserves binary bytes through one forward and retires the whole owned consumer stream",
+      "time": "0.377285958",
+      "status": "PASS"
+    },
+    {
+      "classname": "test/annex-v2/annex-reverse-handoff.test.ts",
+      "name": "resumes exact agreement-bound bytes after an actual control cut at the fsynced chunk checkpoint",
+      "time": "1.260423791",
+      "status": "PASS"
+    },
+    {
+      "classname": "test/annex-v2/annex-reverse-handoff.test.ts",
+      "name": "refuses a retired sender agreement after a durable chunk and leaves another agreement usable",
+      "time": "0.736855458",
+      "status": "PASS"
+    },
+    {
+      "classname": "test/annex-v2/annex-reverse-handoff.test.ts",
+      "name": "refuses chunk corruption and removes receiving bytes",
+      "time": "0.168551208",
+      "status": "PASS"
+    },
+    {
+      "classname": "test/annex-v2/annex-reverse-handoff.test.ts",
+      "name": "refuses final digest corruption and removes receiving bytes",
+      "time": "0.205010833",
+      "status": "PASS"
+    },
+    {
+      "classname": "test/annex-v2/annex-reverse-handoff.test.ts",
+      "name": "never publishes a held old-link reply into a replacement and requires explicit receiver resume",
+      "time": "0.92266525",
+      "status": "PASS"
+    }
+  ],
+  "newHandoffCases": 5,
+  "unchangedConsumerCase": 1,
+  "helper": {
+    "originalHelpersSha256": "eb666631946839dad0a3ae3e92ace2e689a70839c611526579227277f85ddf3f",
+    "movedHelpersSha256": "eb666631946839dad0a3ae3e92ace2e689a70839c611526579227277f85ddf3f",
+    "originalCaseBodySha256": "9d74bbe97ea016a9de13044a40af192b0823d73253603a5f366139c07ff3c8f7",
+    "candidateCaseBodySha256": "9d74bbe97ea016a9de13044a40af192b0823d73253603a5f366139c07ff3c8f7",
+    "helperBodiesIdenticalIgnoringExportKeywords": true,
+    "originalCaseBodyIdentical": true
+  },
+  "node": "v24.22.1",
+  "fixtureJsonFiles": 106,
+  "fixtureJsonBytes": 1547788,
+  "broaderFilenameSelectedJsonFiles": 144,
+  "broaderFilenameSelectedJsonBytes": 1912884,
+  "productionAndRootConfigsUnchangedFromBase": true,
+  "fullDuplexAcceptance": false,
+  "grantPreparationAgreementDispatchBoundariesAreFixtures": true
+}

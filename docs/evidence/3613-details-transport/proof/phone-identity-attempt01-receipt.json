@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "toolResult": "12 exact protected/shared/source byte segments unchanged\nTraceback (most recent call last):\n  File \"<stdin>\", line 12, in <module>\nAssertionError",
+  "cause": "The metadata script incorrectly asserted the historical fixture count103. Fresh edcd actually has106 tracked JSON fixture paths. The subsequent read-only complete inspection observed zero raw base/source/worktree mismatches.",
+  "fixtureEdits": false,
+  "scope": "Metadata-count assumption failure, not fixture/test/phone parity failure. Original failed tool result retained; no fixture bytes were repaired or regenerated."
+}

@@ -355,6 +355,34 @@ describe('CodexChatDriver', () => {
 
   // ── Turns ────────────────────────────────────────────────────────────────
 
+  it('returns native ownership for prompt receipts which share one native turn', async () => {
+    const { session } = await startSession();
+    const first = await session.sendWithReceipt!([{ type: 'text', text: 'first' }], 'prompt');
+    const second = await session.sendWithReceipt!([{ type: 'text', text: 'second' }], 'prompt');
+    expect(first).toEqual({ delivery: 'prompt', nativeTurn: { id: fx.TURN_ID, completed: false } });
+    expect(second).toEqual(first);
+    expect(server.requests('turn/start')).toHaveLength(2);
+  });
+
+  it('reports a completed native operation when completion precedes the RPC reply', async () => {
+    useServer({ 'turn/start': () => {
+      server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+      return { result: fx.turnStartResult };
+    } });
+    const { session } = await startSession();
+    expect(await session.sendWithReceipt!([{ type: 'text', text: 'input' }], 'prompt'))
+      .toEqual({ delivery: 'prompt', nativeTurn: { id: fx.TURN_ID, completed: true } });
+  });
+
+  it('does not claim a future turn for compact or a live steer', async () => {
+    const { session } = await startSession();
+    expect(await session.sendWithReceipt!([{ type: 'text', text: '/compact' }], 'prompt')).toEqual({ delivery: 'prompt' });
+    await session.send([{ type: 'text', text: 'start' }], 'prompt');
+    expect(await session.sendWithReceipt!([{ type: 'text', text: 'steer' }], 'steer')).toEqual({ delivery: 'steer' });
+    expect(server.requests('turn/start')).toHaveLength(1);
+    expect(server.requests('turn/steer')).toHaveLength(1);
+  });
+
   it('send starts a turn with the opening effort, once', async () => {
     const { session } = await startSession({ effort: 'high' });
 

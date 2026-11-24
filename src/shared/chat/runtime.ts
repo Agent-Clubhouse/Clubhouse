@@ -15,8 +15,8 @@ import type { ExecutionPolicy } from '../execution-policy';
  * chat runtime owns the session lifecycle, stamps envelopes, writes the
  * transcript and publishes events; drivers only translate protocol traffic.
  *
- * These are type-only definitions shared by main and renderer; implementations
- * live in the main process.
+ * Definitions are shared by main and renderer; implementations and issued
+ * handoff authority live in main. Brand symbols do not carry wire authority.
  */
 
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabilities';
@@ -38,6 +38,85 @@ import type {
 // ── AgentRuntime ────────────────────────────────────────────────────────────
 
 export type AgentRuntimeKind = 'pty' | 'chat';
+
+export const runtimeHandoffBrand: unique symbol = Symbol('runtime-handoff');
+export const runtimeAdmissionBrand: unique symbol = Symbol('runtime-admission');
+export const runtimeDispatchIdBrand: unique symbol = Symbol('runtime-dispatch-id');
+export const runtimeResourceIdBrand: unique symbol = Symbol('runtime-resource-id');
+export const runtimeProviderRequestIdBrand: unique symbol = Symbol('runtime-provider-request-id');
+
+export interface RuntimeDispatchId { readonly [runtimeDispatchIdBrand]: true }
+export interface RuntimeResourceId { readonly [runtimeResourceIdBrand]: true }
+export interface RuntimeProviderRequestId { readonly [runtimeProviderRequestIdBrand]: true }
+
+export type RuntimeLoss = 'unsubmitted' | 'unknown';
+export type RuntimeJournalEntryDecision = 'entered' | 'journal_owned';
+export type RuntimeEntryDecision =
+  | { kind: 'entered' }
+  | { kind: 'rejected' }
+  | { kind: 'journal_owned' };
+
+export interface RuntimeLossCommit {
+  committedOutcome: 'unsubmitted' | 'uncertain';
+}
+
+export type RuntimeLossClaim =
+  | { kind: 'journal_owned' }
+  | { kind: 'claimed'; committed: Promise<RuntimeLossCommit> };
+
+export interface RuntimeRetirementInfo {
+  candidateDisposition: RuntimeLoss | 'journal_owned';
+  firstRetirement: boolean;
+}
+
+export type RuntimeHandoffReceipt =
+  | {
+      kind: 'local_handoff';
+      dispatchId: RuntimeDispatchId;
+      resource: RuntimeResourceId;
+      boundary: 'pty_input' | 'stream_stdin' | 'sdk_input_consumed';
+    }
+  | {
+      kind: 'native_response';
+      dispatchId: RuntimeDispatchId;
+      resource: RuntimeResourceId;
+      request: RuntimeProviderRequestId;
+      provenance: 'codex_rpc' | 'verified_provider_adapter';
+    }
+  | {
+      kind: 'approved_handoff_ack';
+      dispatchId: RuntimeDispatchId;
+      resource: RuntimeResourceId;
+      request: RuntimeProviderRequestId;
+      provenance: 'codex_rpc' | 'verified_provider_adapter';
+    };
+
+export interface RuntimeAttemptHooks {
+  markEntered(): RuntimeJournalEntryDecision;
+  onLoss(outcome: RuntimeLoss): RuntimeLossClaim;
+  onReceipt(receipt: RuntimeHandoffReceipt): Promise<void>;
+}
+
+/** These brands are authoritative only for objects registered by main's coordinator. */
+export interface RuntimeHandoff {
+  readonly [runtimeHandoffBrand]: true;
+  readonly dispatchId: RuntimeDispatchId;
+  tryEnter(): RuntimeEntryDecision;
+  observe(receipt: RuntimeHandoffReceipt): Promise<void>;
+}
+
+export interface RuntimeTransportAdmission {
+  readonly [runtimeAdmissionBrand]: true;
+  readonly dispatchId: RuntimeDispatchId;
+  readonly resource: RuntimeResourceId;
+  allowed(): boolean;
+}
+
+export interface RuntimeDriverSendResult {
+  delivery: MessageDelivery;
+  receipt?: RuntimeHandoffReceipt;
+  pendingReceipt?: Promise<RuntimeHandoffReceipt>;
+}
 
 export type ActionQueueSettlement = 'delivered' | 'expired' | 'replaced' | 'dropped';
 
@@ -279,6 +358,13 @@ export interface ChatResumeTiming {
 /** Bytes for an image asset a driver referenced, or why there are none. */
 export type ChatMediaAssetResult = { ok: true; bytes: Uint8Array; reason?: undefined } | { ok: false; bytes?: undefined; reason: string };
 
+/** Main-process submission ownership; never serialized as a delivery result. */
+export interface ChatSendReceipt {
+  delivery: MessageDelivery;
+  /** Absent for an operation (steer/compact) which does not start a turn. */
+  nativeTurn?: { id: string; completed: boolean };
+}
+
 export interface ChatDriverSession {
   /**
    * Values known at start. Either may change later: the driver then emits a
@@ -305,6 +391,20 @@ export interface ChatDriverSession {
 
   /** Send content. Returns how it was delivered (a driver without steer reports 'queued' or 'prompt'). */
   send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery>;
+  /**
+   * When available, identifies the native operation instead of assuming one
+   * new turn per prompt. Notifications may precede this receipt, and multiple
+   * submissions may share a turn. A resolved receipt still reports delivery
+   * even if this session was replaced while the provider was answering.
+   */
+  sendWithReceipt?(content: ContentBlock[], delivery: MessageDelivery): Promise<ChatSendReceipt>;
+  /**
+   * True once the transport has ended or is ending (the process exited, the
+   * stream closed), so nothing more can reach the provider. In-process only,
+   * never written anywhere. The runtime then holds its own queue for the
+   * session's end instead of dispatching into it. Absent: assumed open.
+   */
+  isClosed?(): boolean;
   interrupt(): Promise<void>;
   respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;

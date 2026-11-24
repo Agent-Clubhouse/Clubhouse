@@ -3,6 +3,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/Button';
 import { ClaudeMascot, CodexMascot, CopilotMascot, SleepingMascot } from '../../features/agents/SleepingMascots';
 import type { OrchestratorId } from '../../../shared/types';
+import { providerDescriptor } from '../../../shared/providers/descriptors';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useKeyboardShortcutsStore } from '../../stores/keyboardShortcutsStore';
@@ -15,13 +16,6 @@ import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
  * picker inside step one. It replaces the legacy onboarding modal in the new
  * shell; there is no cohort question.
  */
-
-/** Where to get each agent CLI that isn't on PATH. */
-const INSTALL_URLS: Record<string, string> = {
-  'claude-code': 'https://docs.claude.com/en/docs/claude-code/setup',
-  'codex-cli': 'https://github.com/openai/codex',
-  'copilot-cli': 'https://github.com/github/copilot-cli',
-};
 
 const IS_MAC = typeof window !== 'undefined' && window.clubhouse?.platform === 'darwin';
 
@@ -67,7 +61,7 @@ function AgentClis() {
       {orchestrators.map((o) => {
         const avail = availability[o.id];
         const found = avail?.available === true;
-        const url = INSTALL_URLS[o.id];
+        const url = providerDescriptor(o.id)?.install.docsUrl;
         return (
           <li key={o.id} className="h-[30px] flex items-center gap-1.5 text-xs whitespace-nowrap">
             <span aria-hidden="true" className={`flex-shrink-0 flex ${found ? '' : 'opacity-45'}`}>

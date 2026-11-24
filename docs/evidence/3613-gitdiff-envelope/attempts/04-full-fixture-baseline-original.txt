@@ -1,0 +1,244 @@
+2026-11-22T07:15:36Z START lane-p2 idle=90% unused=6103M avail=33881M freepct=87 comp=711M swap=3745M pid=82118 cmd=bash -c echo FIXTURE_TYPES_BEGIN; npx tsc --noEmit -p docs/evidence/3613-gitdiff-envelope/fixture-tsconfig.json; status=$?; echo "FIXTURE_TYPES_END rc=$status"; exit "$status"
+FIXTURE_TYPES_BEGIN
+src/main/services/annex-server.test.ts(68,50): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any[]' return type.
+src/main/services/annex-server.test.ts(532,58): error TS2345: Argument of type '{ enabled: false; deviceName: string; alias: string; icon: string; color: string; autoReconnect: false; }' is not assignable to parameter of type 'AnnexSettings'.
+  Type '{ enabled: false; deviceName: string; alias: string; icon: string; color: string; autoReconnect: false; }' is missing the following properties from type 'AnnexSettings': enableServer, enableClient
+src/main/services/annex-server.test.ts(549,50): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(550,62): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(614,69): error TS2345: Argument of type '{ agentId: string; sessionId: string; seq: number; ts: number; type: "agent_message"; data: { messageId: string; text: string; }; }[]' is not assignable to parameter of type 'ChatEvent[]'.
+  Type '{ agentId: string; sessionId: string; seq: number; ts: number; type: "agent_message"; data: { messageId: string; text: string; }; }' is not assignable to type 'ChatEvent'.
+    Property 'v' is missing in type '{ agentId: string; sessionId: string; seq: number; ts: number; type: "agent_message"; data: { messageId: string; text: string; }; }' but required in type 'ChatEnvelopeBase<"agent_message">'.
+src/main/services/annex-server.test.ts(666,166): error TS7018: Object literal's property 'rows' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(666,176): error TS7018: Object literal's property 'notes' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(772,141): error TS7018: Object literal's property 'next' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(1143,81): error TS7018: Object literal's property 'error' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(1143,120): error TS7018: Object literal's property 'value' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(1786,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ agents: Record<string, any[]>; quickAgents: Record<string, any[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'quickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ agents: Record<string, any[]>; quickAgents: Record<string, any[]>; }'.
+src/main/services/annex-server.test.ts(1888,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ projectState: Record<string, unknown>; idleDays: number; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' is missing the following properties from type '{ projectState: Record<string, unknown>; idleDays: number; }': projectState, idleDays
+src/main/services/annex-server.test.ts(1909,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1911,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1917,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1920,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1923,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1929,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1932,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(1977,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ finishedQuickAgents: Record<string, unknown[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'finishedQuickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ finishedQuickAgents: Record<string, unknown[]>; }'.
+src/main/services/annex-server.test.ts(1997,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2001,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2007,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2009,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ finishedQuickAgents: Record<string, unknown[]>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'finishedQuickAgents' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ finishedQuickAgents: Record<string, unknown[]>; }'.
+src/main/services/annex-server.test.ts(2015,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2018,20): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2033,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(2049,26): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'.
+src/main/services/annex-server.test.ts(2067,26): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'.
+src/main/services/annex-server.test.ts(2112,24): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ theme: Record<string, unknown>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'theme' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ theme: Record<string, unknown>; }'.
+src/main/services/annex-server.test.ts(2895,88): error TS7018: Object literal's property 'lastSeen' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(2943,22): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ helperRequests: unknown; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'helperRequests' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ helperRequests: unknown; }'.
+src/main/services/annex-server.test.ts(2947,13): error TS2352: Conversion of type 'Readonly<Record<string, readonly DurableAgentConfig[]>>' to type 'Record<string, { id: string; }[]>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  'string' index signatures are incompatible.
+    The type 'readonly DurableAgentConfig[]' is 'readonly' and cannot be assigned to the mutable type '{ id: string; }[]'.
+src/main/services/annex-server.test.ts(2995,18): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2997,18): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(2999,18): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(3002,11): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(3036,89): error TS7018: Object literal's property 'options' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(3202,18): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(3233,99): error TS2367: This comparison appears to be unintentional because the types 'AgentRuntime' and '{ kind: "chat"; agentId: string; isRunning: () => boolean; getState: () => "idle"; getSessionId: () => string; getNativeSessionId: () => string; getDisplayRunId: () => string; sendMessage: Mock<Procedure>; readTranscript: Mock<...>; }' have no overlap.
+src/main/services/annex-server.test.ts(3288,108): error TS7018: Object literal's property 'options' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(3487,90): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(4757,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4847,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4883,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4886,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4928,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4931,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4955,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4958,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4974,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4977,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(4989,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5006,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5034,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5063,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5091,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5094,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5132,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5195,64): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5214,34): error TS2554: Expected 3 arguments, but got 2.
+src/main/services/annex-server.test.ts(5316,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5319,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5349,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5352,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5381,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5384,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5411,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5414,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5442,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5445,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5796,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5799,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5813,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5816,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5830,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5833,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5852,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5855,64): error TS2345: Argument of type '{ id: string; name: string; color: string; branch: string; model: null; orchestrator: null; freeAgentMode: boolean; icon: null; }[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type '{ id: string; name: string; color: string; branch: string; model: null; orchestrator: null; freeAgentMode: boolean; icon: null; }[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5951,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(5984,22): error TS7018: Object literal's property 'provider' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(5984,38): error TS7018: Object literal's property 'model' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(5984,51): error TS7018: Object literal's property 'effort' implicitly has an 'any' type.
+src/main/services/annex-server.test.ts(5990,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6095,54): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6096,66): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6122,66): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6257,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6306,54): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6320,54): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6362,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6670,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(6673,32): error TS2554: Expected 1 arguments, but got 2.
+src/main/services/annex-server.test.ts(7284,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7312,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7333,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7350,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7721,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(7985,34): error TS2554: Expected 1 arguments, but got 2.
+src/main/services/annex-server.test.ts(8060,26): error TS2352: Conversion of type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' to type '{ pendingPermissions: Record<string, any>[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'pendingPermissions' is missing in type '{ [field: string]: unknown; projects: unknown[]; agents: Record<string, unknown[]>; }' but required in type '{ pendingPermissions: Record<string, any>[]; }'.
+src/main/services/annex-server.test.ts(8074,34): error TS2554: Expected 1 arguments, but got 2.
+src/main/services/annex-server.test.ts(8340,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8362,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8376,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8385,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8394,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8407,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8420,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8442,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8454,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8463,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8484,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(8514,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9242,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9261,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9264,64): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9303,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9356,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9359,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9399,52): error TS2345: Argument of type '{ id: string; name: string; path: string; }[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type '{ id: string; name: string; path: string; }[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9402,64): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9800,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9810,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9814,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9822,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9869,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9873,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9886,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9903,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9904,64): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(9944,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(10001,216): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(10021,224): error TS7018: Object literal's property 'events' implicitly has an 'any[]' type.
+src/main/services/annex-server.test.ts(10039,71): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<DurableAgentConfig[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<DurableAgentConfig[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(10308,21): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.
+src/main/services/annex-server.test.ts(10407,46): error TS2339: Property 'mock' does not exist on type '(id: string, projectPath: string, opts?: { beforeSpawn?: () => void; }) => Promise<void>'.
+src/main/services/annex-server.test.ts(10701,29): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.
+src/main/services/annex-server.test.ts(10725,52): error TS2345: Argument of type 'any[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'any[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+src/main/services/annex-server.test.ts(10749,52): error TS2345: Argument of type 'undefined[]' is not assignable to parameter of type 'Promise<Project[]>'.
+  Type 'undefined[]' is missing the following properties from type 'Promise<Project[]>': then, catch, finally, [Symbol.toStringTag]
+FIXTURE_TYPES_END rc=2
+2026-11-22T07:15:45Z END lane-p2 rc=2

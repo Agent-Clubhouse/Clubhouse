@@ -1,0 +1,37 @@
+2026-11-21T19:23:39Z START lane-p2 idle=85% unused=9438M avail=33366M freepct=87 comp=1097M swap=3929M pid=7573 cmd=npm run typecheck
+
+> clubhouse@0.43.0-beta.7 typecheck
+> tsc --noEmit
+
+src/main/services/agent-runtime/runtime-coordinator.ts(190,11): error TS2322: Type 'Readonly<{ [generationBrand]: boolean; }>' is not assignable to type 'RuntimeGeneration'.
+  Types of property '[generationBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(191,11): error TS2322: Type 'Readonly<{ [leaseBrand]: boolean; kind: "dormant"; generation: RuntimeGeneration; }>' is not assignable to type 'RuntimeDormantLease'.
+  Types of property '[leaseBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(223,11): error TS2322: Type 'Readonly<{ [transitionBrand]: boolean; generation: RuntimeGeneration; }>' is not assignable to type 'RuntimeTransition'.
+  Types of property '[transitionBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(239,11): error TS2322: Type 'Readonly<{ [startBrand]: boolean; generation: RuntimeGeneration; }>' is not assignable to type 'RuntimeStartClaim'.
+  Types of property '[startBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(254,11): error TS2322: Type 'Readonly<{ [runtimeResourceIdBrand]: boolean; }>' is not assignable to type 'RuntimeResourceId'.
+  Types of property '[runtimeResourceIdBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(256,11): error TS2322: Type 'Readonly<{ [leaseBrand]: boolean; kind: "live"; generation: RuntimeGeneration; resource: RuntimeResourceId; }>' is not assignable to type 'RuntimeLiveLease'.
+  Types of property '[leaseBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(285,11): error TS2322: Type 'Readonly<{ [admissionLeaseBrand]: boolean; }>' is not assignable to type 'RuntimeAdmissionLease'.
+  Types of property '[admissionLeaseBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(325,11): error TS2322: Type 'Readonly<{ [holdBrand]: boolean; }>' is not assignable to type 'RuntimeAdmissionHold'.
+  Types of property '[holdBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(421,11): error TS2322: Type 'Readonly<{ [runtimeHandoffBrand]: boolean; dispatchId: Readonly<{ [runtimeDispatchIdBrand]: true; }>; tryEnter: () => RuntimeEntryDecision; observe: (receipt: RuntimeHandoffReceipt) => Promise<...>; }>' is not assignable to type 'RuntimeHandoff'.
+  Types of property '[runtimeHandoffBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/services/agent-runtime/runtime-coordinator.ts(490,11): error TS2322: Type 'Readonly<{ [runtimeAdmissionBrand]: boolean; dispatchId: RuntimeDispatchId; resource: RuntimeResourceId; allowed: () => boolean; }>' is not assignable to type 'RuntimeTransportAdmission'.
+  Types of property '[runtimeAdmissionBrand]' are incompatible.
+    Type 'boolean' is not assignable to type 'true'.
+src/main/telemetry/destinations/azure.ts(29,38): error TS2307: Cannot find module '../../../../node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/_configuration/configurationManager.js' or its corresponding type declarations.
+2026-11-21T19:23:48Z END lane-p2 rc=2

@@ -1,0 +1,64 @@
+MUTANT expiry-reopens-scope; baseline=2766cc377e766540e4c2e46718a4bcc372ef3d76
+8b17ea478670a570d7bd74c59422f0c76ec6188774b7976cf6a3531724f9f019  src/main/services/agent-runtime/runtime-coordinator.ts
+2026-11-21T19:35:07Z START lane-p2 idle=82% unused=9701M avail=33010M freepct=86 comp=1096M swap=3929M pid=14141 cmd=npm test -- --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+
+> clubhouse@0.43.0-beta.7 test
+> vitest run --project main src/main/services/agent-runtime/runtime-coordinator.test.ts --maxWorkers=2
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/q5-runtime-p1-work
+
+ ❯ |main| src/main/services/agent-runtime/runtime-coordinator.test.ts (39 tests | 2 failed) 13ms
+     × closes every ticket before any loss callback and expires without reviving old admission 2ms
+     × expires abandoned holds without an automatic authority release 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/agent-runtime/runtime-coordinator.test.ts > bounded scope holds and fresh authority > closes every ticket before any loss callback and expires without reviving old admission
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/main/services/agent-runtime/runtime-coordinator.test.ts:487:50
+    485|     expect(vi.getTimerCount()).toBe(0);
+    486|     expect(notice.finishScopeHold(hold, { kind: 'authorized', scope })…
+    487|     expect(() => notice.captureAdmission(scope)).toThrow('scope_closed…
+       |                                                  ^
+    488|     expect(ticketOne.allowed()).toBe(false);
+    489|     expect(one.tryEnter()).toEqual({ kind: 'rejected' });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/agent-runtime/runtime-coordinator.test.ts > bounded scope holds and fresh authority > expires abandoned holds without an automatic authority release
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/main/services/agent-runtime/runtime-coordinator.test.ts:544:50
+    542|     vi.advanceTimersByTime(5);
+    543|     expect(notice.scopeHoldStatus(hold).state).toBe('expired');
+    544|     expect(() => notice.captureAdmission(scope)).toThrow('scope_closed…
+       |                                                  ^
+    545|     expect(vi.getTimerCount()).toBe(0);
+    546|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 37 passed (39)
+   Start at  14:35:07
+   Duration  120ms (transform 29ms, setup 4ms, import 34ms, tests 13ms, environment 0ms)
+
+2026-11-21T19:35:07Z END lane-p2 rc=1

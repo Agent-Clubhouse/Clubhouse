@@ -1,0 +1,266 @@
+2026-11-22T06:56:44Z START lane-p2 idle=89% unused=6088M avail=34013M freepct=87 comp=713M swap=3745M pid=75727 cmd=npx vitest run --project main src/main/services/annex-control.test.ts --maxWorkers=2 -t GET Git diff envelope boundary --reporter=default --reporter=junit --outputFile.junit=docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work
+
+ ❯ |main| src/main/services/annex-control.test.ts (197 tests | 2 failed | 190 skipped) 54ms
+     ✓ accepts the exact former envelope boundary 19ms
+     × preserves a complete diff above the former boundary with query  8ms
+     × preserves a complete diff above the former boundary with query ?file=large%20file.txt&staged=false 4ms
+     ✓ retains the ordinary route budget for 'POST' '/api/v1/projects/project%20name/git/d…' 4ms
+     ✓ retains the ordinary route budget for 'GET' '/api/v1/projects/project%20name/git/d…' 3ms
+     ✓ retains a stricter caller limit before credit for an authorized diff 0ms
+     ✓ retains the frame bound for a peer without bulk capability 15ms
+     ↓ accepts the complete exact 8 MiB controller body on negotiated bulk
+     ↓ rejects bound+1 at bulk start before credit or allocation without retiring the valid link
+     ↓ checks decoded utf8 inline bytes before answering
+     ↓ checks decoded base64 inline bytes before answering
+     ↓ rejects an invalid local receive limit without dispatching a request
+     ↓ refuses only the known GET response above its route budget before credit
+     ↓ refuses only the known POST response above its route budget before credit
+     ↓ keeps a route-oversize unknown offer link-fatal before credit or completion
+     ↓ keeps a route-oversize expired offer link-fatal before credit or completion
+     ↓ keeps a route-oversize cancelled offer link-fatal before credit or completion
+     ↓ keeps a route-oversize metadata offer link-fatal before credit or completion
+     ↓ keeps a route-oversize size offer link-fatal before credit or completion
+     ↓ keeps a route-oversize pin offer link-fatal before credit or completion
+     ↓ keeps a route-oversize feature offer link-fatal before credit or completion
+     ↓ keeps the route bound with excess=+0, largerLocalBound=false
+     ↓ keeps the route bound with excess=1, largerLocalBound=false
+     ↓ keeps the route bound with excess=+0, largerLocalBound=true
+     ↓ keeps the route bound with excess=1, largerLocalBound=true
+     ↓ honors a zero caller bound for a response of 0 bytes
+     ↓ honors a zero caller bound for a response of 1 bytes
+     ↓ preserves uncapped file-read response behavior
+     ↓ preserves caller-bound file-read response behavior
+     ↓ drops a rejected token's late payload without effects and completes a fresh response on the same link
+     ↓ still closes on a rejected token replay into a currently-owned fresh request
+     ↓ retains write history after response refusal without automatic retry or reexecution
+     ↓ releases cancelled sender transfers and response slots across more than one full request window
+     ↓ the accepting side sends nothing until the opener says hello, then only what both support
+     ↓ an opener that offers nothing this side knows gets nothing new: no request frame is ever sent
+     ↓ a target that agreed to no features answers a request not_supported and never runs it
+     ↓ the opener refuses an answer that claims more than it offered
+     ↓ closes a connection that never says hello
+     ↓ negotiates per connection: a new connection starts with nothing agreed
+     ↓ nothing is opened while this machine is not serving
+     ↓ distinguishes accepted-link ownership across replacement without adding any wire metadata
+     ↓ reports the negotiated physical direction without dialing, sending frames or dispatching requests
+     ↓ uses the request authority for a revoked peer even while both sockets remain OPEN
+     ↓ uses the request authority for a re-pinned peer even while both sockets remain OPEN
+     ↓ uses the request authority for a network-off peer even while both sockets remain OPEN
+     ↓ uses the request authority for a role-changed peer even while both sockets remain OPEN
+     ↓ uses the request authority for a session-only peer even while both sockets remain OPEN
+     ↓ notifies once on negotiated readiness and once on close, never for heartbeats or ordinary frames
+     ↓ a request sent to the side that accepted (only the target takes requests)
+     ↓ a cancel sent to the side that accepted
+     ↓ a response sent to the target
+     ↓ an error sent to the target
+     ↓ a second hello
+     ↓ a binary frame
+     ↓ not JSON
+     ↓ another version
+     ↓ a first frame that is not hello
+     ↓ a malformed request on a negotiated connection is answered invalid_request, not run
+     ↓ carries a request to the target, which runs it as the requester via reverse, and the answer back
+     ↓ carries binary bodies byte for byte both ways
+     ↓ refuses locally a request that cannot fit in a frame, without sending it
+     ↓ answers response_too_large for an answer that cannot fit in a frame
+     ↓ answers busy beyond the in-flight limit, and runs none of the extra
+     ↓ a handler that throws answers 500, not a hang
+     ↓ active desktop member: runs
+     ↓ unknown or removed peer: 401 peer_not_paired
+     ↓ older pairing with no role: 401 needs_pairing
+     ↓ older pairing with no pin: 401 needs_pairing
+     ↓ pin mismatch (re-pinned): 401 peer_not_paired
+     ↓ pending member: 403 peer_role_not_allowed
+     ↓ one-to-one satellite (this machine controls it): 403 peer_role_not_allowed
+     ↓ one-to-one controller (keeps its direction): 403 peer_role_not_allowed
+     ↓ phone network member: 403 peer_role_not_allowed
+     ↓ member with no kind: 403 peer_role_not_allowed
+     ↓ session-only entry: 403 peer_role_not_allowed
+     ↓ desktop member with Annex Network off: 403 peer_role_not_allowed
+     ↓ a refused request leaves nothing for a retry to replay once access returns
+     ↓ target: a requester removed while its request runs gets no answer, and the connection closes
+     ↓ target: a requester re-pinned while its request runs gets no answer, and the connection closes
+     ↓ target: a requester made pending while its request runs gets no answer, and the connection closes
+     ↓ target: a requester re-paired as a satellite while its request runs gets no answer, and the connection closes
+     ↓ target: a requester became a phone while its request runs gets no answer, and the connection closes
+     ↓ target: a requester network turned off while its request runs gets no answer, and the connection closes
+     ↓ target: a requester revoked between requests is refused on its next one
+     ↓ requester: a target no longer allowed here ends the connection on its next frame, and waiting requests fail as revoked
+     ↓ requester: no request goes to a target no longer allowed here
+     ↓ removal closes the connection both ways, failing what was waiting as revoked and aborting what was running
+     ↓ a retry with the same id after a lost answer gets the original answer without running again
+     ↓ the same id with a different request is a conflict, and does not run
+     ↓ a retry while the original is still running waits for it, and it runs once
+     ↓ reads are not remembered: the same id runs again
+     ↓ an answer too large to keep goes out once; a retry is told it cannot be replayed, and nothing runs again
+     ↓ remembers a finished request for a limited time
+     ↓ keys by the requester and its certificate: another peer or a new pin never gets an earlier answer
+     ↓ keeps a bounded number per requester, dropping the oldest finished first
+     ↓ forgets a revoked requester
+     ↓ forgets every remembered request when the server stops
+     ↓ refuses a second request with an id already in flight on the connection
+     ↓ cancelling sends cancel, aborts the handler, and a non-read request is indeterminate
+     ↓ a cancelled read is not indeterminate
+     ↓ cancel after completion is a no-op, and cancel for an unknown id too
+     ↓ a request cancelled on the requester still runs to its end on the target, so a retry learns what happened
+     ↓ closing the connection fails everything waiting as transport_unavailable, indeterminate only for non-reads
+     ↓ times out on the requester, sending cancel; a non-read is indeterminate
+     ↓ the target bounds how long one request may run, and says so
+     ↓ an answer that arrives after the requester stopped waiting is dropped
+     ↓ an error that says the request never ran is not indeterminate
+     ↓ a cancelled run that ignores its signal keeps its slot: unique POST and cancel cycles hit busy, then free once handlers finish
+     ↓ closing or replacing the connection frees no slot while the old work still runs
+     ↓ unfinished entries count toward the remembered bound and are never dropped: at the bound a new non-read is busy
+     ↓ a response cut off before end() is never replayed: a retry gets replay_unavailable, indeterminate
+     ↓ a handler that never ends gets timeout at the deadline, and nothing is remembered as an answer
+     ↓ holds the slot until the route's own work settles, even after its answer went out
+     ↓ closes the connection when the other side stops reading, failing what waits as transport_unavailable
+     ↓ closes as soon as one answer would take the unwritten bytes past the bound
+     ↓ holds a connection's answer slot until the answer is written, not just queued
+     ↓ subscribes as the requester via reverse, and carries each /ws frame as it was serialized, in order
+     ↓ sends nothing for a subscription the other side did not agree to
+     ↓ a target that agreed to no subscribe answers not_supported and starts nothing
+     ↓ one subscription per connection
+     ↓ refuses a pending member, and the server starts nothing
+     ↓ refuses a one-to-one controller, and the server starts nothing
+     ↓ refuses a phone member, and the server starts nothing
+     ↓ refuses a removed, and the server starts nothing
+     ↓ checks every frame: once the subscriber loses access, nothing more goes and the connection closes
+     ↓ ends a subscription whose frame is too large for the connection, and the subscriber may subscribe again
+     ↓ carries a frame up to the event cap, past the request/response cap
+     ↓ the server ending it tells the subscriber why
+     ↓ unsubscribing stops the server side and is not reported back
+     ↓ the connection closing ends both sides
+     ↓ a subscriber that stops reading has its connection closed (4429), not frames dropped
+     ↓ a target that serves no stream answers unavailable
+     ↓ frames in the wrong direction close the connection
+     ↓ the target refuses a request over 8 MiB and closes 1009, running nothing
+     ↓ the requester refuses a response over 8 MiB and closes 1009; what waited fails as transport_unavailable
+     ↓ the requester takes a subscription event up to the event cap
+     ↓ the target refuses even an event-shaped frame over 8 MiB: events only go the other way
+     ↓ hands an allowed control frame to the server for the subscription, as /ws text
+     ↓ sends no control frame unless the other side agreed to ws-control, and a target that did not closes on one
+     ↓ only the /ws control set: anything else is not sent, and a target answers it on the subscription without running it
+     ↓ a subscriber that lost access: its control frame never reaches the server, the subscription ends and the connection closes
+     ↓ drops a control frame for a subscription that is not the live one
+     ↓ a control frame over 8 MiB closes the connection 1009 before it is parsed
+     ↓ attachment bytes round trip with digest at size 0
+     ↓ attachment bytes round trip with digest at size 1
+     ↓ attachment bytes round trip with digest at size 65535
+     ↓ attachment bytes round trip with digest at size 65536
+     ↓ attachment bytes round trip with digest at size 65537
+     ↓ attachment bytes round trip with digest at size 3932160
+     ↓ clipboard at the existing 10 MiB base64 cap travels on bulk for its subscription
+     ↓ clipboard over cap is refused before allocating or sending bulk, with the direct error
+     ↓ full event at 32 MiB and an uncapped text file above it round trip without a JSON body envelope
+     ↓ bulk waits behind queued control traffic while small requests continue
+     ↓ revocation at a pending binary write stops that write and rejects its requester
+     ↓ cancelling a body in flight prevents dispatch and releases its transfer
+     ↓ attachment cap+1 returns the direct 413 without reading or dispatching bytes
+     ↓ refuses forged bulk clipboard-owner before credit or dispatch
+     ↓ refuses forged bulk clipboard-size before credit or dispatch
+     ↓ refuses forged bulk request-size before credit or dispatch
+     ↓ refuses forged bulk direction before credit or dispatch
+     ↓ refuses forged bulk feature before credit or dispatch
+     ↓ cancels a bulk response while a socket write is waiting and frees all in-flight work
+     ↓ /api/v1/network/handoffs/transfer: exact bytes and digest at size 0
+     ↓ /api/v1/network/handoffs/transfer: exact bytes and digest at size 1
+     ↓ /api/v1/network/handoffs/transfer: exact bytes and digest at size 65535
+     ↓ /api/v1/network/handoffs/transfer: exact bytes and digest at size 65536
+     ↓ /api/v1/network/handoffs/transfer: exact bytes and digest at size 65537
+     ↓ /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 0
+     ↓ /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 1
+     ↓ /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 65535
+     ↓ /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 65536
+     ↓ /api/v1/mobile/agents/a/content?ref=r: exact bytes and digest at size 65537
+     ↓ /api/v1/icons/agents/a: exact bytes and digest at size 0
+     ↓ /api/v1/icons/agents/a: exact bytes and digest at size 1
+     ↓ /api/v1/icons/agents/a: exact bytes and digest at size 65535
+     ↓ /api/v1/icons/agents/a: exact bytes and digest at size 65536
+     ↓ /api/v1/icons/agents/a: exact bytes and digest at size 65537
+     ↓ /api/v1/network/handoffs/transfer carries its existing cap without a tighter frame cap
+     ↓ /api/v1/mobile/agents/a/content?ref=r carries its existing cap without a tighter frame cap
+     ↓ /api/v1/icons/agents/a carries its existing cap without a tighter frame cap
+     ↓ negotiated binary flows cannot bypass the digest with a legacy JSON client frame
+     ↓ negotiated binary flows cannot bypass the digest with a legacy JSON request body
+     ↓ negotiated binary flows cannot bypass the digest with a legacy successful JSON answer
+   ↓ P6 concurrent clipboard images retain distinct transfer tokens on the same subscription
+   ↓ P6 rich content preserves the existing 8 MiB raw cap after base64 and JSON encoding
+   ↓ P6 /api/v1/icons/agents/a: existing cap is accepted, cap+1 is refused before any binary frame
+   ↓ P6 /api/v1/network/handoffs/transfer: existing cap is accepted, cap+1 is refused before any binary frame
+   ↓ P6 bulk progress refreshes request inactivity without extending unrelated request timers
+   ↓ QA adversarial: a completed clipboard transfer UUID cannot be replayed
+   ↓ QA adversarial: a cancelled UUID cannot rebind old bytes to a new operation
+   ↓ P6 late chunks and cancels for a completed UUID never dispatch or damage a fresh transfer
+   ↓ P6 late chunks and cancels for a cancelled UUID never dispatch or damage a fresh transfer
+   ↓ P6 used UUIDs from the opposite direction cannot become incoming transfers
+   ↓ P6 lifetime tombstone capacity closes without evicting history
+   ↓ P6 a fresh connection has isolated UUID history and old socket bytes cannot reach it
+   ↓ P6 late cancel unknown cannot alter UUID ownership
+   ↓ P6 late cancel wrong-operation cannot alter UUID ownership
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > GET Git diff envelope boundary > preserves a complete diff above the former boundary with query 
+AssertionError: expected { …(1) } to not have property "error"
+
+- Expected:
+undefined
+
++ Received:
+ControlRequestError {
+  "message": "response_too_large",
+  "code": "response_too_large",
+  "indeterminate": false,
+  "requestId": "07d73710-2c1f-480d-8da4-8c8bed73c2ed",
+  "name": "ControlRequestError",
+}
+
+ ❯ src/main/services/annex-control.test.ts:192:25
+    190|     expect(requesterWs.closed).toBeNull();
+    191|     expect(targetWs.closed).toBeNull();
+    192|     expect(outcome).not.toHaveProperty('error');
+       |                         ^
+    193|     if ('result' in outcome) {
+    194|       expect(outcome.result.body.equals(body)).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |main| src/main/services/annex-control.test.ts > GET Git diff envelope boundary > preserves a complete diff above the former boundary with query ?file=large%20file.txt&staged=false
+AssertionError: expected { …(1) } to not have property "error"
+
+- Expected:
+undefined
+
++ Received:
+ControlRequestError {
+  "message": "response_too_large",
+  "code": "response_too_large",
+  "indeterminate": false,
+  "requestId": "ff7498c2-0f5a-4202-82ac-d48b39ac21d9",
+  "name": "ControlRequestError",
+}
+
+ ❯ src/main/services/annex-control.test.ts:192:25
+    190|     expect(requesterWs.closed).toBeNull();
+    191|     expect(targetWs.closed).toBeNull();
+    192|     expect(outcome).not.toHaveProperty('error');
+       |                         ^
+    193|     if ('result' in outcome) {
+    194|       expect(outcome.result.body.equals(body)).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 5 passed | 190 skipped (197)
+   Start at  01:56:44
+   Duration  257ms (transform 103ms, setup 4ms, import 125ms, tests 54ms, environment 0ms)
+
+JUNIT report written to /Users/masonallen/source/Clubhouse/.clubhouse/agents/lane-3613-p2-routes/node_modules/.cache/3613-p7w-remaining-consumers-work/docs/evidence/3613-gitdiff-envelope/attempts/01-gitdiff-boundary-red.xml
+2026-11-22T06:56:45Z END lane-p2 rc=1

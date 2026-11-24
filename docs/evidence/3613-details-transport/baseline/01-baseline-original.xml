@@ -1,0 +1,1511 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="381" failures="9" errors="0" time="0.027525416">
+    <testsuite name="src/main/services/annex-client.test.ts" timestamp="2026-11-22T09:34:37.164Z" hostname="Masons-MacBook-Pro-13346.local" tests="381" failures="9" errors="0" skipped="372" time="0.027525416">
+        <testcase classname="src/main/services/annex-client.test.ts" name="bracketHost &gt; passes through IPv4 addresses" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="bracketHost &gt; passes through hostnames" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="bracketHost &gt; brackets IPv6 addresses" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="bracketHost &gt; does not double-bracket an already-bracketed IPv6 address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; GET Git diff envelope desktop adapter &gt; returns complete enlarged JSON through the actual single-route adapter and control pair" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; routes the tree adapter once without an outgoing connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; routes the digest adapter once without an outgoing connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; routes the topic adapter once without an outgoing connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; routes the messages adapter once without an outgoing connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; preserves UTF-8 file bytes and the completed reverse 404 disposition" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; preserves status, headers, UTF-8 bodies and caller receive limits on one POST" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; retains the original indeterminate write failure without a route fallback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; does not send an already aborted request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; refuses a completed response from a replaced accepted link without sending again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; does not mint a snapshot or live publication from request capability" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; routes request-only &apos;settings&apos; once without minting snapshot authority" time="0.00902825">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(11) } }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(11) } }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;ok&quot;,
+-   &quot;value&quot;: {
+-     &quot;access&quot;: &quot;paired&quot;,
+-     &quot;agentId&quot;: &quot;details /agent&quot;,
+-     &quot;autoSleep&quot;: null,
+-     &quot;context&quot;: null,
+-     &quot;executionPolicy&quot;: &quot;read-only&quot;,
+-     &quot;model&quot;: &quot;test&quot;,
+-     &quot;provider&quot;: &quot;test&quot;,
+-     &quot;readOnly&quot;: true,
+-     &quot;runtime&quot;: &quot;chat&quot;,
+-     &quot;setup&quot;: {
+-       &quot;instructions&quot;: &quot;&quot;,
+-       &quot;managed&quot;: false,
+-       &quot;mcps&quot;: null,
+-       &quot;skills&quot;: null,
+-       &quot;state&quot;: &quot;ok&quot;,
+-       &quot;template&quot;: null,
+-     },
+-     &quot;version&quot;: 1,
+-   },
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; routes request-only &apos;role&apos; once without minting snapshot authority" time="0.001769625">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(4) } }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(4) } }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;ok&quot;,
+-   &quot;value&quot;: {
+-     &quot;agentId&quot;: &quot;details /agent&quot;,
+-     &quot;details&quot;: {
+-       &quot;agentId&quot;: &quot;details /agent&quot;,
+-       &quot;cards&quot;: [
+-         {
+-           &quot;id&quot;: &quot;settings&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;settings&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;dispatcher&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;dispatcher&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;orchestrate&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;orchestrate&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;connections&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;connections&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;actions&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;actions&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;skills-mcp&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;skills-mcp&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;session&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;session&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;canvases&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;canvases&quot;,
+-         },
+-         {
+-           &quot;id&quot;: &quot;changes&quot;,
+-           &quot;notes&quot;: [],
+-           &quot;observedAt&quot;: 1,
+-           &quot;omitted&quot;: 0,
+-           &quot;rows&quot;: [],
+-           &quot;state&quot;: &quot;ok&quot;,
+-           &quot;summary&quot;: &quot;&quot;,
+-           &quot;title&quot;: &quot;changes&quot;,
+-         },
+-       ],
+-       &quot;nativeSessionId&quot;: null,
+-       &quot;providerId&quot;: &quot;test&quot;,
+-       &quot;readAt&quot;: 1,
+-       &quot;readOnly&quot;: true,
+-       &quot;running&quot;: false,
+-       &quot;sessionId&quot;: null,
+-       &quot;settings&quot;: null,
+-       &quot;spawnedAt&quot;: null,
+-       &quot;status&quot;: &quot;sleeping&quot;,
+-       &quot;version&quot;: 1,
+-     },
+-     &quot;role&quot;: &quot;dispatcher&quot;,
+-     &quot;version&quot;: 1,
+-   },
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; routes request-only &apos;details&apos; once without minting snapshot authority" time="0.004356666">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(12) } }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(12) } }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;ok&quot;,
+-   &quot;value&quot;: {
+-     &quot;agentId&quot;: &quot;details /agent&quot;,
+-     &quot;cards&quot;: [
+-       {
+-         &quot;id&quot;: &quot;settings&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;settings&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;dispatcher&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;dispatcher&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;orchestrate&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;orchestrate&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;connections&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;connections&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;actions&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;actions&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;skills-mcp&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;skills-mcp&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;session&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;session&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;canvases&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;canvases&quot;,
+-       },
+-       {
+-         &quot;id&quot;: &quot;changes&quot;,
+-         &quot;notes&quot;: [],
+-         &quot;observedAt&quot;: 1,
+-         &quot;omitted&quot;: 0,
+-         &quot;rows&quot;: [],
+-         &quot;state&quot;: &quot;ok&quot;,
+-         &quot;summary&quot;: &quot;&quot;,
+-         &quot;title&quot;: &quot;changes&quot;,
+-       },
+-     ],
+-     &quot;nativeSessionId&quot;: null,
+-     &quot;providerId&quot;: &quot;test&quot;,
+-     &quot;readAt&quot;: 1,
+-     &quot;readOnly&quot;: true,
+-     &quot;running&quot;: false,
+-     &quot;sessionId&quot;: null,
+-     &quot;settings&quot;: null,
+-     &quot;spawnedAt&quot;: null,
+-     &quot;status&quot;: &quot;sleeping&quot;,
+-     &quot;version&quot;: 1,
+-   },
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; routes request-only &apos;changes&apos; once without minting snapshot authority" time="0.002132958">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(20) } }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;ok&apos;, value: { …(20) } }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;ok&quot;,
+-   &quot;value&quot;: {
+-     &quot;agentId&quot;: &quot;details /agent&quot;,
+-     &quot;base&quot;: null,
+-     &quot;branch&quot;: &quot;main&quot;,
+-     &quot;files&quot;: [],
+-     &quot;live&quot;: true,
+-     &quot;nextOffset&quot;: null,
+-     &quot;observedAt&quot;: 1,
+-     &quot;offset&quot;: 0,
+-     &quot;readOnly&quot;: true,
+-     &quot;scope&quot;: &quot;branch&quot;,
+-     &quot;sessionId&quot;: null,
+-     &quot;shared&quot;: false,
+-     &quot;skippedLarge&quot;: [],
+-     &quot;skippedOmitted&quot;: 0,
+-     &quot;skippedRepos&quot;: [],
+-     &quot;state&quot;: &quot;ok&quot;,
+-     &quot;totalFiles&quot;: 0,
+-     &quot;turnId&quot;: null,
+-     &quot;uncompared&quot;: 0,
+-     &quot;version&quot;: 1,
+-   },
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:519:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; preserves old-host &apos;settings&apos; unavailability without fallback or admission" time="0.001768459">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;unavailable&quot;,
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:530:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; preserves old-host &apos;role&apos; unavailability without fallback or admission" time="0.001591958">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;unavailable&quot;,
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:530:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; preserves old-host &apos;details&apos; unavailability without fallback or admission" time="0.001755209">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;unavailable&quot;,
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:530:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; preserves old-host &apos;changes&apos; unavailability without fallback or admission" time="0.001684458">
+            <failure message="expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }" type="AssertionError">
+AssertionError: expected { status: &apos;offline&apos; } to deeply equal { status: &apos;unavailable&apos; }
+
+- Expected
++ Received
+
+  {
+-   &quot;status&quot;: &quot;unavailable&quot;,
++   &quot;status&quot;: &quot;offline&quot;,
+  }
+
+ ❯ src/main/services/annex-client.test.ts:530:24
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; reverse Details admission &gt; mints and exports a local receipt only from the accepted current reverse snapshot" time="0.002629791">
+            <failure message="expected undefined to deeply equal Any&lt;String&gt;" type="AssertionError">
+AssertionError: expected undefined to deeply equal Any&lt;String&gt;
+
+- Expected:
+Any&lt;String&gt;
+
++ Received:
+undefined
+
+ ❯ src/main/services/annex-client.test.ts:544:42
+            </failure>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; owns one reverse subscription and accepts its lower-sequence replacement snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; retires the owned stream before late frames after stop" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; retires the owned stream before late frames after disconnect" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; retires the owned stream before late frames after forget" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; retires the owned stream before late frames after pin" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; retires the owned stream before late frames after link" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; does not resubscribe a refused stream until a new link epoch or explicit retry" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; never sends queued reverse icons directly after stop retirement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; never sends queued reverse icons directly after disconnect retirement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; never sends queued reverse icons directly after forget retirement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; never sends queued reverse icons directly after pin retirement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; never sends queued reverse icons directly after link retirement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; remaining reverse consumers &gt; keeps the same omitted icons live on a fresh stream after link retirement" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; independent control connection lifecycle &gt; does not close the independently maintained control connection when /ws drops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; independent control connection lifecycle &gt; seeds only eligible pinned desktop members and keeps their saved forward local" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; keeps a negotiated control connection usable after the ordinary main socket drops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; closes control exactly once on explicit disconnect and does not reopen it on refresh bursts" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; withdraws independent control authority on forget and ignores stale callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; withdraws independent control authority on pin-mismatch and ignores stale callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; withdraws independent control authority on pairing-loss and ignores stale callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; withdraws independent control authority on client-off and ignores stale callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; withdraws independent control authority on network-off and ignores stale callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; withdraws independent control authority on stop and ignores stale callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; fences an old route handshake and its callbacks when the saved host is replaced" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; does not let explicit control Retry bypass client-off settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; retires negotiated control on saved-host withdrawal after a main drop and refuses stale writes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; separate authenticated control lifetime &gt; ignores an old main refusal after Retry while independently authenticated control stays usable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; does not browse in an environment-selected loopback profile, including scan and wake" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; does not browse in an environment-selected selected interface profile, including scan and wake" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; does not identify a service after an environment isolation profile is enabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; ignores an identity response when the environment becomes isolated while it is pending" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; aborts in-flight discovery identity requests when loopback mode is enabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; does not browse in loopback mode, even after a manual scan or wake" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; stops browsing when loopback is enabled and resumes when disabled without forgetting a paired connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; ignores a discovery result that finishes after loopback mode is enabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; starts Bonjour discovery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; startClient &gt; does not start twice when called again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; stopClient &gt; stops Bonjour and clears state" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; discovery — unpaired services &gt; adds unpaired services to discoveredServices instead of dropping them" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; discovery — unpaired services &gt; skips our own identity" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; discovery — unpaired services &gt; updates host/port for already-discovered services" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; discovery — paired services &gt; adds paired services to satellites and auto-connects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; discovery — paired services &gt; moves a service from discovered to satellites when it becomes paired" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; scan &gt; clears discovered services and restarts discovery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; getDiscoveredServices &gt; returns empty array initially" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; getSatellites &gt; returns empty array initially" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; forgetSatellite &gt; disconnects, removes peer, and clears satellite from state" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; forgetSatellite &gt; is a no-op for unknown fingerprints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; legacy peer-removal IPC outgoing retirement (#3711) &gt; REMOVE_PEER retires sends and late frames without reviving its outgoing owner" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; legacy peer-removal IPC outgoing retirement (#3711) &gt; REMOVE_ALL_PEERS retires sends and late frames without reviving its outgoing owner" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; forgetAllSatellites &gt; disconnects all, removes the satellite pairings, and clears all state" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; snapshot protocol version validation &gt; rejects mismatched protocolVersion and keeps the last accepted snapshot intact" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; snapshot order &gt; drops an older snapshot on one connection, but always takes a new connection&apos;s first" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a satellite that cannot build a snapshot &gt; says so until a snapshot arrives, and stays connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a satellite that cannot build a snapshot &gt; is not set by any other error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a satellite that cannot build a snapshot &gt; starts clear on a new connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; a controller connecting fresh still gets them, through the routes, as a snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; fetches once per connection, and keeps them through later truncated snapshots" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; does not fetch when nothing was left out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; stays connected if a satellite can not serve them, and tries on the next snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas changed after it was known &gt; a later truncated snapshot does not put the old canvas back" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas changed after it was known &gt; keeps the other canvases and wires when one changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas changed after it was known &gt; keeps a change made while the fetch was running" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas changed after it was known &gt; updates a full snapshot too, and app canvases by scope" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas changed after it was known &gt; does not make up a whole project from one canvas it knows nothing else about" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; fetches only that project, and sends it on as a snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; asks once, however many truncated snapshots follow, even when it has no canvases" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; fetches each of several, one at a time, including one that appears during the first" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; picks up one that appeared while the first fetch was running" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; tries again on the next snapshot if the fetch fails, one request each time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; keeps a change made to it during its fetch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a project that appears after the fetch &gt; does not fetch one a snapshot already gave it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; fetches that one project, and sends it on as a snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; fetches the app&apos;s for a global one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; keeps a change made during the fetch on top of what it returns" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; fetches once more for a marker during a fetch, not once each" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; does not put a fetch over a full snapshot that came meanwhile" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; keeps what it has and stays connected when the fetch fails, and tries on the next marker" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; with a canvas too large for a frame &gt; fetches again after the first fetch, if a marker came during it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; canvases a satellite left out of its snapshot &gt; does not put an older fetch over a full snapshot that came meanwhile" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a socket a newer connection has replaced &gt; its late close leaves the new connection able to send" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a socket a newer connection has replaced &gt; its late error does not bring the new connection down or start another" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a socket a newer connection has replaced &gt; its last frames are not taken as the new connection&apos;s" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; a socket a newer connection has replaced &gt; the current socket closing still reconnects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; mTLS reconnection &gt; attempts connection for discovered paired satellite without bearer token" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; mTLS reconnection &gt; retry works without bearer token" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; directional peer roles &gt; does not auto-connect to peers with role &quot;controller&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; directional peer roles &gt; auto-connects to peers with role &quot;satellite&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; directional peer roles &gt; lists a legacy peer without a role as a satellite that needs pairing again, and never dials it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; sendToSatellite error reporting &gt; returns { sent: false, error: &quot;not_connected&quot; } when WS is not open" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; sendToSatellite error reporting &gt; returns { sent: false, error } when ws.send() throws" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; sendToSatellite error reporting &gt; returns { sent: true } on successful send (backward-compat truthy check)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; sendToSatellite error reporting &gt; adds a traceparent (tc) to agent:spawn and agent:wake only while telemetry is on" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; malformed JSON from satellite &gt; logs warning with preview when satellite sends invalid JSON" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; heartbeat ping failure &gt; transitions to disconnected and schedules reconnect on ping throw" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; heartbeat ping failure &gt; keeps last seen at the last confirmed heartbeat of a long-lived connection, written once at disconnect (#3349)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; heartbeat ping failure &gt; bridges a pong timeout to telemetry with no attributes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-001: REST endpoint error logging &gt; requestFileTree logs warn on network error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-001: REST endpoint error logging &gt; requestFileTree logs warn on JSON parse failure" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-001: REST endpoint error logging &gt; requestBulletinDigest logs warn on network error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-001: REST endpoint error logging &gt; requestBulletinTopicMessages logs warn on network error" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; requestBulletinDigest since encoding &gt; sends no cutoff params when since is omitted" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; requestBulletinDigest since encoding &gt; sends a single timestamp as `since`" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; requestBulletinDigest since encoding &gt; sends a per-channel map as JSON in `sinceChannels`, not `since`" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; requestBulletinDigest since encoding &gt; omits the cutoff and warns when the map is too large for a URL" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; requestBulletinDigest since encoding &gt; sends no params for an empty map" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; heartbeat pong timeout clears interval (LB-AN-003) &gt; calls clearInterval on heartbeat before reconnecting after pong timeout" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-002: buffer fetch timeout does not double-resolve promise &gt; resolves cleanly when timeout fires and then error fires (req.destroy side-effect)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-002: buffer fetch timeout does not double-resolve promise &gt; resolves cleanly when error fires before timeout is cancelled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-005: stale snapshot sequences discarded on reconnect &gt; applies snapshot with higher sequence number" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-005: stale snapshot sequences discarded on reconnect &gt; discards snapshot with lower sequence number (stale on reconnect)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-005: stale snapshot sequences discarded on reconnect &gt; applies first snapshot when no snapshot exists yet" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; LB-AN-005: stale snapshot sequences discarded on reconnect &gt; does not broadcast when stale snapshot is discarded" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; invalidates only positive snapshot admission on agent denial, not retained cache or repeated-denial loops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; invalidates only positive snapshot admission on role denial, not retained cache or repeated-denial loops" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; invalidates positive admission once on a Canvas page 401 across selections, keeping the cached snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; invalidates positive admission once on a Canvas page 403 across selections, keeping the cached snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late same-epoch agent denial read under an older receipt keeps the newer receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late same-epoch canvas denial read under an older receipt keeps the newer receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late same-epoch role-page denial read under an older receipt keeps the newer receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late same-epoch role-actions-page denial read under an older receipt keeps the newer receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late agent denial still revokes the receipt it was read under" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late canvas denial still revokes the receipt it was read under" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late role-page denial still revokes the receipt it was read under" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; a late role-actions-page denial still revokes the receipt it was read under" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; ignores a stale prior-epoch agent denial rather than clearing a fresh connection receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; ignores a stale prior-epoch role denial rather than clearing a fresh connection receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; ignores a stale prior-epoch canvas denial rather than clearing a fresh connection receipt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; power-resume revalidation withdraws the receipt and fences an in-flight agent read until the new socket attests" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; power-resume revalidation withdraws the receipt and fences an in-flight canvas read until the new socket attests" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; power-resume revalidation withdraws the receipt and fences an in-flight role read until the new socket attests" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; mints only on accepted current-socket snapshots, not cached serialization or ignored older frames" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; keeps offline caches but cannot reattest them on pairing return, transport open, old-socket messages or state broadcasts" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; does not expose a receipt on a closing socket even before its close callback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; drops admission on snapshot failure while preserving its cache, then requires a real new snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; local positive snapshot receipts &gt; does not restore admission on resume or a paused snapshot" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; requires a new pinned connection after sleep even when the old socket still reports connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; replaces a handshake crossing sleep and ignores its captured callbacks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; leaves the client off on resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; preserves the CERT_HAS_EXPIRED stop across resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; preserves the ERR_ANNEX_PIN_MISMATCH stop across resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; allows the existing pinned clock-recovery attempt on wake without bypassing certificate checks" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; ignores an old 503/&apos;busy&apos; body after resume while the replacement is connecting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; ignores an old 401/&apos;needs_pairing&apos; body after resume while the replacement is connecting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; ignores an old 401/&apos;peer_not_paired&apos; body after resume while the replacement is connecting" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; ignores an old 503/&apos;busy&apos; body after resume while the replacement is connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; ignores an old 401/&apos;needs_pairing&apos; body after resume while the replacement is connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; ignores an old 401/&apos;peer_not_paired&apos; body after resume while the replacement is connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; still applies a current 503/&apos;busy&apos; refusal after resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; still applies a current 401/&apos;needs_pairing&apos; refusal after resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; still applies a current 401/&apos;peer_not_paired&apos; refusal after resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; delayed upgrade refusal &gt; does not apply a pending refusal after manual disconnect keeps the same record" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; preserves a removed-pairing refusal across resume" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; keeps the current socket pong effective" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; retires heartbeat timers after the current socket reports close with reconnect off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; retires heartbeat timers after the current socket reports error with reconnect off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; does not let a replaced socket pong cancel the current socket heartbeat deadline" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; ignores a captured heartbeat interval callback belonging to a replaced socket" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; resume freshness &gt; ignores a captured heartbeat deadline callback belonging to a replaced socket" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; opens the WebSocket with options pinned to the stored certificate, and no token" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; never dials a pairing from before pinning, and shows it needs pairing again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; stops for good when the satellite answers 401 needs_pairing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; stops for good when the satellite answers 401 peer_not_paired" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; says what a socket error ECONNREFUSED means and what to do" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; says what a socket error EHOSTUNREACH means and what to do" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; says what a socket error ETIMEDOUT means and what to do" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; clears the problem once a snapshot arrives" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; Retry on a paired satellite not seen since startup starts looking for it, and connects once it is found" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; says what a 403 for the wrong role means, and keeps retrying" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; retries after any other refusal" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; stops reconnecting when the satellite closes the socket because the pairing was removed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; treats an expired satellite certificate as needing pairing again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; stops on another certificate at the address, and tries once more only at a newly announced address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; waits for a retry when the satellite certificate is not valid yet (a clock difference)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; treats a REST 401 needs_pairing or peer_not_paired like the same refusal on the WebSocket" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; never moves a connected satellite to an address discovery announces" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; tries an announced address while disconnected, through the same pin" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pinned satellite connections &gt; builds every outbound connection from pinned options (source check)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; probes an introduced desktop over membership only, retries, then connects after confirmation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; keeps pending probes alive when channels close out then in" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; keeps pending probes alive when channels close in then out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; connects to a paired satellite at its remembered address at startup, without waiting for discovery" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; connects to a satellite reachable only by a typed host" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; leaves a satellite with no address at all to discovery, and one that needs pairing alone" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; remembers where it was reached" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; tries each address in turn, then backs off and keeps retrying" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; reconnects through a saved forward without borrowing its port for direct hosts" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; reaches the legacy direct port after an older build leaves a stale per-host port" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; picks a routable address from an announcement, IPv6 when that is all there is, never link-local" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; remembers an address the device announced as shared, and a known one without saying so (#3608)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; takes a typed host, refuses one that is not a host, and tries it at once" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; can reuse a remembered address-specific port when no legacy default is stored" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; rejects the save when its pinned certificate changes while the address is checked, keeping the old address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; rejects the save when its pairing changes while the address is checked, keeping the old address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; rejects the save when its join time changes while the address is checked, keeping the old address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; saves the exact verified endpoint when the default port changes during and after its probe" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; saves the exact verified endpoint when the per-host port changes during and after its probe" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; persists an inferred IPv6 port with brackets so the checked endpoint remains unambiguous" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; a forward-only mesh of 3 computers (#3608) &gt; saves one route to each other computer on distinct local ports, none of them its own" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; a forward-only mesh of 3 computers (#3608) &gt; refuses a second computer on a local port already used, naming the first, and one on this computer&apos;s own port" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; a forward-only mesh of 5 computers (#3608) &gt; saves one route to each other computer on distinct local ports, none of them its own" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; a forward-only mesh of 5 computers (#3608) &gt; refuses a second computer on a local port already used, naming the first, and one on this computer&apos;s own port" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saving a route against the real peer store (#3608) &gt; saves when nothing changed, recording the certificate it was checked against" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; checks the pinned certificate before saving, and keeps the old route when it does not match" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; keeps the old route when the new address cannot be reached in time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; saves nothing when the pairing changed while the address was checked" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; adds a route for an existing member with no pairing and no membership change" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; refuses this computer&apos;s own Annex port without touching any listener" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; refuses a local port already saved for another computer, naming it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; refuses while the device needs pairing again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; keeps &quot;showed a different certificate&quot; when the pairing changed during the check, even though the address passed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; keeps &quot;showed a different certificate&quot; when the new address fails its check" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; after a restart with no discovery, reconnects through the saved forward, and again after it drops and returns" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saved routes (#3608) &gt; says a loopback address on this computer&apos;s own port reaches this computer, not that it was reset" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; goes to an address announced during an attempt next, at once, instead of the stale one again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; moves on when one of several addresses shows another certificate, and stops only when all do" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; a new address that shows the pinned certificate clears &quot;showed a different certificate&quot; and tries again" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; asks for a port when it has never reached the satellite" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; saves a checked typed host without connecting while Connect to satellites is off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; keeps a typed address as typed: connecting through it is not remembered as a found address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; starts nothing more for a refusal that arrives after the client stopped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; opens the membership channel with the main connection, and closes it when that drops (#3060)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; connects a member waiting to be found as soon as it has an address (#3061)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; forgetting a network member removes it everywhere first (#3061)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; never sets a typed host on a device that controls this machine" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; reachability (#3058) &gt; does nothing on wake while Connect to satellites is off" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; accepts exactly 16 KiB and rejects a response 0 byte(s) beyond the cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; accepts exactly 16 KiB and rejects a response 1 byte(s) beyond the cap" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; aborts a trickling capacity request at its total deadline even while response data keeps arriving" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; uses only the selected pinned host and fixed metadata GET, retaining no role response on satellites" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; keeps legacy/unbound/changed, denied and busy responses distinct without fallback URLs or error text" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; rejects wrong role/id, private wrapper fields and every partial page kind" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; pages role Connections bound to the first page&apos;s role agent, with older hosts unavailable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; pages role Actions relationships bound to the role agent and the requested page, with older hosts unavailable (#14)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; captures the connections page query before any await: later caller mutation changes neither the URL nor the response binding" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; captures the actions page query before any await: later caller mutation changes neither the URL nor the response binding" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; reads each caller query field once: a getter changing on a later read cannot desynchronize validation, URL and response binding" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; fences an in-flight response after peer pin changes, including in-place peer mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; fences an in-flight response after peer kind changes, including in-place peer mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; fences an in-flight response after peer role changes, including in-place peer mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; fences an in-flight response after peer pending changes, including in-place peer mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; fences an in-flight response after peer removed changes, including in-place peer mutation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; selected Dispatcher role transport &gt; fences a role response across an in-place reconnect generation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves read revision across one actual notification burst without revising unrelated presence" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; retires only the old accepted-link epoch while a newly-owned read remains valid" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; retires the old lease across sequential network disable/re-enable without injecting a device event" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; retires the old lease across overlapping network disable/re-enable without injecting a device event" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; keeps the current lease through a failed settings save" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; keeps the current lease through a no-op settings save" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; retires a committed disable after an overlapping optimistic disable failed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; keeps the successful disable when a queued optimistic re-enable fails, then accepts a fresh successful retry" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; does not revise already-disabled reads for repeated or unrelated settings saves" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; does not reset a main socket or cancel an already-sent direct controller request while retiring reverse leases" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; actual SAVE_SETTINGS controller lease lifecycle &gt; retires leases on actual client-off and does not clear a manual pause on network re-enable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; keeps bounded controller reads separate from common requests on an authorized reverse route without a main address" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; keeps direct requests preferred and never retries a failed direct request on control" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves reverse controller status 404 without route retries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves reverse controller status 405 without route retries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves reverse controller status 401 without route retries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves reverse controller status 403 without route retries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves reverse controller status 429 without route retries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; preserves reverse controller status 500 without route retries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; never treats phone as reverse read authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; never treats pending as reverse read authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; never treats unpaired as reverse read authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; never treats one-way as reverse read authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; never treats opposite as reverse read authority" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; retains old-peer direct reads and does not retry a failed reverse request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on disconnect without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on stop without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on off without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on forget without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on pin without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on pairing without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on revocation without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; cancels a reverse controller lease on host without accepting its late response" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; keeps a reverse lease across an ordinary main connection epoch withdrawal" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; controller-only request routes &gt; requires an explicit connect after a manual pause, without redefining main connectivity" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; discards requestAgentSettings responses across an in-place disconnect/reconnect epoch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; discards requestAgentDetails responses across an in-place disconnect/reconnect epoch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; discards requestAgentChanges responses across an in-place disconnect/reconnect epoch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; binds bounded selected-source Details pages and refuses malformed/old-host page responses" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; binds managed inventory pages to exact source, ordered selection, offset and page-only envelope" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; binds helper-only Details pages to exact selected offsets and rejects mixed/default envelopes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; binds Actions inventory GETs to selected source/offset/order and connection epochs without default-body reuse" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; binds Canvas inventory GETs to selected source/offset/order and connection epochs without default-body reuse" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; withholds a schema-valid prior Details snapshot after the same record reconnects" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; represents an older Settings host (404) without retries or local fallback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; represents an older Settings host (405) without retries or local fallback" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; reads only the fixed Settings route and rejects malformed or wrong-agent data" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; represents an old controller-chat server (404) without retrying" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; represents an old controller-chat server (405) without retrying" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; reads controller pages and archives only over the dedicated GET routes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; represents offline, refused and failing controller reads safely" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; returns a retryable controller 429 honoring Retry-After=&apos;3&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; returns a retryable controller 429 honoring Retry-After=&apos;Tue, 14 Nov 2023 22:13:24 GMT&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; returns a retryable controller 429 honoring Retry-After=&apos;invalid&apos;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; returns a retryable controller 429 honoring Retry-After=undefined" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; reads a chat page through the satellite&apos;s phone route, and remembers its epoch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; withdraws the cached command epoch on a main drop without closing independent control" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; sends a terminal answer to its original agent over the pinned permission endpoint" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; preserves host refusal authority for late, mismatched and incomplete terminal answers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; reads the epoch from capabilities when it has none, and sends again once after a stale epoch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; sends a person’s grant answer over the pinned authenticated Annex command route (#3654)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; chat across desktops (#2390) &gt; answers a refusal as its receipt, and refuses anything but a chat command" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs from a link: PIN only to the certificate it names, binding sent, answer checked, pin stored" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs only through the override and saves both its port and the original link ports" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs without a link using a full fingerprint &quot;abababababababababababababababababababababababababababababababab&quot; and the same pinned request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs without a link using a full fingerprint &quot;AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB&quot; and the same pinned request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs without a link using a full fingerprint &quot;aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB aB&quot; and the same pinned request" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; own routes and pairing again (#3608) &gt; a plain link pairing on a LAN address stays shared, with nothing private" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; own routes and pairing again (#3608) &gt; a non-loopback override address is this computer&apos;s own, while the link hosts stay shared" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; own routes and pairing again (#3608) &gt; the address used to pair without a link is this computer&apos;s own" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; own routes and pairing again (#3608) &gt; pairing again through a private remapped port keeps the old default port for the same certificate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; own routes and pairing again (#3608) &gt; carries saved routes over only for the same pinned certificate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs manually using bracketed IPv6 and remembers the unbracketed host with its port" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; never sends a manual PIN when the presented certificate differs" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects malformed manual fingerprint &quot;&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects malformed manual fingerprint &quot;AB12 CD34 EF56 7890&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects malformed manual fingerprint &quot;abababababababababababababababababababab&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects malformed manual fingerprint &quot;ababababababababababababababababababababababababababababababab&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects malformed manual fingerprint &quot;ababababababababababababababababababababababababababababababababab&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects malformed manual fingerprint &quot;zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:0&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:65536&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:1.5&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:-1&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;https://localhost:7443&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;user@localhost:7443&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:7443/pair&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:7443?pin=123456&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost:7443#fragment&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;localhost\\other:7443&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;[::1]:0&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects missing or invalid manual port &quot;[::1]:65536&quot;" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; reports an invalid manual PIN before dialing, and a wrong PIN from the server" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; reports an unreachable manual endpoint without sending its PIN" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; uses the link TLS port when the override is just a host" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects invalid override &quot;https://127.0.0.1:7443&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects invalid override &quot;127.0.0.1:0&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects invalid override &quot;127.0.0.1:65536&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects invalid override &quot;localhost:&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects invalid override &quot;not a host&quot; before dialing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; never sends the PIN or falls back to link hosts when the override presents another certificate" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; suggests checking the forward when a loopback override refuses the connection" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; joins as a network member when the satellite agrees, and stays one-to-one when Annex Network is off (#3061)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; sends nothing to an address showing another certificate, and tries the next" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; refuses an answer whose identity does not check out, and saves nothing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; shows the satellite&apos;s own message when it refuses" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; says the certificate changed, not to retry blindly, when it changes between the check and the pairing" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; says what happened and what to do when no address in the link answers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; rejects something that is not a pairing link without dialling anything" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/main/services/annex-client.test.ts" name="annex-client &gt; pairing over TLS &gt; pairs a discovered service only after its certificate was read, and only to that certificate" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+</testsuites>

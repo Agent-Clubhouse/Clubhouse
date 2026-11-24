@@ -4,6 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Handoff, HandoffAgent, HandoffOffer } from '../../shared/handoffs';
+import { parseHandoff, transitionHandoff } from '../../shared/handoffs';
 
 const state = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
@@ -21,6 +22,15 @@ const input: HandoffOffer = {
 };
 const checkpoint = { projectId: 'project', worktree: '/registered/project/handoff', branch: 'handoff/example', stagingId: randomUUID() };
 let allowed: (request: HandoffAuthorization) => boolean;
+function barrier() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+function acceptedCopy(record: Handoff): Handoff {
+  return transitionHandoff(record, { state: 'accepted', target: receiver, operationId: randomUUID(),
+    at: record.updatedAt + 1, by: { kind: 'agent', address: receiver } }, record.version);
+}
 
 function service(machine: string, store = new HandoffStore()): HandoffService {
   return new HandoffService({
@@ -40,6 +50,75 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(state.dir, { recursive: true, force: true });
+});
+
+describe('native incoming decision admission', () => {
+  function incoming(): Handoff {
+    const at = Date.now();
+    return parseHandoff({ ...input, schemaVersion: 1, id: randomUUID(), createdAt: at, updatedAt: at, version: 1,
+      from: sender, state: 'offered',
+      history: [{ operationId: randomUUID(), at, state: 'offered', by: { kind: 'agent', address: sender } }] });
+  }
+
+  it.each([
+    ['offer', true], ['offer', false], ['cancelled-offer', true], ['cancelled-offer', false],
+  ] as const)('checks original retirement after held %s authorization, including allowed=%s', async (operation, authorized) => {
+    const store = new HandoffStore(), record = incoming(), reached = barrier(), lookup = barrier();
+    const receiving = new HandoffService({ machine: receiver.machine, store, isDispatcher: () => false,
+      authorize: async () => { reached.release(); await lookup.promise; return authorized; } });
+    let live = true;
+    const check = () => { if (!live) throw new Error('Original native request retired'); };
+    const work = operation === 'offer' ? receiving.receiveOffer(record, sender.machine, check)
+      : receiving.receiveCancelledOffer(record, sender, sender.machine, randomUUID(), undefined, check);
+    try {
+      await reached.promise;
+      live = false; lookup.release();
+      await expect(work).rejects.toThrow('Original native request retired');
+      expect(store.get(record.id)).toBeUndefined();
+      expect(fs.existsSync(path.join(state.dir, 'handoffs.json'))).toBe(false);
+    } finally { lookup.release(); await Promise.allSettled([work]); }
+  });
+
+  it.each(['existing-offer', 'terminal-cancelled-offer', 'cancellation'] as const)(
+    'checks inside the actual held queue before the %s decision', async (operation) => {
+      const store = new HandoffStore(), offered = incoming();
+      const record = operation === 'terminal-cancelled-offer'
+        ? transitionHandoff(offered, { state: 'declined', operationId: randomUUID(), at: offered.updatedAt + 1,
+          by: { kind: 'agent', address: receiver } }, 1) : offered;
+      await store.transact(record.id, () => record);
+      const entered = barrier(), held = barrier();
+      const blocking = store.transact(record.id, async (current) => {
+        entered.release(); await held.promise;
+        if (!current) throw new Error('Missing owned queue record');
+        return current;
+      });
+      await entered.promise;
+      let live = true;
+      const check = () => { if (!live) throw new Error('Original native request retired'); };
+      const receiving = service(receiver.machine, store);
+      const work = operation === 'existing-offer' ? receiving.receiveOffer(offered, sender.machine, check)
+        : operation === 'terminal-cancelled-offer'
+          ? receiving.receiveCancelledOffer(offered, sender, sender.machine, randomUUID(), undefined, check)
+          : receiving.cancelAtReceiver(record.id, sender, sender.machine, record.version, undefined, randomUUID(), check);
+      try {
+        live = false; held.release();
+        await expect(work).rejects.toThrow('Original native request retired');
+        expect(store.get(record.id)).toEqual(record);
+        expect(JSON.parse(fs.readFileSync(path.join(state.dir, 'handoffs.json'), 'utf8')).records).toEqual([record]);
+      } finally { held.release(); await Promise.allSettled([blocking, work]); }
+    });
+
+  it('retains known history and cancellation exceptions while new incoming permission is withdrawn', async () => {
+    const record = incoming(), store = new HandoffStore(), receiving = service(receiver.machine, store);
+    await receiving.receiveOffer(record, sender.machine);
+    allowed = () => false;
+    const guard = vi.fn();
+    expect(await receiving.receiveOffer(record, sender.machine, guard)).toEqual(record);
+    const cancelled = await receiving.receiveCancelledOffer(record, sender, sender.machine, randomUUID(), undefined, guard);
+    expect(cancelled.state).toBe('cancelled');
+    expect(guard.mock.calls.every((args) => args[0] === undefined)).toBe(true);
+    expect(await receiving.receiveCancelledOffer(record, sender, sender.machine, randomUUID(), undefined, guard)).toEqual(cancelled);
+  });
 });
 
 describe('durable handoff agreement', () => {
@@ -201,6 +280,58 @@ describe('handoff synchronization', () => {
     } finally {
       state.dir = senderDirectory;
     }
+  });
+
+  it.each(['newer', 'older-prefix'] as const)('checks reverse %s adoption inside the actual held history queue', async (kind) => {
+    const offered = await seed(); const store = new HandoffStore(); const senderService = service(sender.machine, store);
+    const accepted = acceptedCopy(offered);
+    if (kind === 'older-prefix') await senderService.receiveSnapshot(accepted, receiver.machine);
+    const prior = store.get(offered.id)!; const entered = barrier(); const held = barrier();
+    const earlier = store.transact(offered.id, async (record) => { entered.release(); await held.promise; return record!; });
+    await entered.promise;
+    let retired = false;
+    const guard = vi.fn(() => { if (retired) throw new Error('Original reverse admission retired'); });
+    const queued = senderService.receiveSnapshot(kind === 'newer' ? accepted : offered, receiver.machine, guard);
+    const refusal = expect(queued).rejects.toThrow('Original reverse admission retired');
+    expect(guard).not.toHaveBeenCalled();
+    retired = true; held.release(); await earlier; await refusal;
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(store.get(offered.id)).toEqual(prior);
+    expect(new HandoffStore().get(offered.id)).toEqual(prior);
+    expect(await store.transact(offered.id, (record) => record!)).toEqual(prior);
+  });
+
+  it('truthfully commits already-admitted history after retirement while a real atomic rename is held', async () => {
+    const offered = await seed(); const accepted = acceptedCopy(offered);
+    const store = new HandoffStore(); const entered = barrier(); const held = barrier();
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === path.join(state.dir, 'handoffs.json')) { entered.release(); await held.promise; }
+      return rename(from, to);
+    });
+    let retired = false;
+    const guard = vi.fn(() => { if (retired) throw new Error('Original reverse admission retired'); });
+    const admitted = service(sender.machine, store).receiveSnapshot(accepted, receiver.machine, guard);
+    await entered.promise; expect(guard).toHaveBeenCalledTimes(1); expect(store.get(offered.id)).toEqual(offered);
+    retired = true; held.release();
+    expect(await admitted).toEqual(accepted);
+    expect(store.get(offered.id)).toEqual(accepted);
+    expect(new HandoffStore().get(offered.id)).toEqual(accepted);
+    await expect(service(sender.machine, store).receiveSnapshot(offered, receiver.machine, guard)).rejects.toThrow('retired');
+    expect(store.get(offered.id)).toEqual(accepted);
+  });
+
+  it.each(['before-rename', 'after-real-rename'] as const)('surfaces %s IO failure without inventing history rollback or commit success', async (phase) => {
+    const offered = await seed(); const accepted = acceptedCopy(offered); const store = new HandoffStore();
+    expect(store.get(offered.id)).toEqual(offered);
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (phase === 'after-real-rename') await rename(from, to);
+      throw new Error(`Injected ${phase} IO failure`);
+    });
+    await expect(service(sender.machine, store).receiveSnapshot(accepted, receiver.machine, () => {})).rejects.toThrow(`Injected ${phase} IO failure`);
+    expect(store.get(offered.id)).toEqual(offered);
+    expect(new HandoffStore().get(offered.id)).toEqual(phase === 'before-rename' ? offered : accepted);
   });
 });
 

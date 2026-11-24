@@ -6,6 +6,7 @@
  */
 import { ATTR } from '../../shared/telemetry/attributes';
 import { isTelemetryActive, replaySpan, tel, telemetryLevel } from './facade';
+import { providerTelemetryCode } from '../../shared/providers/descriptors';
 
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 
@@ -90,8 +91,7 @@ export function recordHookEvent(
   atMs = Date.now(),
 ): void {
   if (!isTelemetryActive()) return;
-  const orchestrator: Orchestrator =
-    orchestratorId === 'claude-code' || orchestratorId === 'codex-cli' || orchestratorId === 'copilot-cli' ? orchestratorId : 'other';
+  const orchestrator: Orchestrator = providerTelemetryCode(orchestratorId);
   const hookKind = (HOOK_KINDS.has(kind) ? kind : 'other') as Parameters<typeof ATTR.hookKind>[0];
   tel.count('clubhouse.agent.hook_events', 1, [ATTR.orchestrator(orchestrator), ATTR.hookKind(hookKind)]);
   if (agentId && telemetryLevel() === 'detailed') trackToolCall(agentId, orchestrator, kind, toolName, atMs);
@@ -114,8 +114,7 @@ export function recordPermission(opts: {
 }): void {
   if (!isTelemetryActive()) return;
   const endMs = Date.now();
-  const orchestrator: Orchestrator =
-    opts.orchestrator === 'claude-code' || opts.orchestrator === 'codex-cli' || opts.orchestrator === 'copilot-cli' ? opts.orchestrator : 'other';
+  const orchestrator: Orchestrator = providerTelemetryCode(opts.orchestrator);
   const result = ATTR.permissionResult(opts.timedOut ? 'timeout' : 'resolved');
   const decision = ATTR.permissionDecision(opts.decision);
   replaySpan({

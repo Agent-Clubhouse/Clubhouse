@@ -14,7 +14,7 @@
  * about equal absolute capacity.
  */
 
-import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, QUOTA_STALE_MS, type HelperRoutingReason, type QuotaState, type QuotaUnknownReason } from '../../shared/helper-routing';
+import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, QUOTA_STALE_MS, isLastResortProvider, type HelperRoutingReason, type QuotaState, type QuotaUnknownReason } from '../../shared/helper-routing';
 import { isRetainedPercent, AUTO_RESERVE_PROVIDERS, type AutoBudgetQuota, type AutoBudgetReceipt, type AutoBudgetRules } from '../../shared/helper-auto-budget';
 
 export const AUTO_COOLDOWN_AUTH_MS = 10 * 60_000;
@@ -259,8 +259,8 @@ function decideBudgetAutoProvider(input: AutoPolicyInput, rules: AutoBudgetRules
     }
     const quota = c.budgetQuota;
     if (c.quotaState === 'exhausted' || quota?.windows.some((w) => w.limitReached)) { e.excluded = 'quota_exhausted'; continue; }
-    // Copilot has no quota reader. Preserve its distinct, unscored last-resort status and saved allowance.
-    if (c.provider === 'copilot-cli' && c.quotaState === 'unknown' && c.quotaUnknownReason === 'not_supported') {
+    // A provider declared quota `unknown` (Copilot) has no reader. Preserve its distinct, unscored last-resort status and saved allowance.
+    if (isLastResortProvider(c.provider) && c.quotaState === 'unknown' && c.quotaUnknownReason === 'not_supported') {
       e.tier = 'last_resort'; e.score = { basis: 'unmeasured' }; admitted.push(c); continue;
     }
     const provider = AUTO_RESERVE_PROVIDERS.find((p) => p === c.provider);

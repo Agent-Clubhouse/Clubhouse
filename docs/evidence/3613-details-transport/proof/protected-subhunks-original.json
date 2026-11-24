@@ -1,0 +1,37 @@
+{
+  "base": "edcd915763a2ec73f0e8149917b4683ced06ecd6",
+  "map": "db46fc6eae9ecd1153dbb9c97b816f002ba5ad86",
+  "clientCandidateSHA256": "e2f883f35a204a7abe5b135153ec98a3170452278049bca840beaa5b701c5b25",
+  "checks": [
+    {
+      "label": "production imports",
+      "sha256": "0d5ca0189972cb2f946e1f89506f8fcb4a833c324e6357bfa0928e6711794e61",
+      "bytes": 4794,
+      "unchanged": true
+    },
+    {
+      "label": "reserved agent query",
+      "sha256": "b584be072958e76ad72968fa1cedf244081f3dbb19d4f94c7d28765b366abdca",
+      "bytes": 555,
+      "unchanged": true
+    },
+    {
+      "label": "protected agent body/page validators",
+      "sha256": "0f22f6a93354e615f6f89fc3dc9d4e5ecb37184abb2949bd37fa6683facda88a",
+      "bytes": 1754,
+      "unchanged": true
+    },
+    {
+      "label": "common route/trust/retirement",
+      "sha256": "9a01c46ab69c4f57e9f72b0bf4a4f03c3aa26dfca7dfd96ca25ccc32af702151",
+      "bytes": 8217,
+      "unchanged": true
+    },
+    {
+      "label": "role query copy and page binding",
+      "sha256": "f866a7274ab7b2c1ca81cd909e5be757ea13451f2d4c024cdb1b92ef01f0e160",
+      "bytes": 981,
+      "unchanged": true
+    }
+  ]
+}
