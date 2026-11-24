@@ -1338,7 +1338,18 @@ async function spawnPtyAgent(
     rollbackAssignment = await activateLocalCausalInput(params.agentId, inputs);
     federation = prepareFederationInputs(params.agentId, inputs);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
-    if (provider.id === ANTIGRAVITY_PROVIDER_ID) void enforceAntigravityBridgeIdentity(params.agentId, nonce, spawnedAt);
+    if (provider.id === ANTIGRAVITY_PROVIDER_ID) {
+      void enforceAntigravityBridgeIdentity(params.agentId, nonce, spawnedAt).catch((err: unknown) => {
+        // The check itself failed: fail closed, as if the bridge never authenticated,
+        // unless a newer run (new nonce) has replaced this one.
+        appLog('core:mcp', 'error', 'Antigravity bridge identity check failed; stopping the run', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+        if (agentRegistry.get(params.agentId)?.nonce !== nonce) return;
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, 'Clubhouse could not check this agent\'s Clubhouse MCP connection, so it was stopped.');
+        ptyManager.kill(params.agentId);
+      });
+    }
     for (const context of federation) context?.accepted('prompt');
   } catch (err) {
     for (const context of federation) context?.refused();

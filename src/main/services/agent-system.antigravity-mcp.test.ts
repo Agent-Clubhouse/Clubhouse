@@ -491,6 +491,24 @@ describe('Antigravity launch: MCP config refusals and the identity fence', () =>
     expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', FENCE_REASONS.timeout);
   });
 
+  it('a check that throws fails closed: the run is stopped, with no unhandled rejection', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      mockGetCurrentAgentConnection.mockImplementation(() => { throw new Error('bridge registry unavailable'); });
+      await spawnAntigravity();
+      await vi.waitFor(() => expect(mockPtyKill).toHaveBeenCalledWith('agent-1'));
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', expect.stringContaining('could not check'));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      mockGetCurrentAgentConnection.mockReset();
+      mockGetCurrentAgentConnection.mockReturnValue(null);
+    }
+  });
+
   it('an authenticated bridge for this launch keeps the run', async () => {
     mockMcpWaitReady.mockResolvedValueOnce(23456);
     await spawnAntigravity();
