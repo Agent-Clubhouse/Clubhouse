@@ -134,7 +134,7 @@ export function summarizeRollouts(files, { since, until } = {}) {
 }
 
 /** A file's lines, read in chunks: a long-running thread's rollout can pass 1 GB. */
-function* readLines(file) {
+export function* readLines(file) {
   const fd = fs.openSync(file, 'r');
   try {
     const chunk = Buffer.alloc(8 * 1024 * 1024);
