@@ -425,57 +425,52 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       });
     });
 
-    it.each(['stop', 'start'] as const)('checks current authorization synchronously before the %s lifecycle effect', async (stage) => {
-      const service = createManagedAgentsService({
-        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
-        state: createManagedStateStore(path.join(root, 'managed')),
-        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
-        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+    describe('restart authorization with a prepared live fixture', () => {
+      let service: ReturnType<typeof createManagedAgentsService>;
+      beforeEach(async () => {
+        service = createManagedAgentsService({
+          catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+          state: createManagedStateStore(path.join(root, 'managed')),
+          listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+          setManagedSetup: async () => {}, isRunning: () => fixture.running,
+        });
+        _setManagedAgentsForTesting(service);
+        await service.ensureBuiltins();
+        agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+        await deliverForSpawn(root, agent, copilot);
+        await start(); fixture.running = true;
       });
-      _setManagedAgentsForTesting(service);
-      await service.ensureBuiltins();
-      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
-      await deliverForSpawn(root, agent, copilot);
-      await start(); fixture.running = true;
-      let checks = 0;
-      await expect(restartManagedAgent(root, agent.id, {
-        whenTurnEnds: true,
-        authorize: async () => () => {
-          if (++checks === (stage === 'stop' ? 1 : 2)) throw new Error('revoked before effect');
-        },
-      })).rejects.toThrow('Managed restart failed');
-      expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
-      expect(spawnAgent).not.toHaveBeenCalled();
-      expect(fixture.running).toBe(stage === 'stop');
-      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
-    });
 
-    it.each(['stop', 'start'] as const)('does not replace a runtime recreated during %s authorization', async (stage) => {
-      const service = createManagedAgentsService({
-        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
-        state: createManagedStateStore(path.join(root, 'managed')),
-        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
-        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      it.each(['stop', 'start'] as const)('checks current authorization synchronously before the %s lifecycle effect', async (stage) => {
+        let checks = 0;
+        await expect(restartManagedAgent(root, agent.id, {
+          whenTurnEnds: true,
+          authorize: async () => () => {
+            if (++checks === (stage === 'stop' ? 1 : 2)) throw new Error('revoked before effect');
+          },
+        })).rejects.toThrow('Managed restart failed');
+        expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
+        expect(spawnAgent).not.toHaveBeenCalled();
+        expect(fixture.running).toBe(stage === 'stop');
+        expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
       });
-      _setManagedAgentsForTesting(service);
-      await service.ensureBuiltins();
-      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
-      await deliverForSpawn(root, agent, copilot);
-      await start(); fixture.running = true;
-      let prepares = 0;
-      await expect(restartManagedAgent(root, agent.id, {
-        authorize: async () => {
-          if (++prepares === (stage === 'stop' ? 1 : 2)) {
-            await stopAllChatAgents();
-            await start();
-            fixture.running = true;
-          }
-          return () => {};
-        },
-      })).rejects.toThrow('Managed restart failed');
-      expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
-      expect(spawnAgent).not.toHaveBeenCalled();
-      expect(fixture.running).toBe(true);
+
+      it.each(['stop', 'start'] as const)('does not replace a runtime recreated during %s authorization', async (stage) => {
+        let prepares = 0;
+        await expect(restartManagedAgent(root, agent.id, {
+          authorize: async () => {
+            if (++prepares === (stage === 'stop' ? 1 : 2)) {
+              await stopAllChatAgents();
+              await start();
+              fixture.running = true;
+            }
+            return () => {};
+          },
+        })).rejects.toThrow('Managed restart failed');
+        expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
+        expect(spawnAgent).not.toHaveBeenCalled();
+        expect(fixture.running).toBe(true);
+      });
     });
 
     it('does not spawn or record completion when stop returns without stopping its runtime', async () => {
