@@ -263,10 +263,50 @@ describe('swap failure recovery (QA B2)', () => {
     expect((await store.get(file))?.pending).toBeTruthy();
   });
 
-  it('a planned delete that completed before its commit is simply settled', async () => {
+  it('a verified delete that completed before its commit is settled', async () => {
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await store.set(file, { committed: { ...emptyOwnership(), created: true }, pending: { txid: 't', beforeHash: hashOf('{}'), afterHash: null, verified: true } });
+    expect(await removeOwnedMember(worktree, REL, HOOK, opts())).toBe('clean');
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('a planned delete with no verified record and no saved copy is refused, not accepted', async () => {
     await fsp.mkdir(path.dirname(file), { recursive: true });
     await store.set(file, { committed: { ...emptyOwnership(), created: true }, pending: { txid: 't', beforeHash: hashOf('{}'), afterHash: null } });
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'interrupted' });
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('crash on a planned delete before the comparison: the saved copy is put back, the delete is not accepted', async () => {
+    await write(USER_HOOKS);
+    const aside = path.join(path.dirname(file), '.hooks.json.prev.0badc0de');
+    await fsp.rename(file, aside);
+    await store.set(file, { committed: emptyOwnership(), pending: { txid: 't', beforeHash: hashOf(USER_HOOKS), afterHash: null } });
     expect(await removeOwnedMember(worktree, REL, HOOK, opts())).toBe('clean');
+    expect(await read()).toBe(USER_HOOKS);
+    expect(fs.existsSync(aside)).toBe(false);
+  });
+
+  it('crash on a planned delete after someone changed the file: refused, their bytes kept aside, nothing created', async () => {
+    await write('{"theirs": "changed"}');
+    const aside = path.join(path.dirname(file), '.hooks.json.prev.0badc0de');
+    await fsp.rename(file, aside);
+    await store.set(file, { committed: emptyOwnership(), pending: { txid: 't', beforeHash: hashOf(USER_HOOKS), afterHash: null } });
+    await expect(insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts())).rejects.toMatchObject({ code: 'interrupted' });
+    expect(await removeOwnedMember(worktree, REL, HOOK, opts())).toMatchObject({ repair: expect.stringContaining('interrupted') });
+    expect(fs.existsSync(file)).toBe(false);
+    expect(await fsp.readFile(aside, 'utf-8')).toBe('{"theirs": "changed"}');
+    expect((await store.get(file))?.pending).toBeTruthy();
+  });
+
+  it('a delete records verified before its compared copy goes', async () => {
+    const inner = memoryReceiptStore();
+    const seen: Array<boolean | undefined> = [];
+    setAntigravityReceiptStore({ get: (f) => inner.get(f), set: async (f, r) => { if (r?.pending) seen.push(r.pending.verified); await inner.set(f, r); } });
+    await insertOwnedMember(worktree, REL, { ...HOOK, valueJsonText: VALUE }, opts());
+    seen.length = 0;
+    expect(await removeOwnedMember(worktree, REL, HOOK, opts())).toBe('deleted');
+    expect(seen).toEqual([undefined, true]);
   });
 });
 

@@ -89,6 +89,8 @@ export interface PendingWrite {
   /** SHA-256 of the bytes before the write, null when the file was absent. */
   beforeHash: string | null;
   afterHash: string | null;
+  /** A delete whose moved-aside bytes were compared and matched; only this proves a missing file was Clubhouse's delete. */
+  verified?: boolean;
 }
 
 export interface FileReceipt {
@@ -126,7 +128,8 @@ function isFileReceipt(v: unknown): v is FileReceipt {
   if (!Array.isArray(c.containers) || !c.containers.every((x) => typeof x === 'string')) return false;
   if (r.pending === undefined) return true;
   const p = r.pending as Record<string, unknown>;
-  return !!p && typeof p === 'object' && typeof p.txid === 'string' && isNullableHash(p.beforeHash) && isNullableHash(p.afterHash);
+  return !!p && typeof p === 'object' && typeof p.txid === 'string' && isNullableHash(p.beforeHash) && isNullableHash(p.afterHash)
+    && (p.verified === undefined || typeof p.verified === 'boolean');
 }
 
 /** One chain per store file, so concurrent edits of different workspace files never lose each other's entries. */
@@ -420,7 +423,13 @@ const errCode = (err: unknown): string => String((err as NodeJS.ErrnoException)?
  * any failure after the move, the moved bytes are linked back; if that is
  * impossible the error names where they are, and nothing is deleted.
  */
-async function swapFile(file: string, relFile: string, expected: string | null, next: string | null): Promise<'done' | 'conflict'> {
+async function swapFile(
+  file: string,
+  relFile: string,
+  expected: string | null,
+  next: string | null,
+  onDeleteVerified: () => Promise<void>,
+): Promise<'done' | 'conflict'> {
   const mode = (await lstatOrNull(file))?.mode ?? 0o644;
   const tmp = next === null ? null : await writeTemp(file, next, mode & 0o777);
   try {
@@ -439,7 +448,13 @@ async function swapFile(file: string, relFile: string, expected: string | null, 
     let failure: unknown;
     try {
       const moved = await readNoFollow(aside, relFile);
-      outcome = moved !== expected ? 'conflict' : tmp === null ? 'done' : await linkOrConflict(tmp, file);
+      if (moved !== expected) outcome = 'conflict';
+      else if (tmp !== null) outcome = await linkOrConflict(tmp, file);
+      else {
+        // Durable proof the delete compared clean, before the moved bytes go.
+        await onDeleteVerified();
+        outcome = 'done';
+      }
     } catch (err) {
       failure = err;
       outcome = 'conflict';
@@ -480,11 +495,13 @@ function withFileLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 /**
  * The committed receipt, after settling a pending record a crash left. A
  * pending record never confers ownership (no promotion from matching bytes):
- * it is dropped, except when the file is missing although the interrupted
- * edit meant to leave one. Then the bytes moved aside for that edit are put
- * back if exactly one copy matches the recorded before-hash; otherwise the
- * edit refuses and the pending record stays, so nothing ever creates a fresh
- * file over the person's displaced config.
+ * it is dropped once the file's state is settled. When the file is missing
+ * although it existed before the interrupted edit, a missing file proves
+ * nothing unless the edit was a delete recorded as verified (its moved bytes
+ * compared clean). Otherwise the bytes moved aside for that edit are put
+ * back if exactly one copy matches the recorded before-hash, else the edit
+ * refuses and the pending record stays, so nothing ever accepts a deletion
+ * or creates a fresh file over the person's displaced config.
  */
 async function committedFor(file: string, relFile: string): Promise<CommittedOwnership> {
   const receipt = await receiptStore.get(file);
@@ -492,15 +509,17 @@ async function committedFor(file: string, relFile: string): Promise<CommittedOwn
   const committed: CommittedOwnership = { ...emptyOwnership(), ...receipt.committed };
   const pending = receipt.pending;
   if (pending) {
-    if (pending.beforeHash !== null && pending.afterHash !== null && await lstatOrNull(file) === null) {
-      await restoreMovedAside(file, relFile, pending.beforeHash);
+    if (pending.beforeHash !== null && await lstatOrNull(file) === null) {
+      if (pending.afterHash === null && pending.verified) await dropMovedAside(file, relFile, pending.beforeHash);
+      else await restoreMovedAside(file, relFile, pending.beforeHash);
     }
     await receiptStore.set(file, ownsNothing(committed) && !committed.created ? undefined : { committed });
   }
   return committed;
 }
 
-async function restoreMovedAside(file: string, relFile: string, beforeHash: string): Promise<void> {
+/** Saved copies (moved aside by an edit) whose bytes hash to `beforeHash`. */
+async function movedAsideMatching(file: string, relFile: string, beforeHash: string): Promise<string[]> {
   const prefix = `.${path.basename(file)}.prev.`;
   const names = (await fsp.readdir(path.dirname(file)).catch((): string[] => [])).filter((n) => n.startsWith(prefix));
   const matches: string[] = [];
@@ -509,6 +528,18 @@ async function restoreMovedAside(file: string, relFile: string, beforeHash: stri
     const text = await readNoFollow(candidate, relFile).catch((): null => null);
     if (text !== null && sha256(text) === beforeHash) matches.push(candidate);
   }
+  return matches;
+}
+
+/** A verified delete: its compared copy may go; any other saved copy stays. */
+async function dropMovedAside(file: string, relFile: string, beforeHash: string): Promise<void> {
+  for (const copy of await movedAsideMatching(file, relFile, beforeHash)) {
+    await fsp.unlink(copy).catch(() => { /* telemetry-exempt: a leftover copy of deleted bytes is harmless and kept */ });
+  }
+}
+
+async function restoreMovedAside(file: string, relFile: string, beforeHash: string): Promise<void> {
+  const matches = await movedAsideMatching(file, relFile, beforeHash);
   const interrupted = (detail: string) => new AntigravityWorkspaceError('interrupted', `${relFile}: an earlier Clubhouse edit was interrupted and the file is missing; ${detail}. Restore the file, then start the agent again.`);
   if (matches.length !== 1) throw interrupted(matches.length ? `${matches.length} saved copies match, so Clubhouse can't choose` : 'no saved copy of its contents was found');
   if (await linkOrConflict(matches[0], file).catch((): 'failed' => 'failed') !== 'done') throw interrupted(`its earlier contents are at ${matches[0]}`);
@@ -548,9 +579,10 @@ export async function transact(
       await safeTarget(worktree, relFile, options.home);
     }
     const committed: CommittedOwnership = { ...result.owned, createdDir: result.owned.createdDir || createdDir };
-    await receiptStore.set(file, { committed: owned, pending: { txid: randomUUID(), beforeHash: hashOrNull(current), afterHash: hashOrNull(result.next) } });
+    const pending: PendingWrite = { txid: randomUUID(), beforeHash: hashOrNull(current), afterHash: hashOrNull(result.next) };
+    await receiptStore.set(file, { committed: owned, pending });
     let swapped: 'done' | 'conflict';
-    try { swapped = await swapFile(file, relFile, current, result.next); }
+    try { swapped = await swapFile(file, relFile, current, result.next, () => receiptStore.set(file, { committed: owned, pending: { ...pending, verified: true } })); }
     catch (err) {
       // write_failed means the earlier bytes are back in place: the pending record goes.
       // Anything else (bytes kept aside) leaves it, so recovery can find them.
