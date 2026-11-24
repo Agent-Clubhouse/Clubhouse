@@ -56,10 +56,20 @@ node scripts/usage-rollup.mjs [--by day,provider,role,agentId] [--since YYYY-MM-
 - **Terminal (TUI) agents** of any provider publish no chat events and log
   nothing here. For Codex, the rollout script covers them after the fact.
   There is no equivalent for Claude Code or Copilot in a terminal.
-- **Headless runs** (`codex exec`, `claude -p`) are not chat sessions and log
-  nothing here. Their transcript summary
-  (`src/shared/headless-transcript.ts`) and run view keep a side no event
-  reported absent. The view shows "Not reported" or "unknown" for it, never 0.
+- **Headless runs** (`codex exec`, `claude -p`) are not chat sessions. Each
+  run logs one `Usage turn` line of `kind: run`, `driver: headless`
+  (`src/main/services/headless-usage.ts`), which the rollup adds like a turn.
+  - **Figures:**
+    - Claude: per message id, cache reads and writes joined to input.
+    - Codex: each `turn.completed`, with cached input and reasoning kept as
+      parts of input and output.
+    - A result's own total is used only when nothing else reported.
+  - **Requested settings.** Provider, model and effort are what the run was
+    started with (`requested: true`), not a provider report.
+  - **No usage.** A run that reported none is `completeness: none`.
+  - **Display.** The transcript summary (`src/shared/headless-transcript.ts`)
+    and the run view keep a side no event reported absent. The view shows
+    "Not reported" or "unknown" for it, never 0.
 
 ## Adapter contract
 
