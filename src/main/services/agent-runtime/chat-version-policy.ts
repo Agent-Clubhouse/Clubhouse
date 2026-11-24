@@ -31,6 +31,7 @@
 
 import type { ChatDriverId } from '../../../shared/chat';
 import { createSettingsStore } from '../settings-store';
+import { providerDescriptor } from '../../../shared/providers/descriptors';
 
 export interface CliVersionRange {
   /** Oldest version the driver works with. Unset when no hard floor is known. */
@@ -77,14 +78,8 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
 /** Known-bad versions shipped with the app. The update manifest can add more. */
 export const BUILTIN_CLI_DENYLIST: readonly CliDenylistEntry[] = [];
 
-const PROVIDER_LABELS: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  'codex-cli': 'Codex',
-  'copilot-cli': 'Copilot CLI',
-};
-
 export function cliLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
+  return providerDescriptor(provider)?.cliLabel ?? provider;
 }
 
 const VERSION_RE = /(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?/;

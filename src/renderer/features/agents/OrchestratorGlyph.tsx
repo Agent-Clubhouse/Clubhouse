@@ -1,8 +1,7 @@
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { Tooltip } from '../../components/Tooltip';
 import { getOrchestratorLabel } from './orchestrator-colors';
-
-const ORCH_GLYPH: Record<string, string> = { 'claude-code': 'C', 'codex-cli': 'X', 'copilot-cli': 'G' };
+import { providerDescriptor } from '../../../shared/providers/descriptors';
 
 /** A neutral 14px provider tile shared by the sidebar and agent views. */
 export function OrchestratorGlyph({ orchestrator, details = [], focusable = true, showTooltip = true, variant = 'default', testId }: {
@@ -17,7 +16,7 @@ export function OrchestratorGlyph({ orchestrator, details = [], focusable = true
 }) {
   const all = useOrchestratorStore((s) => s.allOrchestrators);
   const name = getOrchestratorLabel(orchestrator, all);
-  const letter = ORCH_GLYPH[orchestrator] ?? (name.charAt(0).toUpperCase() || '?');
+  const letter = providerDescriptor(orchestrator)?.glyph ?? (name.charAt(0).toUpperCase() || '?');
   const glyph = (
     <span
       role="img"

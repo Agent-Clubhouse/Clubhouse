@@ -14,6 +14,8 @@
 import { createHmac, randomBytes } from 'crypto';
 import { FEEDBACK_DIAGNOSTICS, type FeedbackDiagnosticLine, type FeedbackDiagnostics } from '../../../shared/feedback-types';
 import { KNOWN_LOG_NAMESPACES } from '../../../shared/log-namespaces';
+import { PROVIDER_TELEMETRY_CODES } from '../../../shared/providers/descriptors';
+import { CHAT_DRIVER_IDS } from '../../../shared/chat/capabilities';
 import type { DiagLevel } from '../../../shared/telemetry/diag';
 import { addDiagTap } from '../../telemetry/diag';
 import type { DiagRecord } from '../../telemetry/diag-sink';
@@ -145,7 +147,8 @@ export const DIAGNOSTICS_WORDS: Readonly<Record<'link' | 'state' | 'reason' | 'c
     'available',
   ]),
   reason: new Set(['stopped', 'idle_timeout', 'process_exit', 'fallback', 'error', 'killed', 'superseded', 'expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected', 'migration-required']),
-  cli: new Set(['claude-code', 'copilot-cli', 'codex-cli', 'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk']),
+  // Reviewed closed values: the provider telemetry codes and chat driver ids.
+  cli: new Set<string>([...PROVIDER_TELEMETRY_CODES, ...CHAT_DRIVER_IDS]),
 };
 
 function failure(value: unknown): string | undefined {

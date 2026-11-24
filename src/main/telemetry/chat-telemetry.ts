@@ -29,6 +29,7 @@ import { agentOutput, agentRunStarted, discardRun, hasActiveRun, toolBucket } fr
 import { getRecordingGeneration, isTelemetryActive, replaySpan, tel } from './facade';
 import { chatEventTraceparent } from './chat-trace-context';
 import type { ErrorType } from './types';
+import { providerTelemetryCode } from '../../shared/providers/descriptors';
 
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 type EndReason = Parameters<typeof ATTR.turnEndReason>[0];
@@ -81,7 +82,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set<ErrorType>([
 ]);
 
 function orchestratorOf(provider: string): Orchestrator {
-  return provider === 'claude-code' || provider === 'codex-cli' || provider === 'copilot-cli' ? provider : 'other';
+  return providerTelemetryCode(provider);
 }
 
 /** turn_ended stop reasons onto the spec's end reasons; anything that isn't a clean end, a cancel or a timeout is an error. */
