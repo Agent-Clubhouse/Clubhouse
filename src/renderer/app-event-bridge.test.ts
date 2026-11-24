@@ -715,7 +715,8 @@ describe('initAppEventBridge', () => {
       const { useChatDraftStore } = await import('./features/agents/chat/useChatSession');
       useChatDraftStore.setState({ drafts: draft ? { 'agent-1': draft } : {} });
       const updateAgentStatus = vi.fn();
-      vi.mocked(useAgentStore.getState).mockReturnValue({
+      // The handler reads the store once per notice.
+      vi.mocked(useAgentStore.getState).mockReturnValueOnce({
         ...useAgentStore.getState(),
         agents: { 'agent-1': { id: 'agent-1', name: 'bold-falcon', mission } },
         updateAgentStatus,
