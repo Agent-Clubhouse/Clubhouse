@@ -27,7 +27,6 @@ import { assertExecutionPolicy } from '../../shared/execution-policy';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { resolveProcessLaunch } from '../util/process-launch';
 import { ANTIGRAVITY_PATHS, ANTIGRAVITY_PROVIDER_ID } from '../../shared/providers/antigravity';
-import { appLog } from '../services/log-service';
 import { probeAgyModels } from './antigravity/models';
 import { antigravityAccessArgs, antigravityStartLevel } from './antigravity/access';
 import { antigravityHooksSupported, parseAntigravityHookEvent, writeAntigravityHooks } from './antigravity/hooks';
@@ -193,12 +192,9 @@ export class AntigravityCliProvider extends BaseProvider implements HookCapable,
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     if (!antigravityHooksSupported()) return;
-    const result = await writeAntigravityHooks(cwd, hookUrl);
-    if (result === 'skipped_existing_file') {
-      appLog('core:orchestrator', 'warn', 'Antigravity hook status is off for this run: the folder has its own .agents/hooks.json, which Clubhouse does not edit yet', {
-        meta: { provider: this.id },
-      });
-    }
+    // Refusals (collision, unsafe path, concurrent edit) throw
+    // AntigravityWorkspaceError, which the launch rethrows (#3793).
+    await writeAntigravityHooks(cwd, hookUrl);
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {

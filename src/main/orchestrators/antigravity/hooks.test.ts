@@ -4,14 +4,14 @@ import * as path from 'path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   antigravityHookCommand,
-  antigravityHooksCleanup,
   antigravityHooksSupported,
   buildAntigravityStatusHook,
   parseAntigravityHookEvent,
-  renderAntigravityHooksFile,
+  removeAntigravityHooks,
   validConversationId,
   writeAntigravityHooks,
 } from './hooks';
+import { AntigravityWorkspaceError, memoryReceiptStore, setAntigravityReceiptStore } from './workspace-json';
 
 const HOOK_URL = 'http://127.0.0.1:4567/hook';
 
@@ -50,72 +50,85 @@ describe('Antigravity status hook shape (docs: /docs/hooks/)', () => {
   });
 });
 
-describe('the workspace hooks file', () => {
+describe('the workspace hooks file (receipt-backed, workspace-json)', () => {
   let dir: string;
+  let home: string;
+  let previousStore: ReturnType<typeof setAntigravityReceiptStore>;
   const file = () => path.join(dir, '.agents', 'hooks.json');
 
   beforeEach(() => {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-')));
+    home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-home-')));
+    previousStore = setAntigravityReceiptStore(memoryReceiptStore());
   });
   afterEach(() => {
+    setAntigravityReceiptStore(previousStore);
     fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it('creates the file with exactly its own bytes when there is none, and cleanup may delete it', async () => {
-    expect(await writeAntigravityHooks(dir, HOOK_URL)).toBe('created');
-    const text = fs.readFileSync(file(), 'utf-8');
-    expect(text).toBe(renderAntigravityHooksFile(HOOK_URL));
-    expect(Object.keys(JSON.parse(text))).toEqual(['clubhouse-status']);
-    expect(antigravityHooksCleanup(text)).toBe('delete');
+  it('creates the file with only its hook, and removal deletes the file it created', async () => {
+    expect(await writeAntigravityHooks(dir, HOOK_URL, { home })).toEqual({ created: true });
+    const doc = JSON.parse(fs.readFileSync(file(), 'utf-8'));
+    expect(Object.keys(doc)).toEqual(['clubhouse-status']);
+    expect(doc['clubhouse-status']).toEqual(buildAntigravityStatusHook(HOOK_URL));
+    expect(await removeAntigravityHooks(dir, { home })).toBe('deleted');
+    expect(fs.existsSync(file())).toBe(false);
   });
 
-  it('is a no-op when its own file is already there', async () => {
-    await writeAntigravityHooks(dir, HOOK_URL);
-    const before = fs.statSync(file()).mtimeMs;
-    expect(await writeAntigravityHooks(dir, HOOK_URL)).toBe('unchanged');
-    expect(fs.statSync(file()).mtimeMs).toBe(before);
+  it('keeps every byte of the person\'s hooks, and removal restores them exactly', async () => {
+    const user = '{\n  // mine\n  "my-linter-hook": { "PostToolUse": [{ "matcher": "run_command", "hooks": [{ "command": "./lint.sh" }] }] }\n}\n';
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), user);
+    await writeAntigravityHooks(dir, HOOK_URL, { home });
+    const during = fs.readFileSync(file(), 'utf-8');
+    expect(during).toContain('// mine');
+    expect(during).toContain('clubhouse-status');
+    expect(await removeAntigravityHooks(dir, { home })).toBe('restored');
+    expect(fs.readFileSync(file(), 'utf-8')).toBe(user);
+  });
+
+  it('keeps an edit the person made elsewhere in the file while the agent ran', async () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), '{\n  "a": {}\n}\n');
+    await writeAntigravityHooks(dir, HOOK_URL, { home });
+    fs.writeFileSync(file(), fs.readFileSync(file(), 'utf-8').replace('"a": {}', '"a": {}, "b": {}'));
+    await removeAntigravityHooks(dir, { home });
+    const after = fs.readFileSync(file(), 'utf-8');
+    expect(after).toContain('"b": {}');
+    expect(after).not.toContain('clubhouse-status');
   });
 
   it.each([
-    ['the person\'s hooks', JSON.stringify({ 'my-linter-hook': { PostToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }] } })],
-    ['a hook of the same name', JSON.stringify({ 'clubhouse-status': { Stop: [{ type: 'command', command: './mine.sh' }] } })],
-    ['not JSON', '{ nope'],
-    ['a BOM and comments', '\uFEFF// mine\n{}'],
-  ])('never edits an existing file with %s, byte for byte', async (_label, text) => {
+    ['the person\'s own clubhouse-status hook', { 'clubhouse-status': { Stop: [{ type: 'command', command: './mine.sh' }] } }],
+    ['an exact copy of Clubhouse\'s hook it has no receipt for', { 'clubhouse-status': buildAntigravityStatusHook(HOOK_URL) }],
+  ])('refuses %s, never adopting or removing it', async (_label, doc) => {
+    const text = `${JSON.stringify(doc, null, 2)}\n`;
     fs.mkdirSync(path.dirname(file()), { recursive: true });
     fs.writeFileSync(file(), text);
-    expect(await writeAntigravityHooks(dir, HOOK_URL)).toBe('skipped_existing_file');
+    await expect(writeAntigravityHooks(dir, HOOK_URL, { home })).rejects.toMatchObject({ code: 'collision' });
     expect(fs.readFileSync(file(), 'utf-8')).toBe(text);
-    expect(antigravityHooksCleanup(text)).toBe('keep');
+    expect(await removeAntigravityHooks(dir, { home })).toMatchObject({ repair: expect.any(String) });
+    expect(fs.readFileSync(file(), 'utf-8')).toBe(text);
   });
 
-  it('never claims a copy of its file that the person changed, even by one space or one event', () => {
-    const ours = renderAntigravityHooksFile(HOOK_URL);
-    expect(antigravityHooksCleanup(ours.replace('\n}', ' \n}'))).toBe('keep');
-    const doc = JSON.parse(ours);
-    doc['clubhouse-status'].Stop[0].command += ' && ./mine.sh';
-    expect(antigravityHooksCleanup(`${JSON.stringify(doc, null, 2)}\n`)).toBe('keep');
-    doc['clubhouse-status'].Stop[0].command = 'echo X-Clubhouse-Nonce CLUBHOUSE_AGENT_ID';
-    expect(antigravityHooksCleanup(`${JSON.stringify(doc, null, 2)}\n`)).toBe('keep');
-    const extra = JSON.parse(ours);
-    extra.mine = {};
-    expect(antigravityHooksCleanup(`${JSON.stringify(extra, null, 2)}\n`)).toBe('keep');
+  it('refuses a file that is not JSON, untouched', async () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), '{ nope');
+    await expect(writeAntigravityHooks(dir, HOOK_URL, { home })).rejects.toBeInstanceOf(AntigravityWorkspaceError);
+    expect(fs.readFileSync(file(), 'utf-8')).toBe('{ nope');
   });
 
-  it('claims its file whatever the callback host and path were', () => {
-    expect(antigravityHooksCleanup(renderAntigravityHooksFile('http://localhost:9/hook'))).toBe('delete');
+  it('removal with nothing written is clean and creates nothing', async () => {
+    expect(await removeAntigravityHooks(dir, { home })).toBe('clean');
+    expect(fs.existsSync(file())).toBe(false);
   });
 
-  it.runIf(process.platform !== 'win32')('refuses a symlinked .agents folder or hooks file, writing nothing through it', async () => {
+  it.runIf(process.platform !== 'win32')('refuses a symlinked .agents folder, writing nothing through it', async () => {
     const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-outside-')));
     try {
       fs.symlinkSync(outside, path.join(dir, '.agents'));
-      await expect(writeAntigravityHooks(dir, HOOK_URL)).rejects.toThrow(/symbolic link/);
-      expect(fs.readdirSync(outside)).toEqual([]);
-      fs.unlinkSync(path.join(dir, '.agents'));
-      fs.mkdirSync(path.join(dir, '.agents'));
-      fs.symlinkSync(path.join(outside, 'target.json'), file());
-      await expect(writeAntigravityHooks(dir, HOOK_URL)).rejects.toThrow(/symbolic link/);
+      await expect(writeAntigravityHooks(dir, HOOK_URL, { home })).rejects.toMatchObject({ code: 'unsafe_path' });
       expect(fs.readdirSync(outside)).toEqual([]);
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });

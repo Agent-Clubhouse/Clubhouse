@@ -14,19 +14,19 @@
  * - Exit-code handling is not documented, so the command always exits 0 and
  *   always prints its answer, whatever the callback did.
  *
- * Clubhouse writes one named hook, `clubhouse-status`, only into a hooks
- * file it creates, and never edits a file that already exists. Its answers never block or change a tool call: `allow` for
+ * Clubhouse writes one named hook, `clubhouse-status`, as a receipt-backed
+ * member of the file (workspace-json), and never touches other names. Its answers never block or change a tool call: `allow` for
  * PreToolUse, `{}` elsewhere. The payload's `transcriptPath` is never read.
  *
  * POSIX only for now: the docs don't say which shell runs a command on
  * Windows, so a command line that echoes JSON there is unverified (#3802).
  */
 
-import * as fsp from 'fs/promises';
 import * as path from 'path';
 import type { NormalizedHookEvent } from '../types';
 import { buildHookCurlCommand, validateHookUrl } from '../shared';
 import { ANTIGRAVITY_PATHS, ANTIGRAVITY_STATUS_HOOK_NAME } from '../../../shared/providers/antigravity';
+import { insertOwnedMember, removeOwnedMember, type FileOptions, type RemoveResult } from './workspace-json';
 
 /** Seconds. Short, so a slow callback can't hold up a tool. */
 export const ANTIGRAVITY_HOOK_TIMEOUT_SEC = 5;
@@ -76,90 +76,31 @@ export function antigravityHooksPath(cwd: string): string {
   return path.join(cwd, ANTIGRAVITY_PATHS.hooks);
 }
 
-/** The exact file Clubhouse writes for `hookUrl`: its hook alone, two-space JSON, trailing newline. */
-export function renderAntigravityHooksFile(hookUrl: string): string {
-  return `${JSON.stringify({ [ANTIGRAVITY_STATUS_HOOK_NAME]: buildAntigravityStatusHook(hookUrl) }, null, 2)}\n`;
-}
-
-/** The callback URL in a generated SessionStart command, rebuilt with a placeholder port. */
-const GENERATED_URL = /http:\/\/(127\.0\.0\.1|localhost):\$\{CLUBHOUSE_HOOK_PORT\}(\/[A-Za-z0-9/_-]*)\/\$\{CLUBHOUSE_AGENT_ID\}\/SessionStart /;
-
 /**
- * Whether `text` is exactly a file Clubhouse generated, byte for byte, for
- * some valid callback URL. Ownership is proved by regenerating the bytes,
- * never by looking for marker strings, so a person's file (even one that
- * copies parts of ours, or adds a single space) is never claimed.
+ * Set up Clubhouse's `clubhouse-status` hook in `.agents/hooks.json`, through
+ * the shared receipt-backed editor (workspace-json): every other byte of the
+ * file is kept, a symlinked or escaping path is refused, a concurrent edit
+ * refuses rather than overwrites, and a `clubhouse-status` that Clubhouse has
+ * no committed receipt for (a person's own hook, or an exact copy of ours) is
+ * a collision, never adopted. Throws AntigravityWorkspaceError on refusal,
+ * with the file left as it was.
  */
-export function isGeneratedAntigravityHooksFile(text: string): boolean {
-  const match = GENERATED_URL.exec(text);
-  if (!match) return false;
-  const [, host, pathname] = match;
-  try {
-    return renderAntigravityHooksFile(validateHookUrl(`http://${host}:1${pathname}`)) === text;
-  } catch {
-    return false;
-  }
-}
-
-/** Refuses a `.agents` folder or hooks file that is a symlink or resolves outside the worktree. */
-async function assertContained(cwd: string, filePath: string): Promise<void> {
-  const root = await fsp.realpath(cwd);
-  for (const p of [path.dirname(filePath), filePath]) {
-    let stat: import('fs').Stats;
-    try {
-      stat = await fsp.lstat(p);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
-      throw err;
-    }
-    if (stat.isSymbolicLink()) throw new Error(`${p} is a symbolic link. Clubhouse does not write through links. Antigravity hooks were not set up.`);
-    const rel = path.relative(root, await fsp.realpath(p));
-    if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`${p} is outside the agent's folder. Antigravity hooks were not set up.`);
-  }
-}
-
-export type AntigravityHooksWrite = 'created' | 'unchanged' | 'skipped_existing_file';
-
-/**
- * Set up Clubhouse's status hook in `.agents/hooks.json`.
- *
- * Interim rule until a byte-preserving, receipt-backed merge exists (shared
- * with the MCP config, #3794): Clubhouse creates the file only when there is
- * none, with exactly its own bytes, and never edits a file that exists. A
- * person's existing hooks file is left untouched and the agent runs without
- * hook status (the reason is returned and logged by the caller).
- */
-export async function writeAntigravityHooks(cwd: string, hookUrl: string): Promise<AntigravityHooksWrite> {
-  const filePath = antigravityHooksPath(cwd);
-  await assertContained(cwd, filePath);
-  const ours = renderAntigravityHooksFile(hookUrl);
-  let current: string | undefined;
-  try {
-    current = await fsp.readFile(filePath, 'utf-8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw new Error(`Cannot read Antigravity hooks at ${filePath}. Antigravity hooks were not set up.`);
-  }
-  if (current !== undefined) return current === ours ? 'unchanged' : 'skipped_existing_file';
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  // The folder may have been created just now; check again before writing.
-  await assertContained(cwd, filePath);
-  try {
-    // 'wx': if the person creates the file meanwhile, theirs wins and nothing is written.
-    await fsp.writeFile(filePath, ours, { encoding: 'utf-8', flag: 'wx' });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException)?.code === 'EEXIST') return 'skipped_existing_file';
-    throw err;
-  }
-  return 'created';
+export async function writeAntigravityHooks(cwd: string, hookUrl: string, options: FileOptions = {}): Promise<{ created: boolean }> {
+  const { created } = await insertOwnedMember(cwd, ANTIGRAVITY_PATHS.hooks, {
+    container: null,
+    key: ANTIGRAVITY_STATUS_HOOK_NAME,
+    valueJsonText: JSON.stringify(buildAntigravityStatusHook(hookUrl)),
+  }, options);
+  return { created };
 }
 
 /**
- * What cleanup may do with the current hooks file: delete it only when its
- * bytes are still exactly a file Clubhouse generated. Anything else, including
- * an edited copy, is kept as it is.
+ * Remove Clubhouse's hook, by receipt only. Edits elsewhere in the file are
+ * kept; a file Clubhouse created that nobody touched is deleted; anything it
+ * can't prove it owns is left and reported for repair.
  */
-export function antigravityHooksCleanup(text: string): 'delete' | 'keep' {
-  return isGeneratedAntigravityHooksFile(text) ? 'delete' : 'keep';
+export function removeAntigravityHooks(cwd: string, options: FileOptions = {}): Promise<RemoveResult> {
+  return removeOwnedMember(cwd, ANTIGRAVITY_PATHS.hooks, { container: null, key: ANTIGRAVITY_STATUS_HOOK_NAME }, options);
 }
 
 /** Ids are passed as `--conversation <id>`; anything that could read as a flag is refused. */
