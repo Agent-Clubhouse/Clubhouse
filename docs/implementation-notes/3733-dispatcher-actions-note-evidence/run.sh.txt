@@ -1,0 +1,11 @@
+#!/bin/zsh
+P=/tmp/dlc-proof-note; cd <worktree>
+F=(src/main/services/actions/selected-details-page.ts src/main/services/actions/selected-details-page.test.ts)
+state() { echo "date $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "head $(git rev-parse HEAD)"; echo "tree $(git rev-parse 'HEAD^{tree}')"; echo "status-lines $(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"; git status --porcelain --untracked-files=all; echo "load $(uptime | sed 's/.*load averages: //')"; }
+hashes() { for f in $F; do echo "$(shasum -a 256 $f | cut -c1-64) $(git show "HEAD:$f" | shasum -a 256 | cut -c1-64) $f"; done; }
+state > $P/state-before.txt; hashes > $P/hashes-before.txt
+T=$(mktemp -d "${TMPDIR%/}/dlc-fresh.XXXX"); echo "TMPDIR=<fresh> npx vitest run --no-cache --maxWorkers=4" > $P/argv-vitest.txt
+TMPDIR=$T npx vitest run --no-cache --maxWorkers=4 > $P/vitest-raw.txt 2>&1; echo "vitest exit=$?" > $P/exits.txt
+echo "npx tsc --noEmit" > $P/argv-tsc.txt; npx tsc --noEmit > $P/tsc-raw.txt 2>&1; echo "tsc exit=$?" >> $P/exits.txt
+echo "npx eslint ${F[*]}" > $P/argv-eslint.txt; npx eslint ${F[@]} > $P/eslint-raw.txt 2>&1; echo "eslint exit=$?" >> $P/exits.txt
+state > $P/state-after.txt; hashes > $P/hashes-after.txt
