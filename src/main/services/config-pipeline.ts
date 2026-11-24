@@ -5,6 +5,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
+import { isAntigravityWorkspaceMcpPath, restoreAntigravityWorkspaceMcp } from '../orchestrators/antigravity/mcp-config';
 import { scrubClubhouseNonce, scrubClubhouseNonceToml, stripClubhouseMcp, stripClubhouseMcpToml } from './clubhouse-mcp/injection';
 
 /** Optional observer for a cleanup that needs manual repair; existing callers need no changes. */
@@ -370,6 +371,13 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
       return;
     }
   }
+  // Antigravity's workspace MCP file is cleaned from its current bytes only:
+  // the bridge line comes out, everything else stays (#3794). Never the
+  // generic re-serialize, unlink-on-corrupt or snapshot fallback.
+  if (isAntigravityWorkspaceMcpPath(absPath)) {
+    await restoreAntigravityMcpFile(absPath, options);
+    return;
+  }
   // Keep Copilot out of generic corrupt-file unlink/snapshot-fallback recovery.
   if (isCopilotHooksPath(absPath)) {
     await cleanupCopilotHooksFile(absPath, options);
@@ -401,6 +409,26 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
       meta: { filePath: absPath, error: err instanceof Error ? err.message : String(err) },
       telemetry: { event: 'clubhouse.config.restore_failed', attrs: [ATTR.configFormat(isTomlFile(absPath) ? 'toml' : 'json')] },
     });
+  }
+}
+
+async function restoreAntigravityMcpFile(absPath: string, options?: ConfigCleanupOptions): Promise<void> {
+  let result: Awaited<ReturnType<typeof restoreAntigravityWorkspaceMcp>>;
+  try { result = await restoreAntigravityWorkspaceMcp(absPath); }
+  catch (err) {
+    // telemetry-exempt: becomes the repair notice and warning below; user bytes are left as they are.
+    result = { repair: `cleanup failed (${err instanceof Error ? err.message : String(err)})` };
+  }
+  if (typeof result === 'string') {
+    appLog('core:config-pipeline', 'info', 'Restored Antigravity MCP config', { meta: { filePath: absPath, result } });
+    return;
+  }
+  const message = `Antigravity MCP config at ${absPath}: ${result.repair}; left unchanged. Review the file and remove any "clubhouse" entry Clubhouse added.`;
+  appLog('core:config-pipeline', 'warn', 'Antigravity MCP config requires manual repair', { meta: { filePath: absPath, detail: result.repair } });
+  try { options?.onRepairRequired?.(message); }
+  catch (err) {
+    // telemetry-exempt: a failed observer cannot authorize cleanup or change a skipped outcome; logged.
+    appLog('core:config-pipeline', 'warn', 'Antigravity repair notice failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
 }
 
