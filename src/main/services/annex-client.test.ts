@@ -103,6 +103,7 @@ vi.mock('./annex-peers', () => ({
   noteReached: vi.fn(),
   setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(undefined),
+  peekPeerAlias: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   updateLastSeen: vi.fn(),
   recordLastSeen: vi.fn(),
@@ -202,6 +203,7 @@ function resetAllMocks() {
   vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue(LOCAL_IDENTITY);
   vi.mocked(annexIdentity.getIdentity).mockReturnValue(LOCAL_IDENTITY);
   vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+  vi.mocked(annexPeers.peekPeerAlias).mockReturnValue(undefined);
   vi.mocked(annexSettings.getSettings).mockReturnValue({
     enableServer: true,
     enableClient: true,
@@ -3509,6 +3511,64 @@ describe('annex-client', () => {
       res.emit('data', Buffer.from(JSON.stringify(body)));
       res.emit('end');
     }
+
+    describe('loaded alias projection', () => {
+      it('projects the loaded alias without changing the connected snapshot or authority', async () => {
+        await discover(); sockets[0].handlers.open();
+        annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {},
+        } });
+        const before = annexClient.getSatellite(FP)!;
+        expect(before.snapshotReceipt).toEqual(expect.any(String));
+        const dials = WebSocketMock.mock.calls.length;
+        vi.mocked(annexPeers.getPeer).mockClear();
+        vi.mocked(annexPeers.listPeers).mockClear();
+        vi.mocked(broadcastToAllWindows).mockClear();
+        vi.mocked(annexPeers.peekPeerAlias).mockImplementation((key) => key === FP ? 'Current peer alias' : undefined);
+        const after = annexClient.getSatellite(FP)!;
+        expect(after).toEqual({ ...before, alias: 'Current peer alias' });
+        expect(after.snapshot).toBe(before.snapshot);
+        expect(annexClient.getSatellites()).toEqual([after]);
+        expect(WebSocketMock).toHaveBeenCalledTimes(dials);
+        expect(annexPeers.getPeer).not.toHaveBeenCalled();
+        expect(annexPeers.listPeers).not.toHaveBeenCalled();
+        expect(broadcastToAllWindows).not.toHaveBeenCalled();
+        // Reverting the display lookup proves the retained connection alias was not mutated.
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue(undefined);
+        expect(annexClient.getSatellite(FP)).toEqual(before);
+      });
+
+      it.each([undefined, ''])('retains the connection fallback when the loaded alias is %s', async (alias) => {
+        await discover();
+        const before = annexClient.getSatellite(FP);
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue(alias);
+        expect(annexClient.getSatellite(FP)).toEqual(before);
+        expect(annexClient.getSatellite(FP)?.alias).toBe('Pinned Mac');
+      });
+
+      it('cannot mint positive admission merely by projecting a loaded alias', () => {
+        annexClient._addConnectedSatelliteForTesting(FP);
+        const before = annexClient.getSatellite(FP)!;
+        expect(before.snapshotReceipt).toBeUndefined();
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue('Current peer alias');
+        expect(annexClient.getSatellite(FP)).toEqual({ ...before, alias: 'Current peer alias' });
+        expect(annexClient.getSatellites()[0].snapshotReceipt).toBeUndefined();
+      });
+
+      it('uses the loaded alias only in the derived problem label', async () => {
+        await discover();
+        sockets[0].handlers.error(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+        const before = annexClient.getSatellite(FP)!;
+        expect(before.problem?.code).toBe('refused');
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue('Current peer alias');
+        const after = annexClient.getSatellite(FP)!;
+        expect(after).toEqual({ ...before, alias: 'Current peer alias', problem: {
+          ...before.problem, message: "Current peer alias isn't accepting connections.",
+        } });
+        expect(after.lastError).toBe(before.lastError);
+        expect(after.snapshotReceipt).toBeUndefined();
+      });
+    });
 
     describe('local positive snapshot receipts', () => {
       const payload = (lastSeq = 1): Record<string, unknown> => ({ protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
