@@ -548,6 +548,10 @@ class CodexChatSession implements ChatDriverSession {
     }
   }
 
+  isClosed(): boolean {
+    return !this.client.alive;
+  }
+
   async interrupt(): Promise<void> {
     const threadId = this.requireThread();
     if (!this.client.getActiveTurnId(threadId)) return;

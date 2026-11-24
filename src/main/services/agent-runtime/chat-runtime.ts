@@ -206,6 +206,12 @@ export class ChatAgentRuntime implements AgentRuntime {
    * second permission_resolved or question_resolved for one click.
    */
   private readonly answeredHere = new Set<string>();
+  /**
+   * A permission resolution the driver reported while the runtime's own answer
+   * to it was in flight, kept until that answer settles: if the driver then
+   * refuses the answer, this is what the provider decided.
+   */
+  private readonly closedInFlight = new Map<string, Extract<ChatEventDraft, { type: 'permission_resolved' }>>();
   private nativeSessionId: string | undefined;
   /** How the last session open went with a requested resume, for chat start telemetry (#2304). */
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
@@ -304,6 +310,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async openSession(resumeNativeSessionId: string | undefined): Promise<void> {
     // A new driver session never echoes answers given in the old one.
     this.answeredHere.clear();
+    this.closedInFlight.clear();
     await this.setState('starting');
     // A new session (start, /clear) runs at the spawn level, whatever the
     // old one was set to: record it for the helper ceiling (#2228), and drop
@@ -429,7 +436,11 @@ export class ChatAgentRuntime implements AgentRuntime {
    * runtime never answered (an interrupt) isn't an echo and goes through.
    */
   private isEchoedAnswer(draft: ChatEventDraft): boolean {
-    if (draft.type === 'permission_resolved') return this.answeredHere.delete(`p:${draft.data.requestId}`);
+    if (draft.type === 'permission_resolved') {
+      if (!this.answeredHere.delete(`p:${draft.data.requestId}`)) return false;
+      if (this.permissions.has(draft.data.requestId)) this.closedInFlight.set(draft.data.requestId, draft);
+      return true;
+    }
     if (draft.type === 'question_resolved') return this.answeredHere.delete(`q:${draft.data.requestId}`);
     return false;
   }
@@ -443,6 +454,28 @@ export class ChatAgentRuntime implements AgentRuntime {
     const key = `${kind}:${requestId}`;
     this.answeredHere.add(key);
     return () => { this.answeredHere.delete(key); };
+  }
+
+  /**
+   * The driver refused the runtime's answer after reporting that the provider
+   * had already closed the request: write the provider's record, which was
+   * held back as an echo, and close the request instead of reopening it.
+   */
+  private async settleClosedInFlight(requestId: string): Promise<boolean> {
+    const closed = this.closedInFlight.get(requestId);
+    this.closedInFlight.delete(requestId);
+    if (!closed) return false;
+    await this.emitAnswer(closed);
+    await this.settleProviderClosure(closed.data);
+    return true;
+  }
+
+  /** A request the provider closed itself: nothing in Clubhouse waits on it any more. */
+  private async settleProviderClosure(data: ChatEventDataMap['permission_resolved']): Promise<void> {
+    const pending = this.permissions.get(data.requestId);
+    if (!pending) return;
+    this.settlePermission(data.requestId, data.decision === 'allow' || data.decision === 'deny' ? data.decision : 'ask', 'closed by provider');
+    if (this.state === 'waiting_permission' && this.permissions.size === 0) await this.setState(this.turnId !== undefined ? 'running' : 'idle');
   }
 
   /** The runtime's own record of an answer, in the current turn, so it sits with the request it answers. */
@@ -554,6 +587,10 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.questions.delete(draft.data.requestId);
         this.routedQuestions.delete(draft.data.requestId);
         break;
+      case 'permission_resolved':
+        // Echoes of the runtime's own answers never get here: this is the provider closing it.
+        if (!this.permissions.get(draft.data.requestId)?.settled) await this.settleProviderClosure(draft.data);
+        break;
     }
   }
 
@@ -585,11 +622,16 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.detailsRecorder = undefined;
     this.displayRunId = undefined;
     this.discardQueue('session_close', reason);
+    // Nothing can start after the end: no reservation or open turn outlives it.
+    this.pendingTurns.clear();
+    this.turnId = undefined;
+    this.turnStartedAt = null;
     this.inFlightTools.clear();
     this.clearIdleTimer();
     this.settleAllPermissions();
     // Drivers that never echo leave their keys behind; nothing can echo after the end.
     this.answeredHere.clear();
+    this.closedInFlight.clear();
     await this.emit({ type: 'session_ended', data: { reason, exitCode, ...(message ? { message } : {}) } });
     await this.setState('sleeping');
     await this.emitChain;
@@ -1059,7 +1101,9 @@ export class ChatAgentRuntime implements AgentRuntime {
       }
       return;
     }
-    if (!this.session) return;
+    // A transport that is ending (a driver closing its turn on exit) takes nothing more;
+    // the session's end drops what is still held, never sent.
+    if (!this.session || this.session.isClosed?.()) return;
     await runAgentWork(this.agentId, () => this.deliverQueuedMessage());
   }
 
@@ -1269,11 +1313,13 @@ export class ChatAgentRuntime implements AgentRuntime {
     try {
       await session.respondPermission(requestId, optionId, extras);
     } catch (err) {
-      pending.settled = false;
-      release?.();
       undo();
+      release?.();
+      // Reopen for another answer, unless the provider closed it meanwhile.
+      if (!(await this.settleClosedInFlight(requestId))) pending.settled = false;
       throw err;
     }
+    this.closedInFlight.delete(requestId);
     const option = pending?.options.find((o) => o.optionId === optionId);
     const decision = decisionFor(option);
     this.settlePermission(requestId, decision === 'allow' ? 'allow' : 'deny');
@@ -1537,6 +1583,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       const undo = this.answerHere('p', chatRequestId);
       try {
         await this.session.respondPermission(chatRequestId, option.optionId);
+        this.closedInFlight.delete(chatRequestId);
         this.permissions.delete(chatRequestId);
         await this.emitAnswer({
           type: 'permission_resolved',
@@ -1545,6 +1592,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         if (this.state === 'waiting_permission' && this.permissions.size === 0) await this.setState('running');
       } catch (err) {
         undo();
+        await this.settleClosedInFlight(chatRequestId);
         appLog('core:chat', 'warn', 'Applying queued permission decision failed', {
           meta: { agentId: this.agentId, requestId: chatRequestId, error: err instanceof Error ? err.message : String(err) },
         });
@@ -1553,13 +1601,13 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   /** Withdraw the mirrored queue entry after the request was answered in chat (or the session ended). */
-  private settlePermission(chatRequestId: string, decision: 'allow' | 'deny' | 'ask' = 'ask'): void {
+  private settlePermission(chatRequestId: string, decision: 'allow' | 'deny' | 'ask' = 'ask', reason = 'answered in chat'): void {
     const pending = this.permissions.get(chatRequestId);
     if (!pending) return;
     pending.settled = true;
     this.permissions.delete(chatRequestId);
     if (pending.queueRequestId) {
-      permissionQueue.cancelPermission(pending.queueRequestId, 'answered in chat', this.agentId);
+      permissionQueue.cancelPermission(pending.queueRequestId, reason, this.agentId);
       broadcastToAllWindows(IPC.AGENT.PERMISSION_SETTLED, this.agentId, {
         requestId: pending.queueRequestId, agentId: this.agentId, decision,
       });

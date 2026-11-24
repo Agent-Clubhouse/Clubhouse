@@ -398,6 +398,13 @@ export interface ChatDriverSession {
    * even if this session was replaced while the provider was answering.
    */
   sendWithReceipt?(content: ContentBlock[], delivery: MessageDelivery): Promise<ChatSendReceipt>;
+  /**
+   * True once the transport has ended or is ending (the process exited, the
+   * stream closed), so nothing more can reach the provider. In-process only,
+   * never written anywhere. The runtime then holds its own queue for the
+   * session's end instead of dispatching into it. Absent: assumed open.
+   */
+  isClosed?(): boolean;
   interrupt(): Promise<void>;
   respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;

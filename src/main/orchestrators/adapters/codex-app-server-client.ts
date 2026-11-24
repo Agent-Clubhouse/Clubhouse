@@ -1,4 +1,4 @@
-import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
+import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, ProcessExitedError, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
 import { RpcError } from './rpc-error';
 import {
   isKnownNotificationMethod,
@@ -202,6 +202,10 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
 
   /** Send an untyped request. Rejects with RpcError on an error response, or after the timeout. */
   requestRaw(method: string, params?: unknown, options?: RpcRequestOptions): Promise<unknown> {
+    // Nothing would carry it: fail now rather than wait out the RPC timeout for a reply that cannot come.
+    if (this.proc && (!this.alive || this.proc.stdin?.writable === false)) {
+      return Promise.reject(new ProcessExitedError(this.proc.exitCode ?? null, this.proc.signalCode ?? null));
+    }
     this.logRedactor.remember(params);
     const id = this.nextId++;
     const msg: Record<string, unknown> = { id, method };

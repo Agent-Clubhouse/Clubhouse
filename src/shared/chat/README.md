@@ -38,3 +38,44 @@ CLI ⇄ protocol client ⇄ ChatDriverSession ──ChatEventDraft──▶ chat
 - **Testing a driver.** `src/main/services/agent-runtime/fake-chat-driver.ts` is an in-memory driver the runtime tests use. Replay fixtures through your driver and assert the drafts it yields.
 - **Context compaction** travels on `notice`. When a driver learns compaction has started (Codex `item/started` for a `contextCompaction` item, Claude `system/status` with `status: 'compacting'`, Copilot `session.compaction_start`) it sends code `compaction_in_progress` (`COMPACTION_STARTED`). A later notice with a code in `COMPACTION_SETTLED` (`context_compacted`, `compacted`, `compaction_completed`, `compaction_failed`, `compaction_cancelled`) settles it, and so do `turn_ended`, `session_ended` and a fatal `error`. The chat shows one running row in between; repeated start notices don't add rows.
 - **Unknown native messages** become `protocol_unknown` events (the `c.chat.protocol.unknown` telemetry signal) rather than being dropped silently.
+
+## Lifecycle contract
+
+What a driver and the chat runtime promise about submissions, turns and requests today. It adds no "the provider processed it" or exactly-once guarantee. The conformance suite in `src/main/services/agent-runtime/lifecycle-conformance/` checks it through `ChatAgentRuntime` against each driver's fake transport (#3804).
+
+### Submissions and turns
+
+- **Send acceptance.** A send that resolves means the driver accepted it locally; it writes one `user_message` with the delivery the driver reported (`prompt`, `steer` or `queued`). It says nothing about the provider processing it: a failure the provider reports afterwards (a prompt RPC error, a failed turn) arrives as `error` and `turn_ended` with `error`, and the `user_message` stays as written. A send that rejects writes nothing and throws to the caller; Clubhouse treats it as not accepted. That is proven only where the rejection is a local refusal before dispatch or one the provider documents as non-acceptance (a Codex `turn/start` error), not by a rejected promise alone.
+- **Reservations.** For each accepted `prompt` (and native `queued`) the runtime holds one reservation for a future `turn_started`, so input that arrives before the turn starts is not treated as idle. `hasPendingWork()` stays true while any reservation is held. A `steer` never holds one.
+- **Retiring reservations.** A driver without `sendWithReceipt` retires one reservation per `turn_started`. A driver with `sendWithReceipt` retires a submission's reservation when its receipt names a native turn that has already started, is running or has completed, or names none (a steer, a command). Otherwise the reservation is retired when that turn's `turn_started` arrives (#3783).
+- **Merged submissions must not leave phantom debt.** If a provider can fold a prompt sent while one of its operations is open into that operation, the driver's accounting must settle every submission. A driver can do that with a receipt that names the operation, or by reporting the second submission as a `steer`, or with another mapping backed by the provider's documented behavior. A shared stop reason or prompt response is not native operation identity. A driver without receipts whose provider merges prompts leaves one reservation behind per merge (the #3782 mechanism). Later causal input then queues with nothing to drain it.
+- **Client queue.** Messages held in the runtime's own queue (no steer, Actions, causal input) are sent one at a time at turn end, each exactly once. An Action's `onSettled` reports `delivered` once it is handed over. It reports `dropped`, `expired` or `replaced` only for items that were never handed over.
+
+### Stop, interrupt and settlement
+
+- **A turn ends when the provider says so.** `interrupt()` asks. The turn ends with whatever the driver later reports (`cancelled`, `end_turn`, `error`). The runtime never ends a turn on its own, and a provider that reports nothing leaves the turn running.
+- **Requests.** The runtime writes `permission_resolved` / `question_resolved` only for an answer it gave (`by: 'user'` or `'annex'`), once, and drops the driver's echo of it. A driver's own resolution of a request the runtime never answered (a provider cancel or timeout, an interrupt) is written as the driver reports it, and closes the request in Clubhouse: its options and desktop/Annex queue entry are withdrawn (reason `closed by provider`), the state returns to `running`, and a later answer is ignored locally and never forwarded (the caller gets no error, as for a request already answered). If the provider closes a request while Clubhouse's answer to it is in flight:
+  - the driver accepts the answer: the answer stands as `by: 'user'` (or `'annex'`), and the provider's competing closure record is discarded as an echo;
+  - the driver refuses the answer: the provider's record is written and the request stays closed.
+- **Stale sessions.** After `clearContext()` the old driver session's events are ignored, and its late receipts cannot re-grant a reservation in the new conversation.
+
+### Disconnect and unknown outcomes
+
+- When a driver's event stream ends, the runtime writes `session_ended` and settles its own records. Mirrored permission entries are withdrawn, open questions forgotten, the client queue discarded (`dropped`), reservations and the open turn retired (`hasPendingWork()` is false), and the state becomes `sleeping`.
+- **Held input stays unsent.** A driver reports `isClosed()` once its transport is ending. The runtime then dispatches nothing more from its own queue, so input held there when a driver closes its turn on exit is dropped with the session, never sent into the dead transport. A Codex request made after app-server exited rejects at once (`ProcessExitedError`) rather than waiting for the RPC timeout. It writes no `turn_ended`, `permission_resolved` or `question_resolved` of its own. Accepted input keeps its `user_message` as written, and its outcome is unknown.
+- **Nothing is retried automatically.** A submission whose send failed, or that was in flight when the transport ended, is never sent again by Clubhouse.
+- **Local closure is not a provider outcome.** Codex, Claude and Copilot close their own open turn (`turn_ended` with `error`, or `cancelled` after an interrupt or a close) and requests (`permission_resolved` `cancelled` by `agent`) when the process exits. That records the driver's bookkeeping. The provider reported none of it. The schema cannot mark the difference: `TurnStopReason` and `permission_resolved.by` have no "outcome unknown" or "closed by Clubhouse" value. Consumers must not read those events as proof of what the provider did. A new driver that has nothing from the provider emits nothing.
+
+### Bounded output
+
+Today the runtime and transcript keep driver events whole; the driver event queue (`AsyncQueue`) is unbounded. Size bounds apply where events leave the desktop: `annex-chat-bounds.ts` previews oversized tool calls, tool updates and permission inputs over Annex, with a visible note in the text. The live transcript is never cut.
+
+### Known gaps (#3804)
+
+The conformance matrix in each `*.conformance.test.ts` lists what each driver runs, skips by trait, or is blocked on.
+
+- **Copilot requests settled elsewhere.** SDK 2.0.0 reports them as `permission.completed` and `user_input.completed`; the driver does not map them, and its permission handler is given no request id (only `toolCallId`). `permission_closed_by_provider` and `question_closed_by_provider` are blocked for Copilot and pinned in its conformance file.
+- **Questions.** A question the provider closes while Clubhouse's answer is in flight, then refused by the driver, is reopened as before; only permissions handle that race.
+- **Provenance.** Unchanged: a driver's local closure on disconnect still reads like a provider outcome in the transcript (see "Local closure is not a provider outcome").
+- **Codex spawn error.** If app-server fails to spawn, its `exitCode` stays null, so the driver does not report `isClosed()`. A held item may then be dispatched; the request is rejected at once (stdin not writable), and the item settles `failed` instead of `dropped`.
+- **What the suite proves.** It runs the real driver code against fakes at existing test seams. No real SDK, CLI, Annex or end-to-end run is part of this proof.
