@@ -235,6 +235,26 @@ function ownGrantIO<T>(owner: FixtureOwner, start: () => Promise<T>, fixture?: F
   }
 }
 
+// Post-setup fixture reads are separate admitted work, not the raw body itself.
+// Keep the original rejecting claim so the sole core drains the actual settlement.
+function ownFixtureRead<T>(owner: FixtureOwner, start: () => Promise<T>, fixture?: Fixture): Promise<T> {
+  if (owner.retiring || owner.disposed || owner.complete) throw new Error('Producer fixture read cannot be admitted.');
+  if (fixture && owner.fixture !== fixture) throw new Error('Producer read requires its original fixture owner.');
+  let resolve!: (value: unknown) => void;
+  let reject!: (error: unknown) => void;
+  const claim = new Promise<unknown>((complete, failed) => { resolve = complete; reject = failed; });
+  void claim.then(undefined, (): undefined => undefined);
+  try { owner.operations.push(claim); } catch (error) { reject(error); throw error; }
+  try {
+    const actual = start();
+    void actual.then(resolve, reject);
+    return actual;
+  } catch (error) {
+    reject(error);
+    throw error;
+  }
+}
+
 type PreparationStage = 'outer' | 'transfer' | 'snapshot' | 'bundle';
 type PreparationSlot = `${PreparationStage}-${'entered' | 'settled'}` | 'mcp';
 type PreparationReady = boolean | 'unknown';
@@ -720,17 +740,21 @@ async function offer(fx: Fixture, summary: HandoffManifestSummary): Promise<Hand
   return parseHandoff(resultValue(result));
 }
 
-async function catalog(fx: Fixture) {
-  return fs.readFile(path.join(fx.userData, 'handoff-preparations.json'), 'utf8');
+function catalog(fx: Fixture): Promise<string> {
+  const owner = fixtureOwner();
+  return ownFixtureRead(owner, () => nativeFs.promises.readFile(path.join(fx.userData, 'handoff-preparations.json'), 'utf8'), fx);
 }
 
-async function verifySource(fx: Fixture, record: Handoff, summary: HandoffManifestSummary) {
-  expect(record.manifest).toEqual(summary);
-  expect(fx.host.store.get(record.id)).toEqual(record);
-  const prepared = await fx.preparation.preparedSourceForRecord(record);
-  expect(prepared.source.project).toEqual(fx.project);
-  expect(prepared.source.worktreeRoot).toBe(fx.repository);
-  expect(await fs.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
+function verifySource(fx: Fixture, record: Handoff, summary: HandoffManifestSummary): Promise<void> {
+  const owner = fixtureOwner();
+  return ownFixtureRead(owner, async () => {
+    expect(record.manifest).toEqual(summary);
+    expect(fx.host.store.get(record.id)).toEqual(record);
+    const prepared = await fx.preparation.preparedSourceForRecord(record);
+    expect(prepared.source.project).toEqual(fx.project);
+    expect(prepared.source.worktreeRoot).toBe(fx.repository);
+    expect(await nativeFs.promises.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
+  }, fx);
 }
 
 async function queuedOffer(fx: Fixture, seed: Handoff, summary: HandoffManifestSummary, args = offerArgs(summary)) {
@@ -1292,6 +1316,91 @@ describe('isolated real MCP producer domain admission', () => {
   describe('ownership models', () => {
     beforeEach(setupLight);
     afterEach(cleanupContext);
+
+    it('fixture read ownership reserves before synchronous reentry and returns actual work unchanged', async () => runFixtureBody(async () => {
+      const owner = await sentinelOwner(), gate = deferred();
+      const file = path.join(fixtureDirectory(owner), 'read.txt');
+      await fs.writeFile(file, 'captured read');
+      const actual = gate.promise.then(() => fs.readFile(file, 'utf8'));
+      let core: Promise<CoreCompletion> | undefined, starts = 0;
+      const returned = ownFixtureRead(owner, () => {
+        starts++;
+        expect(owner.operations).toHaveLength(1);
+        core = coreCompletion(owner);
+        return actual;
+      });
+      expect(returned).toBe(actual);
+      expect(() => ownFixtureRead(owner, () => { starts++; return actual; })).toThrow('Producer fixture read cannot be admitted.');
+      expect(starts).toBe(1);
+      expect(nativeFs.existsSync(file)).toBe(true);
+      gate.resolve();
+      expect(await returned).toBe('captured read');
+      expect((await core!).failures).toEqual([]);
+      expect((await hookCompletion(owner)).failures).toEqual([]);
+      expect(nativeFs.existsSync(fixtureDirectory(owner))).toBe(false);
+    }));
+
+    it.each(['sync', 'async'] as const)('fixture read ownership preserves original %s failure through its rejecting claim', async (kind) => runFixtureBody(async () => {
+      const owner = await sentinelOwner(), original = new Error('Original read failure.');
+      registerExpected(owner, [original]);
+      if (kind === 'sync') expect(() => ownFixtureRead(owner, () => { throw original; })).toThrow(original);
+      else {
+        const actual = Promise.reject(original);
+        const returned = ownFixtureRead(owner, () => actual);
+        expect(returned).toBe(actual);
+        await expect(returned).rejects.toBe(original);
+      }
+      const record = await coreCompletion(owner);
+      expect(record.failures).toEqual([{ stage: 'work', error: original }]);
+      expect(record.error).toBe(original);
+      await acknowledgeExpected(owner, original);
+      expect((await hookCompletion(owner)).failures).toEqual([]);
+    }));
+
+    it.each(['before', 'after'] as const)('fixture read ownership refuses invocation when registration fails %s insertion', async (point) => runFixtureBody(async () => {
+      const owner = await sentinelOwner(), original = new Error('Original read registration failure.');
+      let starts = 0;
+      const push = owner.operations.push.bind(owner.operations);
+      owner.operations.push = (...pending) => { if (point === 'after') push(...pending); throw original; };
+      expect(() => ownFixtureRead(owner, () => { starts++; return Promise.resolve('unexpected'); })).toThrow(original);
+      expect(starts).toBe(0);
+      const record = await coreCompletion(owner);
+      expect(record.failures).toEqual(point === 'after' ? [{ stage: 'work', error: original }] : []);
+      expect((await hookCompletion(owner)).failures).toEqual(record.failures);
+    }));
+
+    it('fixture read ownership keeps late body lifetime separate from manual core completion', async () => runFixtureBody(async () => {
+      const original = fixtureOwner(), owner = await sentinelOwner(), bodyGate = deferred(), reached = deferred();
+      const file = path.join(fixtureDirectory(owner), 'body-read.txt');
+      await fs.writeFile(file, 'original body');
+      const actual = observe(owner, 'body', async () => {
+        expect(await ownFixtureRead(owner, () => fs.readFile(file, 'utf8'))).toBe('original body');
+        await cleanupFixture(owner);
+        reached.resolve();
+        await bodyGate.promise;
+      });
+      activeOwner = owner;
+      try {
+        await Promise.race([reached.promise, actual.then(() => { throw new Error('Body settled before its continuation.'); })]);
+        expect(owner.complete).toBe(false);
+        expect(() => admitOwner()).toThrow('Previous producer fixture owner is unfinished');
+      } finally {
+        bodyGate.resolve();
+        try { await actual; expect((await hookCompletion(owner)).failures).toEqual([]); }
+        finally { activeOwner = original; }
+      }
+    }));
+
+    it('fixture read ownership retains unrelated mandatory cleanup failures', async () => runFixtureBody(async () => {
+      const owner = await sentinelOwner(), original = new Error('Original rejected read.'), cleanup = new Error('Original cleanup failure.');
+      registerExpected(owner, [original]);
+      owner.teardown.unshift(() => { throw cleanup; });
+      await expect(ownFixtureRead(owner, () => Promise.reject(original))).rejects.toBe(original);
+      const record = await coreCompletion(owner);
+      expect(record.failures).toEqual([{ stage: 'work', error: original }, { stage: 'teardown', error: cleanup }]);
+      await expect(acknowledgeExpected(owner, record.error)).rejects.toThrow();
+      expect((await hookCompletion(owner)).failures).toEqual(record.failures);
+    }));
 
     it.each([
       { label: 'ready true absent error', result: { content: [{ type: 'text', text: '{"ready":true}' }] }, ready: true, isError: 'absent', error: 'none' },
