@@ -4,10 +4,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { reportVerdict } from './prompt-codec-behavior-verdict.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const out = path.join(root, 'docs/ci-efficiency/behavior-value');
+const outputIndex=process.argv.indexOf('--output-dir');
+if(outputIndex>=0 && (!process.argv[outputIndex+1] || process.argv[outputIndex+1].startsWith('--'))) throw new Error('--output-dir requires a directory');
+const out=outputIndex<0 ? path.join(root,'docs/ci-efficiency/behavior-value') : path.resolve(process.argv[outputIndex+1] || '');
+const finalSubset=process.argv.includes('--final-subset');
+const refinement=finalSubset || process.argv.includes('--refine');
+if (!refinement && fs.existsSync(path.join(out,'results.json'))) throw new Error('Refusing to overwrite receipts; use --output-dir with a fresh directory');
 const rel = 'src/renderer/features/agents/chat';
 const original = fs.readFileSync(path.join(root, rel, 'prompt-codec.ts'), 'utf8');
 const tests = fs.readFileSync(path.join(root, rel, 'prompt-codec.test.ts'), 'utf8');
@@ -39,10 +46,14 @@ const variants = [...controls, ...faults.map(([id, from, to]) => {
 const deps = process.env.CODEC_NODE_MODULES || path.join(root, 'node_modules');
 if (!fs.existsSync(path.join(deps, 'vitest/vitest.mjs'))) throw new Error('Set CODEC_NODE_MODULES to existing dependencies; no install');
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'codec-value-'));
+process.on('exit',()=>fs.rmSync(sandbox,{recursive:true,force:true}));
 fs.cpSync(path.join(root, 'src'), path.join(sandbox, 'src'), { recursive: true });
 fs.cpSync(path.join(root, 'test'), path.join(sandbox, 'test'), { recursive: true });
 fs.symlinkSync(path.resolve(deps), path.join(sandbox, 'node_modules'), 'dir');
 const config = path.join(sandbox, 'vitest.config.mjs');
+const integrityFile=path.join(sandbox,'integrity.json');
+const integrityReporter=path.join(sandbox,'integrity-reporter.mjs');
+fs.writeFileSync(integrityReporter,`import fs from 'node:fs'; export default class { onTestRunEnd(modules,errors,reason) { fs.writeFileSync(${JSON.stringify(integrityFile)},JSON.stringify({errors,reason})); } }`);
 fs.writeFileSync(config, `export default ${JSON.stringify({ root: sandbox, oxc: { jsx: {runtime: 'automatic'} }, test: { globals: true, mockReset: true, restoreMocks: true, environment: 'jsdom', setupFiles: ['./test/setup-renderer.ts'], maxWorkers: 1, fileParallelism: false } })}`);
 const witness = `import {it} from 'vitest';
 import fs from 'node:fs';
@@ -64,47 +75,54 @@ it('public differential witnesses (observations only)',()=>{
 fs.writeFileSync(path.join(sandbox, rel, 'behavior-witness.test.ts'), witness);
 let report = { schemaVersion: 1, base: 'f5c566f89e093f4cb9322cc59b37de7ee2798331', createdAt: new Date().toISOString(), runtime: {node: process.version, platform:process.platform, arch:process.arch, vitest:JSON.parse(fs.readFileSync(path.join(deps,'vitest/package.json'))).version}, hashes: {original:sha(original),baselineTests:sha(baselineTests),stronger:sha(stronger),runner:sha(fs.readFileSync(fileURLToPath(import.meta.url)))}, limits: {mutants:8,subprocesses:90,executionMs:180000,workers:1}, groups, faults: faults.map(([id,from,to])=>({id,from,to})), runs: [], witnesses: {} };
 fs.mkdirSync(out,{recursive:true});
-const finalSubset = process.argv.includes('--final-subset');
-const refinement = finalSubset || process.argv.includes('--refine');
 if (refinement) {
  const currentHashes=report.hashes;
  report=JSON.parse(fs.readFileSync(path.join(out,'results.json'),'utf8'));
+ if(report.hashes.original!==currentHashes.original || report.hashes.baselineTests!==currentHashes.baselineTests) throw new Error('Cannot append phases to changed production/baseline inputs');
  report.refinementHistory=[...(report.refinementHistory||[]),...(report.refinement?[report.refinement]:[])];
  report.refinement={finalSubset,reason:'Refined experimental integer tie/fence assertions; final subset removes unspecified tie direction and numeric array in favor of visible selections',previousHashes:report.hashes};
  report.hashes=currentHashes;
 } else fs.writeFileSync(path.join(out,'predeclared.json'),JSON.stringify({...report,runs:undefined,witnesses:undefined},null,2));
-const setupAttempts = JSON.parse(fs.readFileSync(path.join(out, 'setup-attempts.json'), 'utf8')).runs;
+const setupAttempts = refinement ? (report.setupAttempts || []) : [];
 const priorMs = setupAttempts.reduce((n,r)=>n+r.elapsedMs,0);
 report.setupAttempts = setupAttempts;
 const start = performance.now() - (refinement ? report.executionMs : priorMs);
 let expected = refinement ? report.runs.find(r=>r.id==='original'&&r.mode==='baseline'&&!r.omitted).tests.filter(t=>t.file.endsWith('prompt-codec.test.ts')).map(t=>t.identity) : undefined;
+const focusedNames=[...stronger.matchAll(/\bit\('([^']+)'/g)].map(m=>m[1]);
+if(!focusedNames.length) throw new Error('No named focused tests');
+let consumerExpected=refinement ? report.runs.find(r=>r.id==='original'&&r.mode==='consumer')?.tests.filter(t=>t.status==='passed').map(t=>`${t.file}::${t.identity}`) : undefined;
+const phase=finalSubset?'final-subset':refinement?'stronger-current':'full-current';
+report.phases=[...(report.phases||[]),{phase,startIndex:report.runs.length,hashes:report.hashes,focusedNames}];
 function run(id, mode, omitted) {
  if(report.runs.length+setupAttempts.length>=90 || performance.now()-start>=180000) throw new Error('Execution budget exhausted');
- const json=path.join(sandbox,'result.json'); fs.rmSync(json,{force:true});
+ const json=path.join(sandbox,'result.json'); fs.rmSync(json,{force:true}); fs.rmSync(integrityFile,{force:true});
  const consumer=mode==='consumer';
  const files=consumer ? [`${rel}/PromptMarkdown.test.tsx`] : [`${rel}/prompt-codec.test.ts`, ...(mode==='baseline' && !omitted ? [`${rel}/behavior-witness.test.ts`] : [])];
- const args=[path.join(deps,'vitest/vitest.mjs'),'run','--config',config,'--maxWorkers=1','--no-file-parallelism','--reporter=json','--outputFile',json,...files];
+ const args=[path.join(deps,'vitest/vitest.mjs'),'run','--config',config,'--maxWorkers=1','--no-file-parallelism','--reporter=json','--reporter',integrityReporter,'--outputFile',json,...files];
  if(omitted) args.push('--testNamePattern',`^(?!.*(?:${groups[omitted].join('|')})).*$`);
  const now=performance.now();
  const r=spawnSync(process.execPath,args,{cwd:sandbox,encoding:'utf8',timeout:Math.min(20000,180000-(now-start)),maxBuffer:8*1024*1024});
  const elapsedMs=performance.now()-now;
- let data; try {data=JSON.parse(fs.readFileSync(json,'utf8'));}catch{}
- const assertions=(data?.testResults||[]).flatMap(f=>f.assertionResults.map(t=>({file:path.relative(sandbox,f.name),identity:t.fullName,status:t.status,durationMs:t.duration??null,failures:t.failureMessages||[]})));
- const active=assertions.filter(t=>t.status!=='pending' && t.status!=='skipped');
+ let data; let integrity; try {data=JSON.parse(fs.readFileSync(json,'utf8')); integrity=JSON.parse(fs.readFileSync(integrityFile,'utf8')); data.unhandledErrors=integrity.errors; data.numRuntimeErrorTestSuites=data.testResults.filter(s=>s.message).length;}catch{}
+ const assertions=(Array.isArray(data?.testResults)?data.testResults:[]).flatMap(f=>(Array.isArray(f?.assertionResults)?f.assertionResults:[]).map(t=>({file:typeof f.name==='string'&&fs.existsSync(f.name)?path.relative(fs.realpathSync(sandbox),fs.realpathSync(f.name)):'<invalid-suite>',identity:t?.fullName,status:t?.status,durationMs:t?.duration??null,failures:t?.failureMessages||[]})));
+ const active=assertions.filter(t=>!['pending','skipped','todo'].includes(t.status));
  const codec=active.filter(t=>t.file.endsWith('prompt-codec.test.ts'));
  if(!expected && id==='original'&&mode==='baseline'&&!omitted) {
   expected=codec.map(t=>t.identity);
+  if(expected.length!==55 || new Set(expected).size!==55) throw new Error('Baseline identity manifest must have 55 unique cases');
   for(const name of expected) if(Object.values(groups).filter(prefixes=>prefixes.some(p=>name.includes(p))).length!==1) throw new Error('Ungrouped/ambiguous '+name);
  }
- let identityCheck=true;
- if(!consumer && expected) {
-  const names=mode==='stronger' ? [...expected,'behavior-value: preserves supported strong and emphasis semantics','behavior-value: maps visible selections to slash token and marked text','behavior-value: keeps fenced emphasis visibly literal and unmarked'] : expected.filter(name=>!omitted||!groups[omitted].some(p=>name.includes(p)));
-  identityCheck=JSON.stringify(codec.map(t=>t.identity).sort())===JSON.stringify(names.sort());
+ if(consumer && !consumerExpected && id==='original') {
+  consumerExpected=active.map(t=>`${t.file}::${t.identity}`);
+  if(consumerExpected.length!==10) throw new Error('Expected 10 consumer identities');
  }
- const failed=active.filter(t=>t.status==='failed');
- const assertionOnly=failed.length>0 && failed.every(t=>t.failures.length && t.failures.every(m=>/AssertionError|expected .* to |expected .*not to /s.test(m)));
- const outcome=r.error?.code==='ETIMEDOUT'?'timeout':!data||!identityCheck||!active.length?'invalid':r.status===0&&failed.length===0?'pass':assertionOnly?'assertion-kill':'invalid';
- const row={id,mode,omitted:omitted||null,elapsedMs,exitCode:r.status,outcome,identityCheck,activeCount:active.length,codecCount:codec.length,tests:assertions,diagnostic:outcome==='invalid'?{output:(r.stderr+r.stdout).slice(-5000),suites:data?.testResults,unhandled:data?.unhandledErrors}:undefined};
+ const codecNames=mode==='stronger' ? [...(expected||[]),...focusedNames] : (expected||[]).filter(name=>!omitted||!groups[omitted].some(p=>name.includes(p)));
+ const expectedIdentities=consumer ? (consumerExpected||[]) : codecNames.map(name=>`${rel}/prompt-codec.test.ts::${name}`);
+ if(mode==='baseline'&&!omitted) expectedIdentities.push(`${rel}/behavior-witness.test.ts::public differential witnesses (observations only)`);
+ const verdict=r.error?.code==='ETIMEDOUT' ? {outcome:'timeout',reason:'process timeout'} : !integrity || !['passed','failed'].includes(integrity.reason) ? {outcome:'invalid',reason:'missing or interrupted run-end integrity receipt'} : reportVerdict(data,r.status,assertions,expectedIdentities);
+ const outcome=verdict.outcome;
+ const identityCheck=JSON.stringify(active.map(t=>`${t.file}::${t.identity}`).sort())===JSON.stringify([...expectedIdentities].sort());
+ const row={id,mode,phase,expectedIdentities,verdict,reporter:data,integrity,omitted:omitted||null,elapsedMs,exitCode:r.status,outcome,identityCheck,activeCount:active.length,codecCount:codec.length,tests:assertions,diagnostic:outcome==='invalid'?{output:(r.stderr+r.stdout).slice(-5000),suites:data?.testResults,unhandled:data?.unhandledErrors}:undefined};
  report.runs.push(row);
  if(mode==='baseline'&&!omitted&&fs.existsSync(path.join(sandbox,'witness.json'))) { report.witnesses[id]=JSON.parse(fs.readFileSync(path.join(sandbox,'witness.json'),'utf8'));fs.rmSync(path.join(sandbox,'witness.json')); }
  console.log(`${id} ${mode} ${omitted||'all'}: ${outcome} (${active.length}, ${Math.round(elapsedMs)}ms)`);

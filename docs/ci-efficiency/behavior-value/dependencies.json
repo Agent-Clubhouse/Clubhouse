@@ -1,5 +1,5 @@
 {
-  "overlay": "/tmp/codec-audit-VUZtL9/node_modules",
+  "overlay": "<private-overlay>/node_modules",
   "packages": {
     "vitest": "4.1.12",
     "vite": "8.3.5",

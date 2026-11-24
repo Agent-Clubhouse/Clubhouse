@@ -1,0 +1,1791 @@
+{
+  "schemaVersion": 1,
+  "mode": "offline retained-case evidence only",
+  "provenance": {
+    "rawMilestoneCommit": "c92abd0b81547089fbe2b7ded914b98f90e63aca",
+    "rawMilestonePath": "docs/ci-efficiency/behavior-value/results.json",
+    "sourceSha256": "161f5c8ae9f5d82c707fde4a39d9cad794dac1f7f2b36c63713ff859f76934d2",
+    "rawMilestoneSha256": "b2c224873dbb360342a65690e948fe28cd486bc01d91dac88a083f8af132edc6"
+  },
+  "unknowns": [
+    "All 86 valid historical runs omit raw suite status/message, aggregate reporter counters and unhandled-error collection. Global suite/runtime integrity cannot be reconstructed. Future strict runner captures and requires this metadata."
+  ],
+  "errors": [],
+  "runs": [
+    {
+      "index": 0,
+      "phase": "initial",
+      "id": "original",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 1,
+      "phase": "initial",
+      "id": "original",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 2,
+      "phase": "initial",
+      "id": "original",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 3,
+      "phase": "initial",
+      "id": "original",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 4,
+      "phase": "initial",
+      "id": "original",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 5,
+      "phase": "initial",
+      "id": "original",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 6,
+      "phase": "initial",
+      "id": "original",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 7,
+      "phase": "initial",
+      "id": "original",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 8,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 9,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 10,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 11,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 12,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 13,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 14,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 15,
+      "phase": "initial",
+      "id": "equivalent-control",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 16,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 18,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 20,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 21,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 22,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 23,
+      "phase": "initial",
+      "id": "exact-gate",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 24,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 25,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 26,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 27,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 28,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 29,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 30,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 31,
+      "phase": "initial",
+      "id": "default-exact",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "PromptMarkdown renders repeated numbering as one ordered list",
+          "headers": [
+            "AssertionError: expected  to have a length of 2 but got +0"
+          ]
+        },
+        {
+          "identity": "PromptMarkdown renders bold inside a list item",
+          "headers": [
+            "AssertionError: expected  to have a length of 2 but got +0"
+          ]
+        },
+        {
+          "identity": "PromptMarkdown renders mixed bullet markers as a list",
+          "headers": [
+            "AssertionError: expected null not to be null"
+          ]
+        },
+        {
+          "identity": "PromptMarkdown renders a continuation line inside its list item",
+          "headers": [
+            "AssertionError: expected  to have a length of 1 but got +0"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 32,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 33,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 34,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 35,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 36,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 37,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 38,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        },
+        {
+          "identity": "behavior-value: preserves supported strong and emphasis semantics",
+          "headers": [
+            "AssertionError: expected [] to deeply equal [ 'strong' ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 39,
+      "phase": "initial",
+      "id": "dropped-marks",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "PromptMarkdown renders bold inside a list item",
+          "headers": [
+            "AssertionError: expected [] to deeply equal [ 'Fix', 'Test' ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 40,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 41,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 42,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 43,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 44,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 45,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 46,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: maps every visible character boundary through cached syntax",
+          "headers": [
+            "AssertionError: expected [ 5, 6, 7, 8, 9, 10, 13, 14, 15, 16 ] to deeply equal [ 4, 5, 6, 7, 8, 9, 12, 13, 14, 15 ]"
+          ]
+        },
+        {
+          "identity": "behavior-value: chooses the earlier text position for an equally near source boundary",
+          "headers": [
+            "AssertionError: expected 1 to be 2 // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 47,
+      "phase": "initial",
+      "id": "cached-position",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 48,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 49,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 50,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 51,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 52,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 53,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 54,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: chooses the earlier text position for an equally near source boundary",
+          "headers": [
+            "AssertionError: expected 4 to be 2 // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 55,
+      "phase": "initial",
+      "id": "boundary-tie",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 56,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 57,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 58,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 59,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 60,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 61,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 62,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 63,
+      "phase": "initial",
+      "id": "numbering",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 64,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "baseline",
+      "omitted": null,
+      "activeCount": 56,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 65,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "baseline",
+      "omitted": "preservation",
+      "activeCount": 21,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 66,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "baseline",
+      "omitted": "structure",
+      "activeCount": 51,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 67,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "baseline",
+      "omitted": "exact",
+      "activeCount": 48,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 68,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "baseline",
+      "omitted": "marks",
+      "activeCount": 46,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 69,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "baseline",
+      "omitted": "mapping",
+      "activeCount": 54,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 70,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 71,
+      "phase": "initial",
+      "id": "fence-literal",
+      "mode": "consumer",
+      "omitted": null,
+      "activeCount": 10,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 72,
+      "phase": "experimental-integer-fence",
+      "id": "original",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 73,
+      "phase": "experimental-integer-fence",
+      "id": "equivalent-control",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 74,
+      "phase": "experimental-integer-fence",
+      "id": "exact-gate",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected '8. a\\n9. b\\n   6. child\\n10. c' to be '8. a\\n40. b\\n    6. child\\n100. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "headers": [
+            "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "headers": [
+            "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "headers": [
+            "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- a\\n* b\"",
+          "headers": [
+            "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "headers": [
+            "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "headers": [
+            "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 75,
+      "phase": "experimental-integer-fence",
+      "id": "default-exact",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '8. a\\n40. b\\n    6. child\\n100. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 76,
+      "phase": "experimental-integer-fence",
+      "id": "dropped-marks",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: beta 'word' \"quote\" beta \"quote\"\n9. alpha intraword 'word' 'word'\n10. \"quote\" intraword \"quote\" tail beta x:y tail\nbeta beta: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        },
+        {
+          "identity": "behavior-value: preserves supported strong and emphasis semantics",
+          "headers": [
+            "AssertionError: expected [] to deeply equal [ 'strong' ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 77,
+      "phase": "experimental-integer-fence",
+      "id": "cached-position",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: maps every visible character boundary through cached syntax",
+          "headers": [
+            "AssertionError: expected [ 5, 6, 7, 8, 9, 10, 13, 14, 15, 16 ] to deeply equal [ 4, 5, 6, 7, 8, 9, 12, 13, 14, 15 ]"
+          ]
+        },
+        {
+          "identity": "behavior-value: chooses the earlier text position for an equally near source boundary",
+          "headers": [
+            "AssertionError: expected 2 to be 1 // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 78,
+      "phase": "experimental-integer-fence",
+      "id": "boundary-tie",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: chooses the earlier text position for an equally near source boundary",
+          "headers": [
+            "AssertionError: expected 3 to be 2 // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 79,
+      "phase": "experimental-integer-fence",
+      "id": "numbering",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "restricted prompt codec is stable for subset source \"7. first\\n8. second\\n   3. nested\\n9. last\"",
+          "headers": [
+            "AssertionError: expected '8. first\\n9. second\\n   4. nested\\n10…' to be '7. first\\n8. second\\n   3. nested\\n9.…' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec normalizes numbered siblings deterministically",
+          "headers": [
+            "AssertionError: expected '9. a\\n10. b\\n    7. child\\n11. c' to be '8. a\\n9. b\\n   6. child\\n10. c' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "restricted prompt codec keeps irregular numbering exactly for the composer",
+          "headers": [
+            "AssertionError: expected 'paragraph' to be 'ordered_list' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "uses parent marker widths for nesting and continuation, compatible with marked",
+          "headers": [
+            "AssertionError: expected '10. parent\\n    - nested\\n11. next\\n …' to be '9. parent\\n   - nested\\n10. next\\n   …' // Object.is equality"
+          ]
+        },
+        {
+          "identity": "property: normalized non-crossing documents round-trip with paragraphs, breaks and nested lists",
+          "headers": [
+            "AssertionError: seed case 0: **beta** ***'word'*** \"quote\" *beta* **\"quote\"**\n10. *alpha* **intraword** ***'word'*** 'word'\n11. \"quote\" *intraword* **\"quote\"** ***tail*** beta *x:y* **tail**\n*beta* **beta**: expected [ 'doc', null, [ …(3) ] ] to deeply equal [ 'doc', null, [ …(3) ] ]"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 80,
+      "phase": "experimental-integer-fence",
+      "id": "fence-literal",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 59,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: keeps fenced emphasis visibly literal and unmarked",
+          "headers": [
+            "AssertionError: expected 'literal' to be '**literal**' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 81,
+      "phase": "shipped",
+      "id": "original",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 82,
+      "phase": "shipped",
+      "id": "equivalent-control",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 83,
+      "phase": "shipped",
+      "id": "cached-position",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: maps visible selections to slash token and marked text",
+          "headers": [
+            "AssertionError: expected 'co' to be '/co' // Object.is equality"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 84,
+      "phase": "shipped",
+      "id": "boundary-tie",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "pass",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": []
+    },
+    {
+      "index": 85,
+      "phase": "shipped",
+      "id": "fence-literal",
+      "mode": "stronger",
+      "omitted": null,
+      "activeCount": 58,
+      "outcome": "assertion-kill",
+      "namesCountsExitAndKnownAssertions": true,
+      "globalSuiteRuntimeIntegrity": "unknown-not-retained",
+      "failureReasons": [
+        {
+          "identity": "behavior-value: keeps fenced emphasis visibly literal and unmarked",
+          "headers": [
+            "AssertionError: expected 'literal' to be '**literal**' // Object.is equality"
+          ]
+        }
+      ]
+    }
+  ],
+  "findings": {
+    "baseKills": [
+      "exact-gate",
+      "default-exact",
+      "dropped-marks",
+      "numbering"
+    ],
+    "finalNewKills": [
+      "cached-position",
+      "fence-literal"
+    ],
+    "finalTie": "survives; fractional and integer exploratory direction assertions excluded",
+    "staleExperimentalOnly": [
+      "full numeric mapping array",
+      "fractional tie-direction assertion",
+      "integer tie-direction assertion"
+    ],
+    "subprocesses": 88,
+    "elapsedMs": 61957.950374,
+    "strictGlobalAcceptance": "deferred: missing historical metadata"
+  }
+}

@@ -12,7 +12,7 @@
       "activeCount": 0,
       "codecCount": 0,
       "tests": [],
-      "diagnostic": "Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{ jsx: 'automatic' }`\nJSON report written to /var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-Uyo1Ez/result.json\n"
+      "diagnostic": "Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{ jsx: 'automatic' }`\nJSON report written to <sandbox>/result.json\n"
     },
     {
       "id": "original",
@@ -26,7 +26,7 @@
       "codecCount": 0,
       "tests": [],
       "diagnostic": {
-        "output": "JSON report written to /var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-ePlora/result.json\n",
+        "output": "JSON report written to <sandbox>/result.json\n",
         "suites": [
           {
             "assertionResults": [],
@@ -34,7 +34,7 @@
             "endTime": 1795486718331,
             "status": "failed",
             "message": "Failed to resolve import \"prosemirror-model\" from \"src/renderer/features/agents/chat/prompt-codec.ts\". Does the file exist?",
-            "name": "/private/var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-ePlora/src/renderer/features/agents/chat/behavior-witness.test.ts"
+            "name": "<sandbox>/src/renderer/features/agents/chat/behavior-witness.test.ts"
           },
           {
             "assertionResults": [],
@@ -42,7 +42,7 @@
             "endTime": 1795486718331,
             "status": "failed",
             "message": "Failed to resolve import \"prosemirror-model\" from \"src/renderer/features/agents/chat/prompt-codec.ts\". Does the file exist?",
-            "name": "/private/var/folders/gc/njdn7vz54s7bcppxdlnpf51m0000gn/T/codec-value-ePlora/src/renderer/features/agents/chat/prompt-codec.test.ts"
+            "name": "<sandbox>/src/renderer/features/agents/chat/prompt-codec.test.ts"
           }
         ]
       }
