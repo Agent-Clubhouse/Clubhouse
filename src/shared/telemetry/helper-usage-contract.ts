@@ -231,6 +231,8 @@ export const USAGE_SOURCES = [
   'summed_calls',
   /** The difference between two of the provider's running totals, taken by us (a provider that reports no per-turn figure). */
   'cumulative_delta',
+  /** The driver declared no source and isn't one whose method is known: the figures are kept, how they were made is not claimed. */
+  'unknown',
 ] as const;
 export type UsageSource = (typeof USAGE_SOURCES)[number];
 
