@@ -8,6 +8,7 @@ import { ATTR, BUILTIN_THEME_IDS, SETTINGS_KEYS, countBucket } from '../../share
 import { tel } from './facade';
 import type { HelperRouting } from '../../shared/helper-routing';
 import { modelFamily } from './spawn-telemetry';
+import { providerTelemetryCode, type ProviderTelemetryCode } from '../../shared/providers/descriptors';
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];
 
@@ -38,8 +39,8 @@ function quotaAge(asOf: string | null | undefined, at: string): 'fresh' | 'under
   return age < 5 * 60_000 ? 'fresh' : age <= 15 * 60_000 ? 'under_15m' : 'over_15m';
 }
 
-function knownCli(cli: string | null): 'claude-code' | 'codex-cli' | 'copilot-cli' | 'other' {
-  return cli === 'claude-code' || cli === 'codex-cli' || cli === 'copilot-cli' ? cli : 'other';
+function knownCli(cli: string | null): ProviderTelemetryCode | 'other' {
+  return providerTelemetryCode(cli);
 }
 
 const EFFORT_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);

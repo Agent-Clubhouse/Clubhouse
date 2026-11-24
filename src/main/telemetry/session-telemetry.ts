@@ -8,6 +8,7 @@
  */
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { isTelemetryActive, tel } from './facade';
+import { providerTelemetryCode } from '../../shared/providers/descriptors';
 
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 type Runtime = Parameters<typeof ATTR.agentRuntime>[0];
@@ -17,7 +18,7 @@ export type SessionStaleReason = Parameters<typeof ATTR.sessionStaleReason>[0];
 export type SessionResumeResult = Parameters<typeof ATTR.sessionResumeResult>[0];
 
 function orchestratorOf(id: string | undefined): Orchestrator {
-  return id === 'claude-code' || id === 'codex-cli' || id === 'copilot-cli' ? id : 'other';
+  return providerTelemetryCode(id);
 }
 
 function base(orchestratorId: string | undefined, agentId: string): TelAttr[] {

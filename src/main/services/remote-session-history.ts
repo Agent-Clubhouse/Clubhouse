@@ -8,6 +8,8 @@ import { normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-
 import { isShellEnvironmentCached } from '../util/shell';
 import { row } from './remote-details-presentation';
 import { hasC0Control } from '../../shared/ascii-control';
+import { providerDescriptor } from '../../shared/providers/descriptors';
+import { isFeatureOffered, resolveEffectiveFeature } from '../../shared/providers/features';
 
 export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: DurableAgentConfig, cwd: string): Promise<void> {
   if (agent.lastSleep) {
@@ -31,7 +33,8 @@ export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: Dur
   const provider = getProvider(recorded);
   row(c, 'Last CLI', provider?.displayName || recorded);
   if (!provider || !isSessionCapable(provider)) { c.notes.push('The recorded provider does not support reading this historical session on this host.'); return; }
-  if (!['claude-code', 'codex-cli', 'copilot-cli'].includes(provider.id)) {
+  // Passive lookup is established per provider: its descriptor must declare session history.
+  if (!isFeatureOffered(resolveEffectiveFeature({ declarations: providerDescriptor(provider.id)?.features, feature: 'session_history' }))) {
     c.notes.push('Passive historical lookup has not been established for this provider. Usage is unknown.'); return;
   }
   // These built-in readers obtain their root synchronously before their first
