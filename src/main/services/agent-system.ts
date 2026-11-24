@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable } from '../orchestrators';
 import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from './hook-server';
 import * as ptyManager from './pty-manager';
+import { isManagedStartRefused } from './managed-agents/start-refused';
 import { appLog } from './log-service';
 import { recordBreadcrumb } from './breadcrumbs';
 import * as headlessManager from './headless-manager';
@@ -580,10 +581,13 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           );
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : String(err);
-          appLog('core:agent', 'warn', 'Managed setup delivery failed, continuing spawn', {
+          // A refusal (#3792) stops the start: the old files would be wrong, not just stale.
+          const refused = isManagedStartRefused(err);
+          appLog('core:agent', 'warn', refused ? 'Managed setup delivery refused, not spawning' : 'Managed setup delivery failed, continuing spawn', {
             meta: { agentId: params.agentId, error: errorMessage },
           });
           broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
+          if (refused) throw err;
         }
       }
     }

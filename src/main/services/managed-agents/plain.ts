@@ -20,6 +20,8 @@ import { ManagedError, type ManagedAgentsService } from './service';
 import { beforeManagedDir, firstStartName } from './before-managed';
 import { mcpBackupPath } from './mcp-backup';
 import { EXCLUDES_MANIFEST, instructionsFileRel, mcpServersOf, renderManagedInstructions, resolveManagedSetup, SKILLS_MANIFEST } from './delivery';
+import { antigravityPlainResults, writeAntigravityInstructionsFile } from './antigravity-instructions';
+import { ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
 
 /** The key the Clubhouse bridge has in every JSON MCP file. Every start writes it again, managed or not (D69). */
 const BRIDGE_KEY = 'clubhouse';
@@ -138,6 +140,12 @@ interface PlainState {
   instructionsResult: string | null;
   mcpResult: string | null;
   manifests: string[];
+  /**
+   * Antigravity (#3792): Clubhouse wrote only a block in AGENTS.md, so the
+   * file is written as bytes. `restore` is the file without the block;
+   * `keep` takes only the markers out, leaving the delivered text as the person's.
+   */
+  antigravity?: { current: Buffer; restore: Buffer | null; keep: Buffer };
 }
 
 async function readState(deps: PlainDeps, projectPath: string, agentId: string): Promise<PlainState> {
@@ -163,9 +171,21 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
   const changedSince = instrNow !== null && !written.map(lf).includes(lf(instrNow));
   const added = instrNow !== null && changedSince ? linesAddedSince(written, instrNow) : [];
   const instructionsResult = instrBefore !== null && added !== null ? withAddedLines(instrBefore, added) : null;
-  const instructionsNote = instrCopy && added === null
+  let instructionsNote = instrCopy && added === null
     ? `${instructionsFileRel(provider)} changed too much since Clubhouse wrote it to tell which lines were added, so the earlier file can't come back here without losing them. It is kept at ${shown(instrCopy)}.`
     : undefined;
+  let antigravity: PlainState['antigravity'];
+  let agyRestoreText: string | null = null;
+  if (provider.id === ANTIGRAVITY_PROVIDER_ID) {
+    // Text outside Clubhouse's block was never taken, so it is already the person's current file.
+    const results = await antigravityPlainResults(worktree);
+    instructionsNote = undefined;
+    if (results) {
+      const restore = !instrCopy ? null : results.outside.length > 0 ? results.outside : instrBefore !== null ? Buffer.from(instrBefore, 'utf-8') : null;
+      antigravity = { current: results.current, restore, keep: results.unwrapped };
+      agyRestoreText = restore?.toString('utf-8') ?? null;
+    }
+  }
 
   // ── MCP file (JSON-format CLIs; Codex gets its servers as launch flags) ──
   let mcp: ManagedPlainPreview['mcp'] = null;
@@ -229,16 +249,19 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
   }
 
   // Everything the switch would write, and what it was worked out from: a setup or file change since the preview refuses it.
-  const token = createHash('sha256').update(JSON.stringify([instrNow, instrCopy, instrBefore, instructionsResult, mcpNowRaw, mcp?.before?.copy ?? null, mcpCopyRaw, mcpResult])).digest('hex').slice(0, 32);
+  const token = createHash('sha256').update(JSON.stringify([instrNow, instrCopy, instrBefore, instructionsResult, agyRestoreText, mcpNowRaw, mcp?.before?.copy ?? null, mcpCopyRaw, mcpResult])).digest('hex').slice(0, 32);
+  const agyResult = provider.id === ANTIGRAVITY_PROVIDER_ID;
   return {
-    agent, provider, worktree, instructionsResult, mcpResult, manifests,
+    agent, provider, worktree, instructionsResult, mcpResult, manifests, ...(antigravity && { antigravity }),
     preview: {
       instructions: {
         file: instructionsFileRel(provider),
         exists: instrNow !== null,
-        changedSince,
-        addedLines: (added ?? []).reduce((n, r) => n + r.length, 0),
-        before: instrCopy && instructionsResult !== null ? { copy: shown(instrCopy), result: instructionsResult } : null,
+        changedSince: agyResult ? false : changedSince,
+        addedLines: agyResult ? 0 : (added ?? []).reduce((n, r) => n + r.length, 0),
+        before: agyResult
+          ? (instrCopy && agyRestoreText !== null ? { copy: shown(instrCopy), result: agyRestoreText } : null)
+          : instrCopy && instructionsResult !== null ? { copy: shown(instrCopy), result: instructionsResult } : null,
         ...(instructionsNote && { note: instructionsNote }),
       },
       mcp,
@@ -299,7 +322,16 @@ export async function switchToPlain(deps: PlainDeps, projectPath: string, agentI
     // telemetry-exempt: collected and reported to the person below, with the reason.
     await fsp.rm(path.join(worktree, rel), { force: true }).catch((err: unknown) => { failures.push(`Its skills list ${rel} couldn't be removed (${reason(err)}).`); });
   }
-  if (choice.restoreInstructions && state.instructionsResult !== null) {
+  if (state.antigravity) {
+    // Brought back: AGENTS.md without Clubhouse's block. Kept: the block's text stays as the person's, without its markers.
+    const bytes = choice.restoreInstructions && state.antigravity.restore ? state.antigravity.restore : state.antigravity.keep;
+    try {
+      await writeAntigravityInstructionsFile(worktree, state.antigravity.current, bytes);
+    } catch (err) {
+      // telemetry-exempt: collected and reported to the person below, with the reason.
+      failures.push(`Its instructions file couldn't be written (${reason(err)}).`);
+    }
+  } else if (choice.restoreInstructions && state.instructionsResult !== null && provider.id !== ANTIGRAVITY_PROVIDER_ID) {
     try {
       await provider.writeInstructions(worktree, state.instructionsResult);
     } catch (err) {
