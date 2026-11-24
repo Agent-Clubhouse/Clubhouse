@@ -19,7 +19,8 @@
  *   a `baseline` (`lifetime` for a resumed session). They are a cross-check,
  *   not more use: never add them to the turn lines.
  *
- * Role and parent come from the last read of the agent's config. An agent
+ * Role, parent and project id come from the last read of the agent's config
+ * and the project list; a line never carries a path. An agent
  * that read doesn't know yet is `unknown`, with no parent, and is looked up
  * again on its next line. An agent running in a
  * terminal publishes no chat events, so it logs nothing here.
@@ -31,6 +32,7 @@ import type { ChatDriverId } from '../../../shared/chat/capabilities';
 import { RunUsageTracker, type UsageSample } from '../../telemetry/helper-usage-accounting';
 import { appLog } from '../log-service';
 import { knownAgent } from '../app-event-sources';
+import * as projectStore from '../project-store';
 import { isDispatcherIdentityAgentId } from '../dispatcher/dispatcher-service';
 import { onChatEvent } from './chat-event-bus';
 
@@ -44,7 +46,8 @@ export type UsageRole = 'dispatcher' | 'helper' | 'orchestrator' | 'quick' | 'ag
 export interface UsageAgentInfo {
   role: UsageRole;
   parentAgentId?: string;
-  projectPath?: string;
+  /** The Clubhouse project id: never its path, which holds the user's name. */
+  projectId?: string;
 }
 
 interface Deps {
@@ -72,6 +75,17 @@ let hourStart = 0;
 let linesThisHour = 0;
 let dropped = 0;
 let stopListening: (() => void) | null = null;
+/** Project ids by path key, so a line names the project without its path. */
+let projectIds = new Map<string, string>();
+
+async function refreshProjectIds(): Promise<void> {
+  try {
+    const projects = await projectStore.list();
+    projectIds = new Map(projects.map((p) => [projectStore.projectPathKey(p.path), p.id]));
+  } catch {
+    // Lines go without a project id until the next read.
+  }
+}
 
 function now(): number {
   return deps?.now() ?? Date.now();
@@ -104,7 +118,8 @@ function agentInfo(agentId: string): UsageAgentInfo {
   const known = knownAgent(agentId);
   if (!known) return { role: 'unknown' };
   const role: UsageRole = known.quick ? 'quick' : known.parentAgentId ? 'helper' : known.orchestrates ? 'orchestrator' : 'agent';
-  return { role, ...(known.parentAgentId && { parentAgentId: known.parentAgentId }), projectPath: known.projectPath };
+  const projectId = projectIds.get(projectStore.projectPathKey(known.projectPath));
+  return { role, ...(known.parentAgentId && { parentAgentId: known.parentAgentId }), ...(projectId && { projectId }) };
 }
 
 function who(s: SessionState): Record<string, unknown> {
@@ -114,7 +129,7 @@ function who(s: SessionState): Record<string, unknown> {
     agentId: s.agentId,
     role: s.info.role,
     ...(s.info.parentAgentId && { parentAgentId: s.info.parentAgentId }),
-    ...(s.info.projectPath && { projectPath: s.info.projectPath }),
+    ...(s.info.projectId && { projectId: s.info.projectId }),
     sessionId: s.sessionId,
     ...(s.nativeSessionId && { nativeSessionId: s.nativeSessionId }),
     resumed: s.resumed,
@@ -205,7 +220,13 @@ export function logUsageChatEvent(event: ChatEvent): void {
 /** Start logging. Idempotent. */
 export function startUsageAttributionLog(): void {
   if (stopListening) return;
-  stopListening = onChatEvent(logUsageChatEvent);
+  void refreshProjectIds();
+  const stopProjects = projectStore.onProjectsChanged(() => void refreshProjectIds());
+  const stopChat = onChatEvent(logUsageChatEvent);
+  stopListening = () => {
+    stopChat();
+    stopProjects();
+  };
 }
 
 /** For tests: the agent lookup, where lines go, and the clock. */
@@ -217,6 +238,7 @@ export function _resetUsageAttributionForTesting(): void {
   stopListening?.();
   stopListening = null;
   sessions.clear();
+  projectIds = new Map();
   hourStart = 0;
   linesThisHour = 0;
   dropped = 0;

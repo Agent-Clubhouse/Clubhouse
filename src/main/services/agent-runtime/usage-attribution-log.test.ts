@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../dispatcher/dispatcher-service', () => ({ isDispatcherIdentityAgentId: () => false }));
-vi.mock('../app-event-sources', () => ({ knownAgent: () => undefined }));
+const registry = vi.hoisted(() => ({ known: undefined as { projectPath: string; parentAgentId?: string } | undefined }));
+vi.mock('../app-event-sources', () => ({ knownAgent: () => registry.known }));
+vi.mock('../project-store', () => ({
+  list: async () => [{ id: 'proj-1', path: '/Users/someone/src/app' }],
+  projectPathKey: (p: string) => p.toLowerCase(),
+  onProjectsChanged: () => () => {},
+}));
 
 import type { ChatEvent } from '../../../shared/chat';
 import { appLog } from '../log-service';
@@ -21,8 +27,8 @@ let lines: Array<{ msg: string; meta: Record<string, unknown> }>;
 let now: number;
 let seq = 0;
 const agents: Record<string, UsageAgentInfo> = {
-  helper: { role: 'helper', parentAgentId: 'orch', projectPath: '/p' },
-  orch: { role: 'orchestrator', projectPath: '/p' },
+  helper: { role: 'helper', parentAgentId: 'orch', projectId: 'proj-1' },
+  orch: { role: 'orchestrator', projectId: 'proj-1' },
 };
 
 beforeEach(() => {
@@ -185,5 +191,23 @@ describe('usage attribution log', () => {
     const ring = createDiagnosticsRing({ now: () => now });
     for (const { msg, meta } of lines) ring.note({ ns: USAGE_LOG_NS, level: 'info', msg, meta });
     expect(ring.collect().lines).toEqual([]);
+  });
+
+  it('names the project by id and never writes a path', async () => {
+    _resetUsageAttributionForTesting();
+    registry.known = { projectPath: '/Users/someone/src/app', parentAgentId: 'orch' };
+    vi.mocked(appLog).mockClear();
+    startUsageAttributionLog();
+    await new Promise((r) => setTimeout(r, 0));
+    publishChatEvent({ v: 1, agentId: 'h', sessionId: 's', seq: ++seq, ts: now, type: 'session_started', data: { driver: 'codex_app_server', provider: 'codex', cwd: '/Users/someone/src/app/.clubhouse/agents/h', resumed: false, capabilities: {} } } as unknown as ChatEvent);
+    publishChatEvent({ v: 1, agentId: 'h', sessionId: 's', seq: ++seq, ts: now, type: 'turn_started', turnId: 't', data: {} } as unknown as ChatEvent);
+    publishChatEvent({ v: 1, agentId: 'h', sessionId: 's', seq: ++seq, ts: now, type: 'turn_ended', turnId: 't', data: { stopReason: 'end_turn', usage: { input: 1, output: 1 } } } as unknown as ChatEvent);
+    registry.known = undefined;
+    const metas = vi.mocked(appLog).mock.calls.map((c) => c[3]?.meta as Record<string, unknown>);
+    expect(metas[1]).toMatchObject({ role: 'helper', parentAgentId: 'orch', projectId: 'proj-1' });
+    for (const meta of metas) {
+      expect(meta).not.toHaveProperty('projectPath');
+      for (const value of Object.values(meta)) if (typeof value === 'string') expect(value).not.toMatch(/^(\/|[A-Za-z]:[\\/]|~)/);
+    }
   });
 });

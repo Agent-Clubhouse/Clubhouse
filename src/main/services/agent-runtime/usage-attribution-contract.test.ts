@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../dispatcher/dispatcher-service', () => ({ isDispatcherIdentityAgentId: () => false }));
 vi.mock('../app-event-sources', () => ({ knownAgent: () => undefined }));
+vi.mock('../project-store', () => ({ list: async () => [], projectPathKey: (p: string) => p, onProjectsChanged: () => () => {} }));
 
 import type { ChatEvent, ChatEventDraft } from '../../../shared/chat';
 import type { ChatDriverId } from '../../../shared/chat/capabilities';

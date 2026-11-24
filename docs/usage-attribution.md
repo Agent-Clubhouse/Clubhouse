@@ -22,7 +22,7 @@ Each line carries:
 
 | Field | Meaning |
 | --- | --- |
-| `agentId`, `role`, `parentAgentId`, `projectPath` | Who used it. `role` is `dispatcher`, `helper`, `orchestrator`, `quick`, `agent` or `unknown`. `unknown` (with no parent) means the agent config hasn't been read yet; it is looked up again on the next line |
+| `agentId`, `role`, `parentAgentId`, `projectId` | Who used it. The project is named by its Clubhouse id; no line carries a path. `role` is `dispatcher`, `helper`, `orchestrator`, `quick`, `agent` or `unknown`. `unknown` (with no parent) means the agent config hasn't been read yet; it is looked up again on the next line |
 | `sessionId`, `nativeSessionId`, `resumed` | The Clubhouse chat session, the provider's session or thread id, and whether this run continues an earlier native session |
 | `driver`, `provider`, `model`, `effort` | `unknown` when not established. A model change that names no effort (a model without effort levels, or a Codex server reroute) leaves effort `unknown` rather than carrying the earlier one |
 | `kind` | `turn`: one finished turn. `final`: a session's running total when it ends |
