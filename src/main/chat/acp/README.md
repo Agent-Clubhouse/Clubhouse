@@ -65,28 +65,33 @@ public docs. A claim never enables something `initialize` left off, and
 ## What the tests prove
 
 - The protocol, lifecycle and conformance tests run against an in-memory
-  scripted agent built from the schema. `stdio.test.ts` runs a real child
-  process (`testing/stdio-agent.mjs`). Neither is a real ACP agent, and
-  nothing has run on Windows yet.
-- A write that fails after it was made (the agent stopped reading, EPIPE)
-  is proven with the real process: the session ends, the turn stays unknown
-  and nothing is resent.
-- The stdio transport's direct guard (refusing to write once the transport
-  has ended or stdin isn't writable) is checked by reading the source, plus
-  connection and scripted-agent tests of what happens when a transport
-  refuses. No test drives the stdio connector's own guard.
+  scripted agent built from the schema. None of them is a real ACP agent.
+- `stdio-connector.test.ts` drives the stdio connector with a stubbed child
+  process, on every platform:
+  - while stdin isn't writable, or after the transport has ended, `send`
+    throws and nothing is written;
+  - a stdin error after a prompt was written (the agent stopped reading)
+    ends the session once: the turn stays unknown, there's no `turn_ended`,
+    nothing is resent and a later send is refused;
+  - an error or exit after that end changes nothing.
+- `stdio.test.ts` runs a real child process (`testing/stdio-agent.mjs`). Its
+  stop-reading case (EPIPE after a write) runs on POSIX only: on Windows the
+  child closing its stdin didn't make the parent's write fail, so real
+  stop-reading behaviour there is unproven.
 - Prompts have no timeout: an agent that never answers keeps its turn
   running until the session ends.
 
 ## Before registration
 
-A provider driver built on this layer isn't registered until both are done:
+A provider driver built on this layer isn't registered until these are done:
 
-1. A deterministic test of the stdio connector's direct guard: with a
-   stubbed child whose stdin isn't writable, or whose transport has ended,
-   `send` throws and nothing is written.
-2. A caller contract for changing effort when the agent offers no model
-   choice. `setModel` now refuses any model id there, and current callers
+1. Done: a deterministic test of the stdio connector's direct guard and
+   stdin error handling (`stdio-connector.test.ts`).
+2. Open: a real-process check on Windows of an agent that stops reading
+   stdin while it keeps running. What a provider's agent does there decides
+   whether a turn can stay open until the agent exits.
+3. Open: a caller contract for changing effort when the agent offers no
+   model choice. `setModel` refuses any model id there, and current callers
    (the composer's effort menu, Annex) always pass a model id, so effort
    can't be changed for such an agent.
 

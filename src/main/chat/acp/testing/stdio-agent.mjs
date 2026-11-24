@@ -2,7 +2,9 @@
 // ACP v1 schema; not a recording of any real agent. No model, no network.
 //   initialize -> protocol 1; session/new -> "stdio-1";
 //   session/prompt "exit:<n>" exits with code n mid-turn; "stop-reading"
-//   sends one chunk, closes its own stdin and stays alive without answering;
+//   sends one chunk, closes its own stdin and stays alive without answering
+//   (it exits on its own after 15s, so that path is distinguishable from a
+//   20s test timeout);
 //   any other prompt streams its text back in two chunks, split across
 //   writes, then end_turn.
 import { closeSync } from 'node:fs';
@@ -24,7 +26,7 @@ rl.on('line', (line) => {
       process.stdin.destroy();
       // destroy() leaves fd 0 open; closing it is what breaks the pipe.
       closeSync(0);
-      setTimeout(() => process.exit(0), 20_000);
+      setTimeout(() => process.exit(0), 15_000);
       return;
     }
     const chunk = (t) => JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'stdio-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } } } });

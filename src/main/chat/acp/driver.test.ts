@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
+import { pathToFileURL } from 'url';
 import type { ChatDriverId } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
@@ -268,11 +271,15 @@ describe('ACP driver: prompt turns', () => {
 
   it('sends images only when promptCapabilities allows, else a file link', async () => {
     const withImages = await open();
-    await withImages.session.send([{ type: 'image', mimeType: 'image/png', data: 'AAAA', path: '/tmp/a.png' }], 'prompt');
+    // A real absolute path for this platform (a rooted POSIX literal resolves against the drive on Windows).
+    const imagePath = path.join(os.tmpdir(), 'a.png');
+    await withImages.session.send([{ type: 'image', mimeType: 'image/png', data: 'AAAA', path: imagePath }], 'prompt');
     expect((await withImages.agent.nextPrompt()).prompt).toEqual([{ type: 'image', data: 'AAAA', mimeType: 'image/png' }]);
     const without = await open({ initialize: { protocolVersion: 1 } });
-    await without.session.send([{ type: 'image', mimeType: 'image/png', data: 'AAAA', path: '/tmp/a.png' }], 'prompt');
-    expect((await without.agent.nextPrompt()).prompt).toEqual([{ type: 'resource_link', uri: 'file:///tmp/a.png', name: 'a.png', mimeType: 'image/png' }]);
+    await without.session.send([{ type: 'image', mimeType: 'image/png', data: 'AAAA', path: imagePath }], 'prompt');
+    const [linked] = (await without.agent.nextPrompt()).prompt;
+    expect(linked).toEqual({ type: 'resource_link', uri: pathToFileURL(imagePath).href, name: 'a.png', mimeType: 'image/png' });
+    expect(linked.type === 'resource_link' && linked.uri.startsWith('file:///')).toBe(true);
   });
 });
 
