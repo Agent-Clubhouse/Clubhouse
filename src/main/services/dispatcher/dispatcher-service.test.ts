@@ -1451,6 +1451,27 @@ describe('Choose models yourself (#3191)', () => {
     expect(chat()).toMatchObject({ orchestrator: 'codex-cli' });
   });
 
+  it('reports a job whose running session is still on its old provider, from the session, until it restarts', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    runningChat('claude-code');
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
+    const state = await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await settle();
+    // Saved, not applied: the record names the new provider and the session is still on the old one.
+    expect(chat()).toMatchObject({ orchestrator: 'codex-cli' });
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: 'claude-code', work: null });
+    expect(state.models.chat?.provider).toBe('codex-cli');
+    // Saving never stops or restarts it.
+    expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    // Once the session is on the saved provider, nothing is pending.
+    agentRegistry.untrack('durable_2');
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
+    agentRegistry.register('durable_2', { projectPath: chatDir(), cwd: chatDir(), orchestrator: 'codex-cli', runtime: 'pty' });
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
+  });
+
   it('refuses a provider Clubhouse doesn\'t know, a model its CLI doesn\'t list, and a pick while it\'s off, saving nothing', async () => {
     await svc.setDispatcherEnabled(true);
     await expect(svc.setDispatcherModels({ role: 'chat', model: 'opus' })).rejects.toThrow('Turn on Choose models yourself first');

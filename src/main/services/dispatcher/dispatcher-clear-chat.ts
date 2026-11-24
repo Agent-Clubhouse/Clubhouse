@@ -13,6 +13,13 @@
  * wake resumes it and no late session end makes it the resume id again.
  * Clubhouse starts the controller fresh on its own when its conversation fails
  * every turn (dispatcher-work-health).
+ *
+ * A running agent whose saved provider changed (#3191 picks, or Runs on) is
+ * still on the old CLI, which can't take the new one over. Clearing it there
+ * would leave it on the old provider, so both stop it instead and its next
+ * start is on the saved provider, with a new conversation. The controller
+ * starts again idle at once; the chat starts at its next message. Memory,
+ * requests' records and identity stay, as for any clear.
  */
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
@@ -20,7 +27,11 @@ import { getAgentRuntime } from '../agent-runtime';
 import { appLog } from '../log-service';
 import { noteNextStartNotice } from '../agent-runtime/stale-session';
 import { getDispatcherChatPath, getDispatcherPath } from './dispatcher-paths';
-import { getDispatcherAgentId, getDispatcherChatAgentId, prepareDispatcherSessionStart } from './dispatcher-service';
+import { agentRegistry } from '../agent-registry';
+import type { OrchestratorId } from '../../orchestrators';
+import {
+  defaultDispatcherOrchestrator, getDispatcherAgentId, getDispatcherChatAgentId, prepareDispatcherSessionStart, wakeDispatcherController,
+} from './dispatcher-service';
 import { endWaitingRequests, waitingRequests, type WaitingRequests } from './dispatcher-requests';
 import type { ChatEventDataMap } from '../../../shared/chat';
 import type { StartFreshResult, StartFreshScope } from '../../../shared/dispatcher-types';
@@ -38,6 +49,39 @@ export interface ClearChatDeps {
   forgetSession?: (dir: string, agentId: string) => Promise<void>;
   prepareStart?: (dir: string, agentId: string) => Promise<void>;
   verifyPolicy?: (dir: string, agentId: string) => Promise<unknown>;
+  /** The provider its running session is on. */
+  runningProvider?: (agentId: string) => string | undefined;
+  /** The provider its record names for its next start. */
+  savedProvider?: (dir: string, agentId: string) => Promise<string | undefined>;
+  /** Stop a running agent and wait until it has exited. */
+  stopRunning?: (dir: string, agentId: string, provider: string) => Promise<void>;
+}
+
+/** Restarts under way, one per agent, so a second click joins the first rather than stopping or starting twice. */
+const restarting = new Map<string, Promise<unknown>>();
+
+function once<T>(agentId: string, run: () => Promise<T>): Promise<T> {
+  const under = restarting.get(agentId);
+  if (under) return under as Promise<T>;
+  const next = run().finally(() => { if (restarting.get(agentId) === next) restarting.delete(agentId); });
+  restarting.set(agentId, next);
+  return next;
+}
+
+async function savedProviderOf(dir: string, agentId: string): Promise<string | undefined> {
+  return (await agentConfig.getDurableConfig(dir, agentId, { forLaunch: true }))?.orchestrator ?? defaultDispatcherOrchestrator();
+}
+
+async function stopAndWait(dir: string, agentId: string, provider: string): Promise<void> {
+  await agentSystem.killAgent(agentId, dir, provider as OrchestratorId, 'user', { waitForExit: true, throwOnFailure: true });
+}
+
+/** The old provider a running agent is still on, when its record now names another; else null. */
+async function staleProvider(dir: string, agentId: string, deps: ClearChatDeps): Promise<string | null> {
+  const running = (deps.runningProvider ?? ((id) => agentRegistry.get(id)?.orchestrator))(agentId);
+  if (!running) return null;
+  const saved = await (deps.savedProvider ?? savedProviderOf)(dir, agentId);
+  return saved && saved !== running ? running : null;
 }
 
 /** Bumped by every clear, from any surface, so a confirmation read before it goes stale (#3206). */
@@ -57,6 +101,10 @@ async function clearRunning(agentId: string): Promise<void> {
 export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<ClearChatResult> {
   const chatId = (deps.chatAgentId ?? getDispatcherChatAgentId)();
   if (!chatId) throw new Error('The Dispatcher is not set up yet.');
+  return once(chatId, () => clearChatOnce(chatId, deps));
+}
+
+async function clearChatOnce(chatId: string, deps: ClearChatDeps): Promise<ClearChatResult> {
   const dir = getDispatcherChatPath();
   await (deps.verifyPolicy ?? ((d, id) => agentConfig.getDurableConfig(d, id, { forLaunch: true })))(dir, chatId);
   // Before the clear, so a second request confirmed for the same conversation can't run it again.
@@ -64,6 +112,14 @@ export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<Cle
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(chatId)) {
     // The new conversation reads its instructions and memory index as a fresh start does.
     await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, chatId);
+    const stale = await staleProvider(dir, chatId, deps);
+    if (stale) {
+      // Its next message starts a new chat on the saved provider. The record dropped the old CLI's session already; this keeps it so.
+      await (deps.stopRunning ?? stopAndWait)(dir, chatId, stale);
+      await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, chatId);
+      appLog('core:dispatcher', 'info', 'Dispatcher chat cleared by stopping it, for its new provider', { meta: { from: stale } });
+      return { cleared: 'next_start' };
+    }
     await (deps.clearContext ?? clearRunning)(chatId);
     appLog('core:dispatcher', 'info', 'Dispatcher chat cleared', { meta: { running: true } });
     return { cleared: 'now' };
@@ -90,6 +146,22 @@ export interface StartFreshDeps extends ClearChatDeps {
   takeWaiting?: () => WaitingRequests;
   /** End those requests, telling the chat. */
   endWaiting?: (waiting: WaitingRequests) => void;
+  /** Start the stopped controller again, idle. */
+  wakeWork?: () => Promise<void>;
+}
+
+/** Start the controller again after a stop. One that won't start now starts at its next message, so that is logged, not thrown. */
+async function startControllerAgain(deps: StartFreshDeps): Promise<'now' | 'next_start'> {
+  try {
+    await (deps.wakeWork ?? wakeDispatcherController)();
+    return 'now';
+  } catch (err) {
+    // telemetry-exempt: logged; it stays asleep and its next message starts it on the saved provider
+    appLog('core:dispatcher', 'warn', 'Dispatcher controller stopped for its new provider but did not start again', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return 'next_start';
+  }
 }
 
 const WORK_NOTICE: Record<StartFreshReason, string> = {
@@ -129,6 +201,10 @@ async function tell(agentId: string, notice: ChatEventDataMap['notice'], deps: S
 export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: StartFreshDeps = {}): Promise<'now' | 'next_start'> {
   const workId = (deps.workAgentId ?? getDispatcherAgentId)();
   if (!workId) throw new Error('The Dispatcher is not set up yet.');
+  return once(workId, () => startWorkFreshOnce(workId, reason, deps));
+}
+
+async function startWorkFreshOnce(workId: string, reason: StartFreshReason, deps: StartFreshDeps): Promise<'now' | 'next_start'> {
   const dir = getDispatcherPath();
   await (deps.verifyPolicy ?? ((d, id) => agentConfig.getDurableConfig(d, id, { forLaunch: true })))(dir, workId);
   const sessionId = await (deps.workSessionId ?? currentWorkSession)(dir, workId);
@@ -138,13 +214,24 @@ export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: S
   let result: 'now' | 'next_start';
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(workId)) {
     await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
+    const stale = await staleProvider(dir, workId, deps);
     // Taken first: a hand-off that lands during the clear goes to the new conversation and stays under way.
     const waiting = (deps.takeWaiting ?? waitingRequests)();
-    await (deps.clearContext ?? clearRunning)(workId);
-    // Its queue and any open turn went with the old conversation: those requests are told as stopped.
-    (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
-    await (deps.addNotice ?? addRunningNotice)(workId, notice);
-    result = 'now';
+    if (stale) {
+      // Stopped and started again, so it runs on its saved provider: clearing would keep the old CLI.
+      // A stop that fails throws to the caller with nothing ended: it keeps running, still on the old provider.
+      await (deps.stopRunning ?? stopAndWait)(dir, workId, stale);
+      (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
+      (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
+      result = await startControllerAgain(deps);
+      appLog('core:dispatcher', 'info', 'Dispatcher controller stopped for its new provider', { meta: { from: stale, started: result === 'now' } });
+    } else {
+      await (deps.clearContext ?? clearRunning)(workId);
+      // Its queue and any open turn went with the old conversation: those requests are told as stopped.
+      (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
+      await (deps.addNotice ?? addRunningNotice)(workId, notice);
+      result = 'now';
+    }
   } else {
     (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
     result = 'next_start';

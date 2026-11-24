@@ -19,6 +19,8 @@ vi.mock('./dispatcher-service', () => ({
   getDispatcherChatAgentId: () => 'chat',
   getDispatcherAgentId: () => 'work',
   prepareDispatcherSessionStart: vi.fn(async () => undefined),
+  defaultDispatcherOrchestrator: () => 'claude-code',
+  wakeDispatcherController: vi.fn(async () => undefined),
 }));
 
 import * as agentConfig from '../agent-config';
@@ -176,5 +178,121 @@ describe('strict verification before Dispatcher lifecycle writes (#3686)', () =>
     expect(quarantine).not.toHaveBeenCalled();
     expect(forgetSession).not.toHaveBeenCalled();
     expect(prepareStart).not.toHaveBeenCalled();
+  });
+});
+
+describe('a saved provider the running session isn\'t on (#3191)', () => {
+  const moved = { runningProvider: () => 'claude-code', savedProvider: async () => 'codex-cli' };
+
+  it('stops a running chat on its old provider instead of clearing it there, so its next message starts on the saved one', async () => {
+    const order: string[] = [];
+    const clearContext = vi.fn(async () => undefined);
+    const result = await clearDispatcherChat({
+      ...moved,
+      isRunning: () => true,
+      prepareStart: async (_dir, id) => { order.push(`prepare:${id}`); },
+      stopRunning: async (dir, id, provider) => { order.push(`stop:${dir === getDispatcherChatPath()}:${id}:${provider}`); },
+      forgetSession: async (_dir, id) => { order.push(`forget:${id}`); },
+      clearContext,
+    });
+    expect(result).toEqual({ cleared: 'next_start' });
+    expect(order).toEqual(['prepare:chat', 'stop:true:chat:claude-code', 'forget:chat']);
+    expect(clearContext).not.toHaveBeenCalled();
+  });
+
+  it('clears a running chat in place when it already runs on its saved provider', async () => {
+    const stopRunning = vi.fn(async () => undefined);
+    const clearContext = vi.fn(async () => undefined);
+    const result = await clearDispatcherChat({
+      runningProvider: () => 'codex-cli', savedProvider: async () => 'codex-cli',
+      isRunning: () => true, prepareStart: async () => undefined, stopRunning, clearContext,
+    });
+    expect(result).toEqual({ cleared: 'now' });
+    expect(stopRunning).not.toHaveBeenCalled();
+    expect(clearContext).toHaveBeenCalledWith('chat');
+  });
+
+  it('stops the controller before starting it again idle on the saved provider, ending what the old conversation owed', async () => {
+    const order: string[] = [];
+    const clearContext = vi.fn(async () => undefined);
+    const result = await startDispatcherWorkFresh('user', {
+      ...moved,
+      isRunning: () => true,
+      workSessionId: async () => 'old-native',
+      quarantine: async (_dir, _id, sid) => { order.push(`quarantine:${sid}`); },
+      prepareStart: async () => { order.push('prepare'); },
+      takeWaiting: () => { order.push('take-waiting'); return { ids: ['req_1'], started: 2 }; },
+      stopRunning: async (dir, id, provider) => { order.push(`stop:${dir === getDispatcherPath()}:${id}:${provider}`); },
+      endWaiting: (w) => { order.push(`end-waiting:${w.ids.join(',')}`); },
+      noteNextStart: (id, notice) => { order.push(`note:${id}:${notice.code}`); },
+      wakeWork: async () => { order.push('wake'); },
+      clearContext,
+    });
+    expect(result).toBe('now');
+    expect(order).toEqual(['quarantine:old-native', 'prepare', 'take-waiting', 'stop:true:work:claude-code', 'end-waiting:req_1', 'note:work:started_fresh', 'wake']);
+    expect(clearContext).not.toHaveBeenCalled();
+  });
+
+  it('leaves the controller running and its requests under way when the stop fails, and starts nothing', async () => {
+    const endWaiting = vi.fn();
+    const wakeWork = vi.fn(async () => undefined);
+    await expect(startDispatcherWorkFresh('user', {
+      ...moved,
+      isRunning: () => true, workSessionId: async () => null, forgetSession: async () => undefined, prepareStart: async () => undefined,
+      takeWaiting: () => ({ ids: ['req_1'], started: 1 }),
+      stopRunning: async () => { throw new Error('Could not stop it.'); },
+      endWaiting, wakeWork,
+    })).rejects.toThrow('Could not stop it.');
+    expect(endWaiting).not.toHaveBeenCalled();
+    expect(wakeWork).not.toHaveBeenCalled();
+  });
+
+  it('reports a controller that stopped but did not start again as starting at its next message', async () => {
+    const result = await startDispatcherWorkFresh('user', {
+      ...moved,
+      isRunning: () => true, workSessionId: async () => null, forgetSession: async () => undefined, prepareStart: async () => undefined,
+      takeWaiting: () => ({ ids: [], started: 0 }), endWaiting: () => undefined, noteNextStart: () => undefined,
+      stopRunning: async () => undefined,
+      wakeWork: async () => { throw new Error('No CLI.'); },
+    });
+    expect(result).toBe('next_start');
+  });
+
+  it('runs one restart per agent: a second request while one is under way joins it rather than stopping or starting again', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const stopRunning = vi.fn(async () => { await gate; });
+    const wakeWork = vi.fn(async () => undefined);
+    const deps = {
+      ...moved,
+      isRunning: () => true, workSessionId: async () => null, forgetSession: async () => undefined, prepareStart: async () => undefined,
+      takeWaiting: () => ({ ids: [], started: 0 }), endWaiting: () => undefined, noteNextStart: () => undefined,
+      stopRunning, wakeWork,
+    };
+    const first = startDispatcherWorkFresh('user', deps);
+    const second = startDispatcherWorkFresh('user', deps);
+    release();
+    await expect(Promise.all([first, second])).resolves.toEqual(['now', 'now']);
+    expect(stopRunning).toHaveBeenCalledTimes(1);
+    expect(wakeWork).toHaveBeenCalledTimes(1);
+    // Once it's done, a later request runs again.
+    await startDispatcherWorkFresh('user', deps);
+    expect(stopRunning).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts both fresh with the chat stopped too, and tells the chat at its next start', async () => {
+    let chatRunning = true;
+    const stopRunning = vi.fn(async (_dir: string, id: string) => { if (id === 'chat') chatRunning = false; });
+    const noteNextStart = vi.fn();
+    const result = await startDispatcherFresh('both', {
+      ...moved,
+      isRunning: (id) => (id === 'chat' ? chatRunning : true),
+      workSessionId: async () => null, forgetSession: async () => undefined, prepareStart: async () => undefined,
+      takeWaiting: () => ({ ids: [], started: 0 }), endWaiting: () => undefined,
+      stopRunning, noteNextStart, wakeWork: async () => undefined,
+    });
+    expect(result).toEqual({ work: 'now', chat: 'next_start' });
+    expect(stopRunning.mock.calls.map((c) => c[1])).toEqual(['work', 'chat']);
+    expect(noteNextStart).toHaveBeenCalledWith('chat', expect.objectContaining({ code: 'dispatcher_started_fresh' }));
   });
 });
