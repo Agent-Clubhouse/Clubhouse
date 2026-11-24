@@ -26,7 +26,7 @@ import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV, isClubho
 import { getCurrentAgentConnection } from '../clubhouse-mcp/bridge-server';
 import { onAgentMcpConnected } from '../clubhouse-mcp/connection-events';
 import { AntigravityMcpConfigError, awaitAuthenticatedBridge, checkClubhouseCollisions, FENCE_REASONS } from '../../orchestrators/antigravity/mcp-config';
-import { CHAT_START_FAILED_NOTICE, chatFailsExplicitly } from '../../../shared/chat/start-failure';
+import { CHAT_START_FAILED_AFTER_START_NOTICE, CHAT_START_FAILED_NOTICE, chatFailsExplicitly } from '../../../shared/chat/start-failure';
 import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
@@ -260,7 +260,7 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
 export type ChatStartResult = 'chat' | 'terminal' | 'cancelled' | 'failed';
 
 
-/** How long a start waits for the Clubhouse MCP bridge to authenticate with the launch's nonce (#3793). */
+/** How long a start waits for the Clubhouse MCP bridge to authenticate with the launch's nonce (#3793). Unmeasured: whether agy starts stdio MCP servers at session/new or later is the real-login check V3. */
 export const BRIDGE_FENCE_DEADLINE_MS = 30_000;
 
 /** A start refused before any driver ran it, with the reason to show. */
@@ -277,7 +277,10 @@ function chatStartFailed(facts: ChatStartFacts, providerId: string, reason: stri
  * so the agent shows as failed with this reason, not as asleep.
  */
 export function announceChatStartFailure(agentId: string, facts: ChatStartFacts, context: { mission?: string; systemPrompt?: string }): void {
-  notifyFallback(agentId, { level: 'warn', code: CHAT_START_FAILED_NOTICE, message: facts.failure ?? "Chat didn't start." }, context);
+  // After the session started, the mission may have reached the agent: the
+  // renderer then doesn't put it back in the composer as unsent.
+  const mayHaveSent = facts.attempts.some((a) => a.reason === 'failed_after_session_start');
+  notifyFallback(agentId, { level: 'warn', code: mayHaveSent ? CHAT_START_FAILED_AFTER_START_NOTICE : CHAT_START_FAILED_NOTICE, message: facts.failure ?? "Chat didn't start." }, context);
 }
 
 interface InflightStart {
@@ -611,7 +614,7 @@ async function runChatStart(
       const others = Object.fromEntries(Object.entries(configuredServers).filter(([, def]) => !isClubhouseMcpEntry(def)));
       const collision = await checkClubhouseCollisions({ projectServers: others });
       checkpoint();
-      if (!collision.ok) throw new ChatStartRefusedError(collision.reason);
+      if (collision.ok === false) throw new ChatStartRefusedError(collision.reason);
     }
     agentRegistry.setNonce(params.agentId, nonce);
     agentRegistry.setRuntime(params.agentId, 'chat');
@@ -777,7 +780,7 @@ async function runChatStart(
             { agentId: params.agentId, expectedNonce: nonce, launchedAt, deadlineMs: BRIDGE_FENCE_DEADLINE_MS, ...(startSignal && { signal: startSignal }) },
             { getAgentNonce, getCurrentAgentConnection, onAgentMcpConnected, onAuthChange: (listener) => agentRegistry.onAuthChange(listener) },
           );
-          if (!fence.ok) {
+          if (fence.ok === false) {
             await session.close();
             throw new Error(FENCE_REASONS[fence.reason]);
           }
