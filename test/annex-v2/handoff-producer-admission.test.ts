@@ -745,6 +745,18 @@ function catalog(fx: Fixture): Promise<string> {
   return ownFixtureRead(owner, () => nativeFs.promises.readFile(path.join(fx.userData, 'handoff-preparations.json'), 'utf8'), fx);
 }
 
+// The captured prepared-record lookup reads a real manifest before the dependent
+// snapshot byte read. One original-owner claim covers that whole admitted chain.
+function verifyCapturedPreparedSource(fx: Fixture, record: Handoff, project: Fixture['project'], second: string): Promise<void> {
+  const owner = fixtureOwner();
+  return ownFixtureRead(owner, async () => {
+    const prepared = await fx.preparation.preparedSourceForRecord(record);
+    expect(prepared.source.project).toEqual(project);
+    expect(prepared.source.worktreeRoot).toBe(second);
+    expect(await fs.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
+  }, fx);
+}
+
 function verifySource(fx: Fixture, record: Handoff, summary: HandoffManifestSummary): Promise<void> {
   const owner = fixtureOwner();
   return ownFixtureRead(owner, async () => {
@@ -2750,10 +2762,8 @@ describe('isolated real MCP producer domain admission', () => {
         expect(resultValue(await held.pending)).toMatchObject({ ready: true });
         const result = await pending;
         expect(result.isError).not.toBe(true);
-        const record = parseHandoff(resultValue(result)), prepared = await fx.preparation.preparedSourceForRecord(record);
-        expect(prepared.source.project).toEqual(project);
-        expect(prepared.source.worktreeRoot).toBe(second);
-        expect(await fs.readFile(path.join(prepared.snapshot.root, 'files', 'fixture.txt'), 'utf8')).toBe(contents);
+        const record = parseHandoff(resultValue(result));
+        await verifyCapturedPreparedSource(fx, record, project, second);
         expect(JSON.parse(await catalog(fx))).toMatchObject({ entries: [{ project: project.id, mode: 'worktree', boundTo: [record.id] }] });
       }));
 
