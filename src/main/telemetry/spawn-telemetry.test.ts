@@ -201,7 +201,8 @@ describe('recordChatStart', () => {
       expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver', 'terminal']);
       event.mockClear();
       recordChatStart(1000, 'cancelled', { attempts: two, reason: 'superseded' }, { ...ctx, noTerminalFallback: true }, 1100);
-      expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver']);
+      // One event per attempt with a reason; a cancelled start sends none of them to the terminal.
+      expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver', 'driver']);
     });
 
     it('keeps the closed sets: none is a fallback value, failed was already a start result', () => {

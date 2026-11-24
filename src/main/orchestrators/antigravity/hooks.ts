@@ -76,6 +76,12 @@ export function antigravityHooksPath(cwd: string): string {
   return path.join(cwd, ANTIGRAVITY_PATHS.hooks);
 }
 
+/** Whether `file` is a worktree's `.agents/hooks.json`. */
+export function isAntigravityHooksPath(file: string): boolean {
+  const resolved = path.resolve(file);
+  return path.basename(resolved) === 'hooks.json' && path.basename(path.dirname(resolved)) === ANTIGRAVITY_PATHS.configDir;
+}
+
 /**
  * Set up Clubhouse's `clubhouse-status` hook in `.agents/hooks.json`, through
  * the shared receipt-backed editor (workspace-json): every other byte of the
