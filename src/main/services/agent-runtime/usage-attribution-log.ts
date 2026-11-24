@@ -83,7 +83,7 @@ async function refreshProjectIds(): Promise<void> {
     const projects = await projectStore.list();
     projectIds = new Map(projects.map((p) => [projectStore.projectPathKey(p.path), p.id]));
   } catch {
-    // Lines go without a project id until the next read.
+    // telemetry-exempt: lines go without a project id until the next read
   }
 }
 
