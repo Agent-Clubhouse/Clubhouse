@@ -403,8 +403,10 @@ class AcpDriverSession implements ChatDriverSession {
     if (!choice) throw new Error('This agent offers no session modes');
     if (choice.via === 'set_mode') {
       await this.conn.request(ACP_AGENT_METHODS.sessionSetMode, { sessionId: this.sessionId, modeId: mode }, { timeoutMs: this.timeouts.requestMs });
-      // set_mode answers with nothing; the agent confirms with current_mode_update, which may come first or not at all.
-      this.facts = { ...this.facts, modes: { ...this.facts.modes!, currentModeId: mode } };
+      // set_mode answers with nothing, and the agent may or may not confirm
+      // with current_mode_update, so the answer itself counts. updateFacts
+      // re-sends capabilities if they changed.
+      this.updateFacts({ modes: { ...this.facts.modes!, currentModeId: mode } });
       return;
     }
     const response = await this.conn.request<{ configOptions?: SessionConfigOption[] }>(

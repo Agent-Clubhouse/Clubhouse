@@ -66,6 +66,9 @@ function cliName(orchestrator?: string): string {
   return providerDescriptor(orchestrator)?.command ?? orchestrator;
 }
 
+/** Agents with a wake in flight from any view, so two views of one agent can't start it twice. */
+const agentsWaking = new Set<string>();
+
 /**
  * A sleeping (or failed-to-launch) agent, treated as an empty chat (#2019): a
  * greeting that changes with the time of day, a composer to wake the agent
@@ -138,20 +141,24 @@ export function SleepingAgent({ agent, details = false }: {
   const ready = isRemote || !agentProject || last !== null;
 
   /**
-   * Runs one wake (or switch-and-wake) as the only one in flight, from its
-   * first step to its last: a second click meanwhile is ignored, not queued.
+   * Runs one wake (or switch-and-wake) as the only one in flight for this
+   * agent, from its first step to its last, across every view of it: a second
+   * click meanwhile is ignored, not queued.
    */
   const reserve = useCallback(async (run: () => Promise<void>) => {
-    if (wakingRef.current) return;
+    if (wakingRef.current || agentsWaking.has(agent.id)) return;
+    const id = agent.id;
+    agentsWaking.add(id);
     wakingRef.current = true;
     setWaking(true);
     try {
       await run();
     } finally {
+      agentsWaking.delete(id);
       wakingRef.current = false;
       setWaking(false);
     }
-  }, []);
+  }, [agent.id]);
 
   /** The wake itself; callers hold the reservation. */
   const startWake = useCallback(async (mode: WakeMode, sessionId?: string, opts: { withoutTask?: boolean } = {}) => {
@@ -204,6 +211,8 @@ export function SleepingAgent({ agent, details = false }: {
     try {
       await window.clubhouse.agent.updateDurableConfig(agentProject.path, agent.id, { runtimeMode: 'terminal' });
     } catch (err) {
+      tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_wake'), ATTR.errorType('unknown')]);
+      tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_wake')] });
       setWakeError(`Couldn't switch ${agent.name} to the terminal: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }

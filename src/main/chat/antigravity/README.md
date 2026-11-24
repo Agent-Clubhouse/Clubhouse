@@ -60,9 +60,10 @@ children isn't documented (V3). The entry travels only over the ACP pipe.
 The start is refused when the bridge isn't ready, or when a project server
 or the person's global Antigravity MCP config defines `clubhouse` (chat-spawn
 checks this). The agent has the Clubhouse MCP only once the bridge has
-authenticated with this launch's nonce, within `BRIDGE_FENCE_DEADLINE_MS`
-(30s, unmeasured: if agy starts stdio servers only on first use, every start
-is refused, and V3 settles that). Otherwise the start is refused before any
+authenticated with this launch's nonce, within
+`ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS` (the terminal path's 60s, unmeasured:
+if agy starts stdio servers only on first use, every start is refused, and
+V3 settles that). Otherwise the start is refused before any
 message is sent. For chat, the workspace `.agents/mcp_config.json` gets no
 bridge entry, so the session sees one `clubhouse` server.
 

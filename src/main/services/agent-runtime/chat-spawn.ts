@@ -25,7 +25,7 @@ import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from 
 import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV, isClubhouseMcpEntry } from '../clubhouse-mcp/injection';
 import { getCurrentAgentConnection } from '../clubhouse-mcp/bridge-server';
 import { onAgentMcpConnected } from '../clubhouse-mcp/connection-events';
-import { AntigravityMcpConfigError, awaitAuthenticatedBridge, checkClubhouseCollisions, FENCE_REASONS } from '../../orchestrators/antigravity/mcp-config';
+import { ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS, AntigravityMcpConfigError, awaitAuthenticatedBridge, checkClubhouseCollisions, FENCE_REASONS } from '../../orchestrators/antigravity/mcp-config';
 import { CHAT_START_FAILED_AFTER_START_NOTICE, CHAT_START_FAILED_NOTICE, chatFailsExplicitly } from '../../../shared/chat/start-failure';
 import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
@@ -259,9 +259,6 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
  */
 export type ChatStartResult = 'chat' | 'terminal' | 'cancelled' | 'failed';
 
-
-/** How long a start waits for the Clubhouse MCP bridge to authenticate with the launch's nonce (#3793). Unmeasured: whether agy starts stdio MCP servers at session/new or later is the real-login check V3. */
-export const BRIDGE_FENCE_DEADLINE_MS = 30_000;
 
 /** A start refused before any driver ran it, with the reason to show. */
 class ChatStartRefusedError extends Error {}
@@ -775,9 +772,10 @@ async function runChatStart(
         if (chatFailsExplicitly(provider.id)) {
           // The agent has the Clubhouse MCP only once the bridge authenticated
           // with this launch's nonce (#3793); otherwise the start is refused,
-          // before any message is sent.
+          // before any message is sent. The deadline is the terminal path's,
+          // unmeasured until V3 shows when agy starts stdio MCP servers.
           const fence = await awaitAuthenticatedBridge(
-            { agentId: params.agentId, expectedNonce: nonce, launchedAt, deadlineMs: BRIDGE_FENCE_DEADLINE_MS, ...(startSignal && { signal: startSignal }) },
+            { agentId: params.agentId, expectedNonce: nonce, launchedAt, deadlineMs: ANTIGRAVITY_BRIDGE_AUTH_DEADLINE_MS, ...(startSignal && { signal: startSignal }) },
             { getAgentNonce, getCurrentAgentConnection, onAgentMcpConnected, onAuthChange: (listener) => agentRegistry.onAuthChange(listener) },
           );
           if (fence.ok === false) {

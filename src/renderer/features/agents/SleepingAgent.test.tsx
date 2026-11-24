@@ -239,6 +239,24 @@ describe('SleepingAgent', () => {
       expect(mockSpawnDurableAgent).toHaveBeenCalledTimes(1);
     });
 
+    it('two views of the same agent share one reservation: a Retry in the second during the first\'s switch is ignored', async () => {
+      let release!: () => void;
+      window.clubhouse.agent.updateDurableConfig = vi.fn(() => new Promise<void>((r) => { release = r; }));
+      resetStores(agy);
+      const agent = { ...baseAgent, ...agy };
+      render(<><SleepingAgent agent={agent} /><SleepingAgent agent={agent} /></>);
+      await waitFor(() => expect(screen.getAllByTestId('wake-button')[1]).not.toBeDisabled());
+      fireEvent.click(screen.getAllByTestId('open-in-terminal-button')[0]);
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getAllByTestId('wake-button')[1]);
+      fireEvent.click(screen.getAllByTestId('open-in-terminal-button')[1]);
+      release();
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledTimes(1);
+      expect(mockSpawnDurableAgent).toHaveBeenCalledTimes(1);
+    });
+
     it('a failed switch shows why and starts nothing', async () => {
       window.clubhouse.agent.updateDurableConfig = vi.fn().mockRejectedValue(new Error('disk full'));
       renderComponent(agy);

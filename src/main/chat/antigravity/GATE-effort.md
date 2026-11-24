@@ -1,72 +1,63 @@
 # Gate 3: changing effort when the agent offers no model choice
 
-Status: open. This is a proposal for review, and no code here implements it.
-It closes registration gate 3 in `src/main/chat/acp/README.md`.
+Status: implemented; the gate stays open until the proof below passes on the
+composed head. This is registration gate 3 in `src/main/chat/acp/README.md`.
 
 ## The case
 
 An ACP session can offer a `thought_level` select option without a `model`
 option. Antigravity documents both pickers (Model and Thinking level), so its
-normal path is `setModel(model, effort)`. The case comes up only when a
+normal path is `setModel(model, effort)`. This case only arises when a
 session offers no model option, for example because the account gets a
-single model. When that happens:
+single model. Then:
 
-- `session_info.model` is `null` and `models` is `[]`, but `efforts` is
-  not empty and `capabilities.effortSwitch` is `'live'`.
-- The neutral driver's `setModel` throws `This agent offers no model choice`
-  for every model id (`driver.ts`, `setModel`).
+- `session_info.model` is `null` and `models` is `[]`, while `efforts` isn't
+  empty and `capabilities.effortSwitch` is `'live'`.
+- `setModel` can't help, because there's no model id to pass (it throws
+  `This agent offers no model choice`).
 
-## Callers today (base 6984704eb)
+## Decisions (integrator, 2026-11-24)
 
-| Caller | Path | Behaviour in this case |
-|---|---|---|
-| Desktop composer | `Composer.tsx` `EffortPill` (`canChange = !!model && ...`) → `ChatView.tsx:402` `actions.setModel(m, e)` → `chatStore.ts:1350` → IPC `chat:set-model` (`chat-handlers.ts:338`) → `ChatAgentRuntime.setModel` (`chat-runtime.ts:1403`) → `session.setModel` | The pill is hidden because `model` is null, so effort can't be changed |
-| Desktop as Annex client | `chatStore.ts:1351` → `remoteChatBackend.ts:151` `setModel(ns, session, model, effort)` → the satellite's mobile-control | Same pill, also hidden |
-| Phone and Annex | `mobile-control.ts:329` `chat.setModel { model, effort }`, which requires a `model` (`shared/mobile-control.ts:50`) | Sending the current model `null` isn't possible. Any model id the phone sends fails at the driver |
+- The caller shape: an optional `setEffort` from the session up to the
+  composer. Callers that have a model keep using `setModel`.
+- The event: `model_changed.modelId` stays required, because existing
+  consumers assume a string. The effort goes in an optional, additive
+  `effort` field on `session_info`. Consumers that don't know the field
+  ignore it.
+- Mobile: `chat.setModel` with `model` omitted is an additive wire change.
+  The phone team gets a separate note through the parent.
 
-## Proposal
+## What is implemented
 
-Add one optional runtime and session method, `setEffort(effort: string | null)`.
-A driver implements it only when it can change effort on its own.
+| Layer | Change |
+|---|---|
+| Contract | `session_info.effort?: string \| null` (`shared/chat/events.ts`). `ChatDriverSession.setEffort?` and `AgentRuntime.setEffort?` (`shared/chat/runtime.ts`) |
+| Neutral ACP driver | `setEffort(effort)`: the value must be one the `thought_level` option offers, and `null` throws because ACP has no unset. With no model id, the opening `session_info` carries `effort`, and later effort changes come as `session_info { effort }`. With a model id, nothing changes: `model_changed` as before |
+| Runtime | `ChatAgentRuntime.setEffort` delegates, and refuses drivers without it |
+| IPC and preload | `chat:set-effort` `[agentId, effort]` and `chat.setEffort` |
+| Renderer | `chatStore.setEffort`: local over IPC, remote over `remoteChatBackend.setEffort`. The reducer takes `session_info.effort`. `useChatActions.setEffort`. `Composer` `onEffortChange`: `EffortPill` can change effort with no model and calls it then. `ChatView` passes it in |
+| Mobile and Annex | `chat.setModel` with `model` omitted changes the effort alone through `runtime.setEffort`. Neither model nor effort is `invalid_command`. Refusals: `effort_switch_not_supported` (also when the runtime has no `setEffort`), `effort_default_not_supported`, `unknown_effort`. `chatControls` reads `session_info.effort`. `docs/mobile-control-v1.md` is updated |
 
-1. `ChatDriverSession.setEffort?(effort: string | null): Promise<void>` in
-   `shared/chat/runtime.ts`. The neutral ACP driver implements it with
-   `session/set_config_option` on the `thought_level` option. `null` throws,
-   as `setModel` does today, because ACP has no "unset".
-2. `ChatAgentRuntime.setEffort` and `AgentRuntime.setEffort?` delegate to it.
-3. IPC `chat:set-effort` with `[agentId, effortArg]`, and preload
-   `chat.setEffort`.
-4. `chatStore.setEffort`: local goes through IPC. Remote goes through
-   `remoteChatBackend.setEffort`, which sends mobile `chat.setModel` with
-   `model` omitted (step 5).
-5. Mobile contract: in `chat.setModel`, `model` becomes optional. With
-   `model` absent, mobile-control checks `effortSwitch !== 'none'` and that
-   the effort is in `efforts`, then calls `runtime.setEffort`. This is an
-   additive wire change, so older phones keep sending a model. The mobile
-   contract doc and its fixtures need the same edit, and the phone team gets
-   a note.
-6. Composer: `EffortPill` gets `canChange = efforts.length > 0 && effortSwitch !== 'none' && (!!model || !!onEffortChange)`
-   and calls `onEffortChange(effort)` when `model` is null. `ChatView`
-   passes `actions.setEffort`.
+Claude, Codex and Copilot don't implement `setEffort` and always report a
+model, so nothing changes for them.
 
-Callers that pass a model keep using `setModel`, so nothing changes for
-Claude, Codex or Copilot. None of them implements `setEffort`, and none
-reports `model: null` together with efforts.
+## Proof (tests on the branch)
 
-## Proof needed to close the gate
+- `acp/driver-claims.test.ts`, "effort without a model choice": the opening
+  `session_info.effort`, `setEffort` sends `session/set_config_option` and
+  reports `session_info { effort }` with no `model_changed`, refusals, and a
+  session with a model still using `model_changed`.
+- `mobile-chat-controls.test.ts`, "chat.setModel without a model": parsing,
+  `chatControls`, setEffort only (never setModel), the refusals, and the
+  model path unchanged.
+- `chat-handlers.test.ts`: `chat:set-effort` passes the value through and
+  rejects bad input.
+- `chatStore.test.ts`: the reducer takes `session_info.effort`.
+- `Composer.models.test.tsx`: with no model, the pill uses `onEffortChange`.
+  Without it, it stays read-only as before. With a model, it uses
+  `onModelChange`.
+- `antigravity/driver.test.ts`: the Antigravity driver refuses `setModel`
+  when there's no model option.
 
-- Driver: `setEffort('high')` on a session with only a `thought_level`
-  option sends `session/set_config_option` and emits `model_changed` only
-  when a model id exists. Otherwise it emits a `session_info` effort update,
-  which needs a decision on the event.
-- Runtime, IPC and mobile-control unit tests for the effort-only path,
-  including refusing an effort the session doesn't offer.
-- A Composer test: the effort pill shows and works with `model` null.
-- The existing setModel tests for the other drivers stay unchanged.
-
-## Open question for the integrator
-
-`model_changed` requires a `modelId`. An effort change with no model needs
-either `model_changed` with an optional `modelId`, or a `session_info`
-`effort` field. Which shape do you want? The event change touches the
-transcript and Annex, so it belongs to the shared event contract.
+The gate closes when these pass on the composed head with typecheck and
+lint, alongside the integrator's registration.

@@ -142,11 +142,13 @@ describe('capabilities', () => {
     ]);
   });
 
-  // Registration gate 3 (README): open until a caller contract exists.
-  it('refuses an effort change when the session offers no model choice', async () => {
-    const { session } = await open({ configOptions: [OPTIONS[1]] });
+  // Registration gate 3 (GATE-effort.md): no model id to pass, so effort goes through setEffort.
+  it('with no model choice, setModel is refused and setEffort changes the thinking level', async () => {
+    const { session, agent } = await open({ configOptions: [OPTIONS[1]] });
     expect(session.capabilities.effortSwitch).toBe('live');
     await expect(session.setModel('', 'high')).rejects.toThrow(/no model choice/);
+    await session.setEffort!('high');
+    expect(agent.sentRequests('session/set_config_option')).toEqual([{ sessionId: 'session-1', configId: 'thinking', value: 'high' }]);
   });
 });
 
