@@ -24,7 +24,8 @@ beforeEach(async () => {
   tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'fake-agy-test-'));
 });
 afterEach(async () => {
-  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  // Windows: a killed hook's process tree can hold the folder for a moment after taskkill.
+  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 async function writeConfig(config: Json): Promise<string> {

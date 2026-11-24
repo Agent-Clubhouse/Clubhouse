@@ -371,8 +371,14 @@ function runHandler(handler, payload) {
     };
     const child = spawn(handler.command, { shell: true, cwd: process.cwd(), env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
     // A shell's grandchild can outlive the kill and hold stdout open, so a timeout settles at once.
+    // On Windows the shell's child survives killing the shell and keeps the
+    // working folder busy, so the whole tree is ended there.
     const timer = setTimeout(() => {
-      child.kill();
+      if (process.platform === 'win32' && child.pid) {
+        spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => child.kill());
+      } else {
+        child.kill();
+      }
       settle({ code: null, timedOut: true, stdout });
     }, timeoutMs);
     child.stdout.setEncoding('utf8').on('data', (c) => { stdout += c; });
