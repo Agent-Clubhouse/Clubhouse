@@ -1,0 +1,402 @@
+{
+  "historical_parent": "ad5789182f348521a738d67a3d11f83a21b87a9c",
+  "historical_fix": "c44e472952561e565ac78b7114e011e6f9a5e999",
+  "node": "v25.8.1",
+  "platform": "Darwin/arm64",
+  "inputs_sha256": {
+    "src/renderer/features/agents/chat/prompt-codec.test.ts": "a8e2f7ba911e3099b5e8c8bc1539b842c7f9c0d0a221451d98e6f378387bb185",
+    "src/renderer/features/agents/chat/PromptEditor.test.tsx": "205c82064fd0d28fcaba396c38f946c574e648ae0f90ae719bad9d89722a7b9a",
+    "src/renderer/features/agents/chat/PromptMarkdown.test.tsx": "09fb920e3ea2abd1625f9483e31033a6b25987124359ed3c15c8f1fea1fdbe12",
+    "src/renderer/features/agents/chat/prompt-editor.testing.ts": "379d84a095265e341bef721cef4cecb668bb8e465554fd4d1f60d346b6bc0659",
+    "test/setup-renderer.ts": "231add0637be6a4de108f62c95c8de5f16805dbefc6c19430bdedeacd09cab68",
+    "vitest.config.ts": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+    "package-lock.json": "d290f61dc1bc53ed3b36bff290c5a3bd6bbe6cf4b1bbd7a339b979596f863202"
+  },
+  "installed_versions": {
+    "vitest": "4.1.12",
+    "jsdom": "28.1.0",
+    "marked": "18.1.2",
+    "prosemirror-model": "1.25.13",
+    "prosemirror-view": "1.42.9"
+  },
+  "variants": [
+    {
+      "production_revision": "ad5789182f348521a738d67a3d11f83a21b87a9c",
+      "wall_seconds": 1.232,
+      "exit": 1,
+      "deselected": 54,
+      "production_sha256": {
+        "prompt-codec.ts": "29c923ac15a9d8f15bcfc7b5a6a28f2585735a0cb5fc798a0ab4ddd62bd9834b",
+        "prompt-editor.ts": "f8e86b9a95b562fbdc8878e804210f91c5f4d69d223433d0ac43389c63bab9a6",
+        "PromptEditor.tsx": "63db43f6542afc9df0d176a851dff8d3104a9bc19b55d7c79edd36cc96577b58"
+      },
+      "observations": [
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"  * build\\n  * test\"",
+          "status": "failed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 18.081999999999994,
+          "reason": "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"1. a\\n1. b\"",
+          "status": "failed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 2.8505839999999694,
+          "reason": "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"3. a\\n5. b\"",
+          "status": "failed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 2.0541660000000093,
+          "reason": "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"- a\\n* b\"",
+          "status": "failed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.625750000000039,
+          "reason": "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"- first\\n  continuation\"",
+          "status": "failed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.814375000000041,
+          "reason": "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "status": "failed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.5961659999999824,
+          "reason": "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"  * build\\n  * test\"",
+          "status": "failed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.571583999999973,
+          "reason": "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"1. a\\n1. b\"",
+          "status": "failed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.2686669999999935,
+          "reason": "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"3. a\\n5. b\"",
+          "status": "failed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.152750000000026,
+          "reason": "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"- a\\n* b\"",
+          "status": "failed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.2333749999999668,
+          "reason": "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"- first\\n  continuation\"",
+          "status": "failed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 0.9920000000000186,
+          "reason": "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "status": "failed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.1332090000000221,
+          "reason": "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders repeated numbering as one ordered list",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 10.779374999999959,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders bold inside a list item",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 3.325540999999987,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders mixed bullet markers as a list",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 3.0022500000000036,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders a continuation line inside its list item",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 1.2469999999999573,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "status": "failed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 3.927291999999966,
+          "reason": "AssertionError: expected '* build\\n* test' to be '  * build\\n  * test' // Object.is equality"
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "status": "failed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.3374579999999696,
+          "reason": "AssertionError: expected '1. a\\n2. b' to be '1. a\\n1. b' // Object.is equality"
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "status": "failed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.21549999999996317,
+          "reason": "AssertionError: expected '3. a\\n4. b' to be '3. a\\n5. b' // Object.is equality"
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"- a\\n* b\"",
+          "status": "failed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.17674999999997,
+          "reason": "AssertionError: expected '- a\\n- b' to be '- a\\n* b' // Object.is equality"
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "status": "failed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.5052919999999972,
+          "reason": "AssertionError: expected '- first  \\n  continuation' to be '- first\\n  continuation' // Object.is equality"
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "status": "failed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.29283399999997073,
+          "reason": "AssertionError: expected '- step  \\n  ```sh  \\n  npm test  \\n  …' to be '- step\\n  ```sh\\n  npm test\\n  ```' // Object.is equality"
+        }
+      ]
+    },
+    {
+      "production_revision": "c44e472952561e565ac78b7114e011e6f9a5e999",
+      "wall_seconds": 1.2154,
+      "exit": 0,
+      "deselected": 54,
+      "production_sha256": {
+        "prompt-codec.ts": "e59339f076ad73ed6da6eb282655366886fcb92323fe9530404ab25d520d267b",
+        "prompt-editor.ts": "eca3451734e6fc02ffd77a6d6147d3dc4934098ee5f1d58224a8d091e226efc1",
+        "PromptEditor.tsx": "c4c96f621428645b957c6536f32cccd0b19be625754cfac599d5689bba16d5d2"
+      },
+      "observations": [
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"  * build\\n  * test\"",
+          "status": "passed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 16.995124999999973,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"1. a\\n1. b\"",
+          "status": "passed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 2.594875000000002,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"3. a\\n5. b\"",
+          "status": "passed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.87012500000003,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"- a\\n* b\"",
+          "status": "passed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.460125000000005,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"- first\\n  continuation\"",
+          "status": "passed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.5252910000000384,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a remount and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "status": "passed",
+          "family": "survives a remount and the next keystroke:",
+          "duration_ms": 1.3924160000000256,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"  * build\\n  * test\"",
+          "status": "passed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.508166000000017,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"1. a\\n1. b\"",
+          "status": "passed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.1952909999999974,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"3. a\\n5. b\"",
+          "status": "passed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.1441659999999843,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"- a\\n* b\"",
+          "status": "passed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.150874999999985,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"- first\\n  continuation\"",
+          "status": "passed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.028915999999981,
+          "reason": null
+        },
+        {
+          "file": "PromptEditor.test.tsx",
+          "test": "survives a failed-send restore and the next keystroke: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "status": "passed",
+          "family": "survives a failed-send restore and the next keystroke:",
+          "duration_ms": 1.1475409999999897,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders repeated numbering as one ordered list",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 10.736750000000029,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders bold inside a list item",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 3.305708999999979,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders mixed bullet markers as a list",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 2.991792000000032,
+          "reason": null
+        },
+        {
+          "file": "PromptMarkdown.test.tsx",
+          "test": "renders a continuation line inside its list item",
+          "status": "passed",
+          "family": "sent markdown",
+          "duration_ms": 1.2104999999999677,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"  * build\\n  * test\"",
+          "status": "passed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 2.71225000000004,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"1. a\\n1. b\"",
+          "status": "passed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.1838329999999928,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"3. a\\n5. b\"",
+          "status": "passed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.14850000000001273,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"- a\\n* b\"",
+          "status": "passed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.12695899999999938,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"- first\\n  continuation\"",
+          "status": "passed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.2665829999999687,
+          "reason": null
+        },
+        {
+          "file": "prompt-codec.test.ts",
+          "test": "restores pasted text exactly: \"- step\\n  ```sh\\n  npm test\\n  ```\"",
+          "status": "passed",
+          "family": "restores pasted text exactly:",
+          "duration_ms": 0.1794999999999618,
+          "reason": null
+        }
+      ]
+    }
+  ]
+}

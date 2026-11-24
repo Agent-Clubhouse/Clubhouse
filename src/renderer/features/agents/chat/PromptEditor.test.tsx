@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createRef } from 'react';
 import { act, render } from '@testing-library/react';
 import { undo } from 'prosemirror-history';
-import { ECHO_WINDOW_MS, PromptEditor, promptView } from './PromptEditor';
+import { ECHO_WINDOW_MS, PromptEditor, promptView, type PromptEditorHandle } from './PromptEditor';
 import { insertPlainText, softReturn } from './prompt-editor';
 import { serializePrompt } from './prompt-codec';
 import { pastedDrafts } from './prompt-editor.testing';
@@ -10,14 +11,15 @@ import { pastedDrafts } from './prompt-editor.testing';
  * and React can run those effects after the next keystroke. */
 function mount(text = '') {
   const onChange = vi.fn();
+  const handle = createRef<PromptEditorHandle>();
   const props = (value: string) => ({
-    text: value, onChange, onSelection: vi.fn(), onKeyDown: () => false, onPasteFiles: () => false,
+    ref: handle, text: value, onChange, onSelection: vi.fn(), onKeyDown: () => false, onPasteFiles: () => false,
     placeholder: '', description: '', line: false,
   });
   const view = render(<PromptEditor {...props(text)} />);
   const editor = view.container.querySelector<HTMLElement>('[role="textbox"]')!;
   return {
-    editor, onChange, rerenderWith: (value: string) => view.rerender(<PromptEditor {...props(value)} />),
+    editor, handle, onChange, rerenderWith: (value: string) => view.rerender(<PromptEditor {...props(value)} />),
     source: () => serializePrompt(promptView(editor).state.doc).text,
   };
 }
@@ -128,4 +130,13 @@ describe('pasted text after a restore', () => {
     type(editor, '!');
     expect(last(onChange)).toBe(`${text}!`);
   });
+});
+
+it('replaces a source range while preserving adjacent text and emphasis', () => {
+  const draft = '- **hello** /co later';
+  const { editor, handle, onChange } = mount(draft);
+  const start = draft.indexOf('/co');
+  act(() => handle.current!.replace(start, start + '/co'.length, '/compact'));
+  expect(onChange).toHaveBeenLastCalledWith('- **hello** /compact later');
+  expect(editor.querySelector('li strong')?.textContent).toBe('hello');
 });
