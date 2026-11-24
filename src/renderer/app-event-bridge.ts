@@ -52,6 +52,7 @@ import { requestLeaveAgentSettings } from './features/agents/agentSettingsPages'
 import { openAgent } from './features/agents/helpers/orchestration-hooks';
 import { useAgentDetailsStore } from './features/agents/details/detailsStore';
 import { useBulletinReadStore } from './stores/bulletinReadStore';
+import { CHAT_START_FAILED_NOTICE } from '../shared/chat/start-failure';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -486,6 +487,12 @@ function initChatRuntimeNoticeListener(): () => void {
     const name = store.agents[agentId]?.name ?? agentId;
     useToastStore.getState().addToast(`${name}: ${notice.message}`, 'info');
     if (LAUNCH_FAILURE_CODES.has(notice.code)) store.noteLaunchFailure(agentId, launchFailureReason(notice.message));
+    // Sent after the exit (#3785): the agent shows as failed with the reason,
+    // however long the start took, and no terminal opened.
+    if (notice.code === CHAT_START_FAILED_NOTICE) {
+      store.noteLaunchFailure(agentId, notice.message);
+      store.updateAgentStatus(agentId, 'error', 1, notice.message);
+    }
   });
 }
 

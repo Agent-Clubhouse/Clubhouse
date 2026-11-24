@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ATTR, tel } from '../../telemetry';
 import { Agent } from '../../../shared/types';
 import { providerDescriptor } from '../../../shared/providers/descriptors';
+import { chatFailsExplicitly } from '../../../shared/chat/start-failure';
 import { useAgentStore } from '../../stores/agentStore';
 import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
@@ -165,6 +166,21 @@ export function SleepingAgent({ agent, details = false }: {
   const canResume = hasLastSession || (isRemote && agent.hasSession === true);
   const defaultMode: WakeMode = canResume ? 'resume' : 'fresh';
 
+  // A provider whose failed chat start doesn't open the terminal by itself
+  // (#3785) offers it here instead: the person's choice, saved as the agent's
+  // runtime like the Chat / CLI switch, with whatever task is in the composer.
+  const offerTerminal = failed && !isRemote && !!agentProject && chatFailsExplicitly(cli);
+  const openInTerminal = useCallback(async () => {
+    if (!agentProject || wakingRef.current) return;
+    try {
+      await window.clubhouse.agent.updateDurableConfig(agentProject.path, agent.id, { runtimeMode: 'terminal' });
+    } catch (err) {
+      setWakeError(`Couldn't switch ${agent.name} to the terminal: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    await wake(defaultMode);
+  }, [agentProject, agent.id, agent.name, wake, defaultMode]);
+
   const wakeItems: MenuEntry[] = [
     { id: 'resume', label: 'Wake and resume last session', disabled: !canResume, selected: defaultMode === 'resume', onSelect: () => { void wake('resume'); } },
     { id: 'fresh', label: 'Wake with a fresh session', selected: defaultMode === 'fresh', onSelect: () => { void wake('fresh'); } },
@@ -300,6 +316,11 @@ export function SleepingAgent({ agent, details = false }: {
                 <div className="h-[42px] flex items-center gap-1.5 pl-3.5 pr-2">
                   <ModelLabel orchestrator={cli} model={agent.model} />
                   <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
+                  {offerTerminal && (
+                    <Button kind="ghost" onClick={() => { void openInTerminal(); }} disabled={waking || !ready} data-testid="open-in-terminal-button">
+                      Open in terminal
+                    </Button>
+                  )}
                   {failed && !isRemote && (
                     <Button kind="ghost" onClick={() => (isDispatcher ? openDispatcherSettings() : agent.creationFailed ? openAgentSettings(agent.id) : openAgentSettingsOn(agent.id, 'runtime'))} data-testid="open-settings-button">
                       {isDispatcher || agent.creationFailed ? 'Open settings' : 'Change CLI'}
@@ -313,7 +334,7 @@ export function SleepingAgent({ agent, details = false }: {
                       data-testid="wake-button"
                       className="rounded-r-none"
                     >
-                      {failed ? 'Retry' : 'Wake'}
+                      {offerTerminal ? 'Retry chat' : failed ? 'Retry' : 'Wake'}
                     </Button>
                     <Button
                       kind="primary"
