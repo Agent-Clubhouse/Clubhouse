@@ -186,7 +186,7 @@ function checkProtocolVersion(init: InitializeResponse | null | undefined): asse
 
 function probeErrorCode(err: unknown): ChatDriverProbe['errorCode'] {
   if (err instanceof AcpRequestTimeoutError) return 'rpc_timeout';
-  if (err instanceof AcpDisconnectedError) return err.end.error ? 'spawn_failed' : 'process_exited';
+  if (err instanceof AcpDisconnectedError) return err.end.spawn ? 'spawn_failed' : 'process_exited';
   if (err instanceof RpcError) return 'protocol_error';
   if (err instanceof Error && 'code' in err && (err.code === 'ENOENT' || err.code === 'EACCES' || err.code === 'EINVAL')) return 'spawn_failed';
   if (err instanceof Error && err.message.startsWith('ACP agent answered protocol version')) return 'protocol_error';
@@ -417,7 +417,8 @@ class AcpDriverSession implements ChatDriverSession {
     for (const [requestId, pending] of this.permissions) {
       this.permissions.delete(requestId);
       pending.resolve({ outcome: { outcome: 'cancelled' } });
-      this.push({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'user' } });
+      // The driver's own cancellation, not an answer the user gave (the runtime writes those).
+      this.push({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } });
     }
     for (const [requestId, pending] of this.questions) {
       this.questions.delete(requestId);
@@ -451,8 +452,11 @@ class AcpDriverSession implements ChatDriverSession {
   async setModel(modelId: string, effort?: string | null): Promise<void> {
     // ACP config options have no "unset", so there is no provider default to return to.
     if (effort === null) throw new Error("This agent can't return effort to its default");
+    // Callers pass the current model with an effort-only change (the UI and Annex do).
     const model = selectOption(this.facts.configOptions, 'model');
-    if (model ? model.currentValue !== modelId : !effort) await this.setConfig('model', modelId);
+    if (!model) throw new Error('This agent offers no model choice');
+    if (!flatValues(model).includes(modelId)) throw new Error(`This agent doesn't offer model "${modelId}"`);
+    if (model.currentValue !== modelId) await this.setConfig('model', modelId);
     if (effort) await this.setConfig('thought_level', effort);
   }
 
@@ -654,7 +658,7 @@ class AcpDriverSession implements ChatDriverSession {
       this.push({
         type: 'error',
         data: {
-          code: end.error ? 'spawn_failed' : 'process_exited',
+          code: end.spawn ? 'spawn_failed' : 'process_exited',
           message: `The ACP agent exited${how}${this.turn ? ' during a turn; whether the turn finished is unknown' : ''}`,
           fatal: true,
         },
@@ -671,6 +675,10 @@ class AcpDriverSession implements ChatDriverSession {
   private push(draft: ChatEventDraft): void {
     this.queue.push(draft);
   }
+}
+
+function flatValues(option: Extract<SessionConfigOption, { type: 'select' }>): string[] {
+  return option.options.flatMap((o) => ('group' in o ? o.options : [o])).map((o) => o.value);
 }
 
 function rpcErrorCode(err: RpcError): ChatErrorCode {
