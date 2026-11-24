@@ -83,7 +83,7 @@ async function refreshProjectIds(): Promise<void> {
     const projects = await projectStore.list();
     projectIds = new Map(projects.map((p) => [projectStore.projectPathKey(p.path), p.id]));
   } catch {
-    // Lines go without a project id until the next read.
+    // telemetry-exempt: lines go without a project id until the next read
   }
 }
 
@@ -118,7 +118,8 @@ function agentInfo(agentId: string): UsageAgentInfo {
   const known = knownAgent(agentId);
   if (!known) return { role: 'unknown' };
   const role: UsageRole = known.quick ? 'quick' : known.parentAgentId ? 'helper' : known.orchestrates ? 'orchestrator' : 'agent';
-  const projectId = projectIds.get(projectStore.projectPathKey(known.projectPath));
+  // Typed as required, but read from saved config: a missing or odd value just leaves the project out.
+  const projectId = typeof known.projectPath === 'string' && known.projectPath ? projectIds.get(projectStore.projectPathKey(known.projectPath)) : undefined;
   return { role, ...(known.parentAgentId && { parentAgentId: known.parentAgentId }), ...(projectId && { projectId }) };
 }
 

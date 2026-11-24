@@ -6,6 +6,7 @@ import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
 import { isAntigravityWorkspaceMcpPath, restoreAntigravityWorkspaceMcp } from '../orchestrators/antigravity/mcp-config';
+import { isAntigravityHooksPath, removeAntigravityHooks } from '../orchestrators/antigravity/hooks';
 import { scrubClubhouseNonce, scrubClubhouseNonceToml, stripClubhouseMcp, stripClubhouseMcpToml } from './clubhouse-mcp/injection';
 
 /** Optional observer for a cleanup that needs manual repair; existing callers need no changes. */
@@ -108,7 +109,7 @@ function withMutex<T>(fn: () => Promise<T>): Promise<T> {
  */
 async function snapshotKey(filePath: string): Promise<string> {
   const absPath = path.resolve(filePath);
-  if (!isAntigravityWorkspaceMcpPath(absPath)) return absPath;
+  if (!isAntigravityWorkspaceMcpPath(absPath) && !isAntigravityHooksPath(absPath)) return absPath;
   const worktree = path.dirname(path.dirname(absPath));
   try { return path.join(await fsp.realpath(worktree), path.relative(worktree, absPath)); }
   catch {
@@ -307,6 +308,7 @@ export function stripClubhouseHooksFromFile(filePath: string, options?: ConfigCl
   return withMutex(async () => {
     const absPath = path.resolve(filePath);
     if (isCopilotHooksPath(absPath)) return cleanupCopilotHooksFile(absPath, options);
+    if (isAntigravityHooksPath(absPath)) return restoreAntigravityHooksFile(absPath, options);
     if (!(await pathExists(absPath))) {
       await removeEmptyCodexHooksDirectory(absPath);
       return false;
@@ -395,6 +397,12 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
     await restoreAntigravityMcpFile(absPath, options);
     return;
   }
+  // Antigravity's hooks file: Clubhouse's `clubhouse-status` comes out by
+  // receipt, everything else stays (#3795). Never the generic re-serialize.
+  if (isAntigravityHooksPath(absPath)) {
+    await restoreAntigravityHooksFile(absPath, options);
+    return;
+  }
   // Keep Copilot out of generic corrupt-file unlink/snapshot-fallback recovery.
   if (isCopilotHooksPath(absPath)) {
     await cleanupCopilotHooksFile(absPath, options);
@@ -427,6 +435,27 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
       telemetry: { event: 'clubhouse.config.restore_failed', attrs: [ATTR.configFormat(isTomlFile(absPath) ? 'toml' : 'json')] },
     });
   }
+}
+
+async function restoreAntigravityHooksFile(absPath: string, options?: ConfigCleanupOptions): Promise<boolean> {
+  let result: Awaited<ReturnType<typeof removeAntigravityHooks>>;
+  try { result = await removeAntigravityHooks(path.dirname(path.dirname(absPath))); }
+  catch (err) {
+    // telemetry-exempt: becomes the repair notice and warning below; user bytes are left as they are.
+    result = { repair: `cleanup failed (${err instanceof Error ? err.message : String(err)})` };
+  }
+  if (typeof result === 'string') {
+    appLog('core:config-pipeline', 'info', 'Restored Antigravity hooks', { meta: { filePath: absPath, result } });
+    return result !== 'clean';
+  }
+  const message = `Antigravity hooks at ${absPath}: ${result.repair}; left unchanged. Review the file and remove any "clubhouse-status" hook Clubhouse added.`;
+  appLog('core:config-pipeline', 'warn', 'Antigravity hooks require manual repair', { meta: { filePath: absPath, detail: result.repair } });
+  try { options?.onRepairRequired?.(message); }
+  catch (err) {
+    // telemetry-exempt: a failed observer cannot authorize cleanup or change a skipped outcome; logged.
+    appLog('core:config-pipeline', 'warn', 'Antigravity repair notice failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
+  return false;
 }
 
 async function restoreAntigravityMcpFile(absPath: string, options?: ConfigCleanupOptions): Promise<void> {

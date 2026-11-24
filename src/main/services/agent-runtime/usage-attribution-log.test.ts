@@ -210,4 +210,16 @@ describe('usage attribution log', () => {
       for (const value of Object.values(meta)) if (typeof value === 'string') expect(value).not.toMatch(/^(\/|[A-Za-z]:[\\/]|~)/);
     }
   });
+
+  it('leaves the project out, without failing, when the agent record has no project path', () => {
+    _resetUsageAttributionForTesting();
+    registry.known = { projectPath: undefined as unknown as string };
+    vi.mocked(appLog).mockClear();
+    startUsageAttributionLog();
+    publishChatEvent({ v: 1, agentId: 'h', sessionId: 's', seq: ++seq, ts: now, type: 'session_started', data: { driver: 'codex_app_server', provider: 'codex', cwd: '/w', resumed: false, capabilities: {} } } as unknown as ChatEvent);
+    registry.known = undefined;
+    const meta = vi.mocked(appLog).mock.calls[0]?.[3]?.meta as Record<string, unknown>;
+    expect(meta).toMatchObject({ role: 'agent' });
+    expect(meta).not.toHaveProperty('projectId');
+  });
 });

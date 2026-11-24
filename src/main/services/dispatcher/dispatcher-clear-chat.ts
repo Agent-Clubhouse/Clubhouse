@@ -224,32 +224,44 @@ export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: S
 async function startWorkFreshOnce(workId: string, reason: StartFreshReason, deps: StartFreshDeps): Promise<'now' | 'next_start'> {
   const dir = getDispatcherPath();
   await (deps.verifyPolicy ?? ((d, id) => agentConfig.getDurableConfig(d, id, { forLaunch: true })))(dir, workId);
-  const sessionId = await (deps.workSessionId ?? currentWorkSession)(dir, workId);
-  const setAside = async () => {
+  const isRunning = deps.isRunning ?? agentSystem.isAgentRunning;
+  let quarantined = false;
+  const readSession = () => (deps.workSessionId ?? currentWorkSession)(dir, workId);
+  /** Its conversation quarantined, so no wake resumes it, or its resume id forgotten when there is none. */
+  const setAside = async (sessionId: string | null) => {
+    quarantined = !!sessionId;
     if (sessionId) await (deps.quarantine ?? agentConfig.quarantineSession)(dir, workId, sessionId);
     else await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, workId);
   };
   const notice: ChatEventDataMap['notice'] = { level: reason === 'user' ? 'info' : 'warn', code: 'started_fresh', message: WORK_NOTICE[reason] };
-  const running = (deps.isRunning ?? agentSystem.isAgentRunning)(workId);
-  const stale = running ? await staleProvider(dir, workId, deps) : null;
-  let result: 'now' | 'next_start';
-  if (stale) {
+  let result: 'now' | 'next_start' | null = null;
+  if (isRunning(workId) && await staleProvider(dir, workId, deps)) {
     // Stopped and started again, so it runs on its saved provider: clearing would keep the old CLI. Hand-offs
     // wait meanwhile, and nothing is written until it has stopped, so a stop that fails leaves its session,
     // its resume id and its requests as they were, still on the old provider.
-    await (deps.holdDeliveries ?? holdControllerDeliveries)(workId, async () => {
+    const stoppedFrom = await (deps.holdDeliveries ?? holdControllerDeliveries)(workId, async (): Promise<string | null> => {
+      // Read again inside the hold: a wake queued ahead of it may have restarted it on the saved provider already.
+      const stale = isRunning(workId) ? await staleProvider(dir, workId, deps) : null;
+      if (!stale) return null;
+      // Its session is read before the stop, while the runtime still has it, and set aside only after.
+      const sessionId = await readSession();
       await stopForProvider(dir, workId, stale, deps);
-      await setAside();
+      await setAside(sessionId);
       // Taken once it has stopped: every request the old conversation took, up to its last moment, ended with it.
       (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))((deps.takeWaiting ?? waitingRequests)());
       (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
+      return stale;
     });
-    // Outside the hold: the start goes through the same delivery queue. A hand-off that waited may have started it already.
-    result = await startControllerAgain(deps);
-    appLog('core:dispatcher', 'info', 'Dispatcher controller stopped for its new provider', { meta: { from: stale, started: result === 'now' } });
-  } else {
-    await setAside();
-    if (running) {
+    if (stoppedFrom) {
+      // Outside the hold: the start goes through the same delivery queue. A hand-off that waited may have started it already.
+      result = await startControllerAgain(deps);
+      appLog('core:dispatcher', 'info', 'Dispatcher controller stopped for its new provider', { meta: { from: stoppedFrom, started: result === 'now' } });
+    }
+  }
+  if (!result) {
+    // On its saved provider (or asleep), now or by the time the hold ran: start fresh in place, as always.
+    await setAside(await readSession());
+    if (isRunning(workId)) {
       await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
       // Taken first: a hand-off that lands during the clear goes to the new conversation and stays under way.
       const waiting = (deps.takeWaiting ?? waitingRequests)();
@@ -263,7 +275,7 @@ async function startWorkFreshOnce(workId: string, reason: StartFreshReason, deps
       result = 'next_start';
     }
   }
-  appLog('core:dispatcher', reason === 'user' ? 'info' : 'warn', 'Dispatcher controller started fresh', { meta: { reason, running: result === 'now', quarantined: !!sessionId } });
+  appLog('core:dispatcher', reason === 'user' ? 'info' : 'warn', 'Dispatcher controller started fresh', { meta: { reason, running: result === 'now', quarantined } });
   return result;
 }
 

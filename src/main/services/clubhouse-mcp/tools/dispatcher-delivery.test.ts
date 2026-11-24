@@ -56,7 +56,7 @@ import { IPC } from '../../../../shared/ipc-channels';
 import { registerAgentTools } from './agent-tools';
 import { mcpAdapter } from '../mcp-adapter';
 import {
-  wakeDispatcher, deliverToDispatcher, dispatcherInboxId, isDispatcherTarget, sleepingDispatcherHint, _resetDispatcherDeliveryForTesting,
+  wakeDispatcher, deliverToDispatcher, dispatcherInboxId, holdDispatcherDeliveries, isDispatcherTarget, sleepingDispatcherHint, _resetDispatcherDeliveryForTesting,
   type DispatcherDeliveryRequest,
 } from './dispatcher-delivery';
 import { clearAgentMessages, findInInbox } from '../../dispatcher/dispatcher-news-inbox';
@@ -99,6 +99,59 @@ describe('messages to the Dispatcher (#3037)', () => {
       ? { id: 'disp', name: 'Dispatcher', model: 'sonnet', orchestrator: 'claude-code', freeAgentMode: true, lastSessionId: 's-1' }
       : null));
     mocks.decideGrant.mockReturnValue({ outcome: 'allow' });
+  });
+
+  describe('holding deliveries while the controller restarts (#3818)', () => {
+    /** A hold whose `fn` runs until released, recording when it starts. */
+    function held(order: string[], ending: 'resolve' | 'throw') {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const hold = holdDispatcherDeliveries('disp', async () => {
+        order.push('hold');
+        await gate;
+        order.push('release');
+        if (ending === 'throw') throw new Error('stop failed');
+        return 'stopped';
+      });
+      return { hold, release };
+    }
+
+    it('a message sent during the hold waits for it, and is delivered once it ends', async () => {
+      running = true;
+      const order: string[] = [];
+      mocks.sendMessage.mockImplementation(async () => { order.push('delivered'); });
+      const { hold, release } = held(order, 'resolve');
+      const delivery = deliverToDispatcher(request());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
+      release();
+      await expect(hold).resolves.toBe('stopped');
+      await expect(delivery).resolves.toEqual({ delivered: true, woke: false });
+      expect(order).toEqual(['hold', 'release', 'delivered']);
+    });
+
+    it('a hold that throws rejects to its caller, and the waiting message is still delivered after it', async () => {
+      running = true;
+      const order: string[] = [];
+      mocks.sendMessage.mockImplementation(async () => { order.push('delivered'); });
+      const { hold, release } = held(order, 'throw');
+      const delivery = deliverToDispatcher(request());
+      release();
+      await expect(hold).rejects.toThrow('stop failed');
+      await expect(delivery).resolves.toEqual({ delivered: true, woke: false });
+      expect(order).toEqual(['hold', 'release', 'delivered']);
+    });
+
+    it('a wake asked for during the hold runs after it: a controller stopped inside it starts again', async () => {
+      running = true;
+      const order: string[] = [];
+      system.spawnAgent.mockImplementation(async () => { order.push('spawn'); running = true; });
+      const hold = holdDispatcherDeliveries('disp', async () => { order.push('stop'); running = false; });
+      const wake = wakeDispatcher({ callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' });
+      await hold;
+      expect((await wake).isError).toBeFalsy();
+      expect(order).toEqual(['stop', 'spawn']);
+    });
   });
 
   it('knows the Dispatcher, and delivers to the Dispatcher agent itself today', () => {

@@ -108,6 +108,12 @@ export interface NormalizedHookEvent {
    * on a terminal agent in step with in-CLI mode changes (Shift+Tab).
    */
   permissionLevel?: PermissionLevel;
+  /**
+   * The CLI's own session id, when its hook payload carries one and it prints
+   * none to the terminal (Antigravity's `conversationId`, #3795). Recorded for
+   * the run's session capture; never parsed from a transcript.
+   */
+  sessionId?: string;
 }
 
 /**
