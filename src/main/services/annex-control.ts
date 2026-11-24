@@ -481,9 +481,17 @@ function requestBodyLimit(path: string): number {
   return /^\/api\/v1\/mobile\/agents\/[^/]+\/attachments$/.test(path) ? CHAT_IMAGE_MAX_BYTES : CONTROL_FRAME_MAX_BYTES;
 }
 const GIT_DIFF_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+/** Whole bulletin boards and native transcript pages: the same finite envelope as Git diffs (#3613). */
+const LARGE_READ_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+const LARGE_READ_PATHS = [
+  /^\/api\/v1\/group-projects\/[^/?#]+\/bulletin\/messages(?:\?[^#]*)?$/,
+  /^\/api\/v1\/group-projects\/[^/?#]+\/bulletin\/topics\/[^/?#]+(?:\?[^#]*)?$/,
+  /^\/api\/v1\/agents\/[^/?#]+\/sessions\/[^/?#]+\/transcript(?:\?[^#]*)?$/,
+];
 /** Envelope limits only; route handlers retain their exact existing content limits. */
 export function responseBodyLimit(path: string, method?: ControlMethod): number {
   if (method === 'GET' && /^\/api\/v1\/projects\/[^/?#]+\/git\/diff(?:\?[^#]*)?$/.test(path)) return GIT_DIFF_RESPONSE_MAX_BYTES;
+  if (method === 'GET' && LARGE_READ_PATHS.some((pattern) => pattern.test(path))) return LARGE_READ_RESPONSE_MAX_BYTES;
   if (/^\/api\/v1\/projects\/[^/]+\/files\/read(?:\?|$)/.test(path)) return Infinity;
   if (/\/chat\/events\/\d+(?:\?|$)/.test(path)) return FULL_EVENT_MAX_BYTES;
   if (/\/icons\//.test(path)) return ICON_SERVED_MAX_BYTES;
