@@ -23,6 +23,8 @@ import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agent
 import type { HookEventKind, TurnOutcome } from '../../shared/types';
 import { finishHeadlessTurn, publishFromHookEvent, startHeadlessTurn, type HeadlessTurn } from './app-event-bus';
 import { knownQuickAgents, type QuickAgentRun } from './quick-agent-events';
+import { HeadlessUsageAccumulator } from './headless-usage';
+import { logHeadlessRunUsage } from './agent-runtime/usage-attribution-log';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -65,6 +67,8 @@ interface HeadlessSession {
   startedAt: number;
   turn: HeadlessTurn;
   quickRun?: QuickAgentRun;
+  /** The run's token figures, kept as events arrive (headless-usage.ts). */
+  usage: HeadlessUsageAccumulator;
   resultOutcome?: TurnOutcome;
   textBuffer?: string;
   /** Timer for force-kill escalation in kill(). */
@@ -366,6 +370,7 @@ function createSessionRecord(
     onExitCallback: onExit,
     rawEventTypes: new Map(),
     nextLiveReportMs: LIVE_REPORT_QUIET_MS,
+    usage: new HeadlessUsageAccumulator(),
   };
 }
 
@@ -438,6 +443,7 @@ function handleTranscriptEvent(
   toolNamesById: Map<string, string>,
 ): void {
   appendTranscriptEvent(session, event, logStream);
+  session.usage.note(event);
   if (event.type === 'result') {
     session.resultSeenAt ??= Date.now();
     // A provider can report failure with a successful process exit.
@@ -663,6 +669,16 @@ function setupExitHandlers(
       : error || exitCode !== 0 || session.resultOutcome === 'failed' || session.turn.outcome === 'failed' ? 'failed' : 'completed';
     const errorCategory = error ? 'process_error' : exitCode !== 0 ? 'process_exit' : 'provider_error';
     runFinalizationStep(agentId, 'turn end', () => finishHeadlessTurn(session.turn, outcome, errorCategory));
+    runFinalizationStep(agentId, 'usage line', () => logHeadlessRunUsage({
+      agentId,
+      startedAt: session.startedAt,
+      provider: session.quickRun?.display?.orchestrator,
+      model: session.quickRun?.display?.model,
+      effort: session.quickRun?.display?.effort,
+      outcome,
+      durationMs: (session.exitedAt ?? Date.now()) - session.startedAt,
+      usage: session.usage.result(),
+    }));
 
     // For text mode, synthesize a result transcript entry from buffered output
     if (outputKind === 'text' && session.textBuffer) {

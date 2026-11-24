@@ -30,6 +30,8 @@
 import type { ChatEvent } from '../../../shared/chat';
 import type { ChatDriverId } from '../../../shared/chat/capabilities';
 import { RunUsageTracker, type UsageSample } from '../../telemetry/helper-usage-accounting';
+import { USAGE_FIGURE_KEYS, usageCompleteness, type UsageFigures } from '../../../shared/telemetry/helper-usage-contract';
+import type { HeadlessRunUsage } from '../headless-usage';
 import { appLog } from '../log-service';
 import { knownAgent } from '../app-event-sources';
 import * as projectStore from '../project-store';
@@ -215,6 +217,53 @@ export function logUsageChatEvent(event: ChatEvent): void {
     }
     default:
       return;
+  }
+}
+
+/**
+ * One line for a finished headless run (`codex exec`, `claude -p`): not a chat
+ * session, so it has no turns of its own. Logged as a `Usage turn` of kind
+ * `run`, so the rollup adds it like any turn. Provider, model and effort are
+ * what the run was started with (`requested: true`), not a provider report.
+ */
+export function logHeadlessRunUsage(run: {
+  agentId: string;
+  startedAt: number;
+  provider?: string;
+  model?: string;
+  effort?: string;
+  outcome: string;
+  durationMs?: number;
+  usage: HeadlessRunUsage | undefined;
+}): void {
+  try {
+    const info = agentInfo(run.agentId);
+    const figures: UsageFigures = {};
+    for (const k of USAGE_FIGURE_KEYS) if (run.usage?.tokens[k] !== undefined) figures[k] = run.usage.tokens[k];
+    write('Usage turn', {
+      agentId: run.agentId,
+      role: info.role,
+      ...(info.parentAgentId && { parentAgentId: info.parentAgentId }),
+      ...(info.projectId && { projectId: info.projectId }),
+      sessionId: `headless:${run.startedAt}`,
+      turnId: 'run',
+      resumed: false,
+      driver: 'headless',
+      provider: run.provider ?? 'unknown',
+      model: run.model ?? 'unknown',
+      effort: run.effort ?? 'unknown',
+      requested: true,
+      kind: 'run',
+      source: run.usage?.source ?? 'unknown',
+      dedup: run.usage?.dedup ?? 'none',
+      scope: 'unscoped',
+      completeness: usageCompleteness(figures),
+      ...figures,
+      ...(run.durationMs !== undefined && { durationMs: run.durationMs }),
+      stopReason: run.outcome,
+    });
+  } catch {
+    // telemetry-exempt: a usage line never affects the run it describes
   }
 }
 

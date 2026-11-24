@@ -15,6 +15,7 @@ import { appLog } from '../log-service';
 import { createDiagnosticsRing, DIAGNOSTICS_CATALOG } from '../framebriar/feedback-diagnostics';
 import { publishChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import {
+  logHeadlessRunUsage,
   USAGE_LOG_MAX_LINES_PER_HOUR,
   USAGE_LOG_NS,
   _resetUsageAttributionForTesting,
@@ -221,5 +222,14 @@ describe('usage attribution log', () => {
     const meta = vi.mocked(appLog).mock.calls[0]?.[3]?.meta as Record<string, unknown>;
     expect(meta).toMatchObject({ role: 'agent' });
     expect(meta).not.toHaveProperty('projectId');
+  });
+
+  it('logs a headless run as one requested-settings run line, with figures only where reported', () => {
+    logHeadlessRunUsage({ agentId: 'helper', startedAt: 5, provider: 'codex-cli', model: 'gpt-x', outcome: 'completed', durationMs: 9, usage: { tokens: { input: 10, cachedInput: 8, output: 2 }, source: 'summed_calls', dedup: 'none' } });
+    logHeadlessRunUsage({ agentId: 'stranger', startedAt: 6, outcome: 'failed', usage: undefined });
+    const [run, none] = turnLines();
+    expect(run).toMatchObject({ agentId: 'helper', role: 'helper', parentAgentId: 'orch', sessionId: 'headless:5', turnId: 'run', kind: 'run', driver: 'headless', provider: 'codex-cli', model: 'gpt-x', effort: 'unknown', requested: true, source: 'summed_calls', completeness: 'complete', input: 10, cachedInput: 8, output: 2, stopReason: 'completed' });
+    expect(none).toMatchObject({ role: 'unknown', provider: 'unknown', source: 'unknown', completeness: 'none', stopReason: 'failed' });
+    for (const k of ['input', 'output']) expect(none).not.toHaveProperty(k);
   });
 });
