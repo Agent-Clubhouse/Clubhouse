@@ -22,7 +22,7 @@ const run = (d: string) => classify([...changedLinesByFile(d).keys()], changedLi
 
 describe('classify-changes', () => {
   it('docs-only changes need nothing', () => {
-    expect(run(diff({ 'docs/ci.md': ['+x'], 'README.md': ['+y'], 'notes/a.md': ['+z'] })))
+    expect(run(diff({ 'docs/ci.md': ['+x'], 'README.md': ['+y'], 'docs/b.md': ['+z'] })))
       .toEqual({ docsOnly: true, e2e: false, macosBuild: false });
   });
 

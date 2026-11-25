@@ -36,7 +36,6 @@ on:
     # normally (paths-ignore only skips when every file matches).
     paths-ignore:
       - 'docs/**'
-      - 'notes/**'
       - '*.md'
       - '.github/ISSUE_TEMPLATE/**'
       - 'LICENSE'

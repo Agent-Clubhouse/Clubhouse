@@ -28,7 +28,7 @@ The rules, in short:
 
 The `changes` job classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
 
-- **Docs-only:** everything under `docs/`, `notes/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these PRs before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
+- **Docs-only:** everything under `docs/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these PRs before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
 - **E2E:** every change except docs, unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`).
 - **macOS build:** any one of these.
   - **A packaging input:** `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js` or `.icns` icons.

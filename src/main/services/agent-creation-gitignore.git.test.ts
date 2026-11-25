@@ -27,7 +27,7 @@ vi.mock('./project-store', () => ({
 
 import { clearAgentConfigCache, createDurable, flushAllAgentConfigs } from './agent-config';
 import { registerProjectFolder } from './project-add';
-import { writeMcpConfigs } from './agent-settings-service';
+import { writeDefaultMcps } from './agent-settings-service';
 import { resetLocalExcludesForTests } from './local-excludes';
 import { CLUBHOUSE_LOCAL_PATTERNS } from './local-excludes';
 import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
@@ -119,9 +119,9 @@ describe('project settings backups (#3623)', () => {
   it('keeps the backup and recovery copy out of git before any agent exists, without editing .gitignore', async () => {
     const before = fs.readFileSync(path.join(project, '.gitignore'));
     const live = path.join(project, '.clubhouse', 'settings.json');
-    await writeMcpConfigs(project, { one: { url: 'local' } });
+    await writeDefaultMcps(project, ['one']);
     fs.writeFileSync(live, '{"broken"');
-    await writeMcpConfigs(project, { two: { url: 'local' } });
+    await writeDefaultMcps(project, ['two']);
     const names = fs.readdirSync(path.join(project, '.clubhouse'));
     expect(names).toEqual(expect.arrayContaining(['settings.json.bak', 'settings.json.unreadable']));
     expect(fs.readFileSync(path.join(project, '.gitignore')).equals(before)).toBe(true);
