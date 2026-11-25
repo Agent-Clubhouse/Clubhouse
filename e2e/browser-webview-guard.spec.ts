@@ -29,9 +29,12 @@ import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { connectMcp } from './mcp-agent';
 import { launchApp, type LaunchedApp } from './launch';
 import { createDisposableProfile, type DisposableProfile } from './app-profile';
-import { addProject, assertRunLayout } from './smoke-helpers';
+import { assertRunLayout } from './smoke-helpers';
 
 const AGENT = 'durable_browser_guard';
+// A fixed project id, registered before launch, so its Browser settings can be seeded too:
+// a canvas widget may read the project's Browser settings rather than the app's.
+const PROJECT_ID = 'proj_e2e_browser';
 const VIEW_ID = 'cv_e2e_browser';
 const PAGE_MARKER = 'browser-guard-page';
 const FILE_MARKER = 'browser-guard-local-file';
@@ -86,13 +89,24 @@ async function writeQuietFixture(dir: string): Promise<string> {
   return file;
 }
 
-/** Seed the profile before launch: the Browser's app settings and an app-wide canvas holding one Browser widget. */
-function seedProfile(userDataDir: string, pageUrl: string): void {
+/**
+ * Seed the profile before launch: the project (fixed id), the Browser's settings
+ * for the app and that project, and an app-wide canvas holding one Browser widget.
+ */
+function seedProfile(userDataDir: string, pageUrl: string, projectDir: string): void {
+  const baseDir = path.join(userDataDir, '.clubhouse-dev');
+  fs.mkdirSync(baseDir, { recursive: true });
+  fs.writeFileSync(path.join(baseDir, 'projects.json'), JSON.stringify({
+    version: 1, projects: [{ id: PROJECT_ID, name: path.basename(projectDir), path: projectDir }],
+  }));
+
   const plugins = path.join(userDataDir, '.clubhouse', 'plugin-data');
   const systemKv = path.join(plugins, '_system', 'kv');
   fs.mkdirSync(systemKv, { recursive: true });
-  // Localhost on so the widget shows the local page; file:// stays off (the default).
-  fs.writeFileSync(path.join(systemKv, 'settings-app-browser.json'), JSON.stringify({ allowLocalhost: true, allowFileProtocol: false }));
+  // Localhost on so the widget shows the local page; file:// stays off (the default) in every scope.
+  for (const scope of ['app', PROJECT_ID]) {
+    fs.writeFileSync(path.join(systemKv, `settings-${scope}-browser.json`), JSON.stringify({ allowLocalhost: true, allowFileProtocol: false }));
+  }
 
   const canvasKv = path.join(plugins, 'canvas', 'kv');
   fs.mkdirSync(canvasKv, { recursive: true });
@@ -101,7 +115,7 @@ function seedProfile(userDataDir: string, pageUrl: string): void {
     views: [{
       id: VIEW_ID, type: 'plugin', pluginWidgetType: 'plugin:browser:webview', pluginId: 'browser',
       position: { x: 40, y: 40 }, size: { width: 640, height: 480 },
-      title: 'Browser', displayName: 'Browser', zIndex: 0, metadata: { url: pageUrl },
+      title: 'Browser', displayName: 'Browser', zIndex: 0, metadata: { url: pageUrl, projectId: PROJECT_ID },
     }],
     viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
   }];
@@ -143,7 +157,7 @@ test('a Browser webview takes agent tools and refuses programmatic file:// loads
 
   fakes = await installFakeClis({ claude: await writeQuietFixture(scratch) });
   profile = createDisposableProfile({ label: 'browser-guard' });
-  seedProfile(profile.userDataDir, pageUrl);
+  seedProfile(profile.userDataDir, pageUrl, projectDir);
   app = await launchApp({
     profile,
     userDataFiles: {
@@ -155,13 +169,15 @@ test('a Browser webview takes agent tools and refuses programmatic file:// loads
   const { electronApp, window: w } = app;
   await assertRunLayout(w);
 
-  // An agent on the fake CLI, as an MCP client.
-  await addProject(electronApp, w, projectDir);
+  // An agent on the fake CLI, as an MCP client. The project was registered before launch.
+  await expect(w.getByText(path.basename(projectDir)).first()).toBeVisible({ timeout: 15_000 });
   await w.evaluate(({ id, dir }) => window.clubhouse.agent.spawnAgent({ agentId: id, projectPath: dir, cwd: dir, kind: 'durable', orchestrator: 'claude-code' }), { id: AGENT, dir: projectDir });
   await expect.poll(async () => (await fakes!.report('claude').catch((): undefined => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(AGENT);
   const mcp = await connectMcp((await fakes.report('claude')).env);
 
-  // The real Browser widget, on the app-wide canvas.
+  // The real Browser widget, on the app-wide canvas. The widget uses the Browser API
+  // of whichever activation (app or project) registered the widget type, so both
+  // scopes' settings are seeded.
   await w.getByTestId('app-row-canvas').click();
   const webview = w.locator('webview[partition="persist:plugin-browser"]');
   await expect(webview).toHaveCount(1, { timeout: 20_000 });
