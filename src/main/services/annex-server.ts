@@ -2138,13 +2138,23 @@ function isOtherControllersShell(ws: WebSocket, id: string): boolean {
   return owner !== undefined && owner !== ws;
 }
 
-/** The paired device a control socket speaks for: its certificate fingerprint and pin. */
-interface ShellDevice { fingerprint: string; pin: string | undefined }
+/**
+ * The paired device a control socket speaks for: its certificate fingerprint and pin.
+ * `via` is how it reached this machine: its own /ws, or a reverse subscription over a
+ * connection this machine opened (#3613). It picks the authorization a detached shell is
+ * fenced by; ownership is the device itself, whichever route it comes back on.
+ */
+interface ShellDevice { fingerprint: string; pin: string | undefined; via?: 'direct' | 'reverse' }
 
 function deviceOf(ws: WebSocket): ShellDevice | null {
-  if (reverseSockets.has(ws) || wsAuthTypes.get(ws) !== 'mtls') return null;
+  if (wsAuthTypes.get(ws) !== 'mtls') return null;
   const fingerprint = wsPeerFingerprints.get(ws);
-  return fingerprint ? { fingerprint, pin: wsPeerPins.get(ws) } : null;
+  return fingerprint ? { fingerprint, pin: wsPeerPins.get(ws), via: reverseSockets.has(ws) ? 'reverse' : 'direct' } : null;
+}
+
+/** Whether `device` is still allowed here, as it came: a closed socket's own state plays no part. */
+function deviceStillAllowed(device: ShellDevice): boolean {
+  return authorize({ fingerprint: device.fingerprint, pin: device.pin, via: device.via ?? 'direct' }, authorizerDeps).ok;
 }
 
 /**
@@ -2253,7 +2263,7 @@ function endShellsOfPeer(fingerprint: string): void {
  */
 function endUnauthorizedDetachedShells(): void {
   for (const [sessionId, { device }] of [...detachedShells]) {
-    if (!authorize({ fingerprint: device.fingerprint, pin: device.pin, via: 'direct' }, authorizerDeps).ok) endDetachedShell(sessionId);
+    if (!deviceStillAllowed(device)) endDetachedShell(sessionId);
   }
 }
 
@@ -2268,12 +2278,13 @@ function shellCountFor(ws: WebSocket, except?: string): number {
 
 /**
  * On disconnect, a paired controller's shells detach for SHELL_REATTACH_GRACE_MS
- * (#3843). They end now when the socket was closed for a removed pairing, or
- * its device is no longer allowed, or Annex is stopping.
+ * (#3843), whether it spoke over its own /ws or a reverse subscription (#3613).
+ * They end now when the socket was closed for a removed pairing, or its device
+ * is no longer allowed as it came, or Annex is stopping.
  */
 function detachShellsFor(ws: WebSocket, code?: number): void {
   const device = deviceOf(ws);
-  const keep = !!device && !!wss && code !== PEER_REVOKED_CLOSE_CODE && controlStillAllowed(ws);
+  const keep = !!device && !!wss && code !== PEER_REVOKED_CLOSE_CODE && deviceStillAllowed(device);
   for (const [sessionId, owner] of [...shellOwners]) {
     if (owner !== ws) continue;
     shellOwners.delete(sessionId);
@@ -5490,7 +5501,8 @@ const controlInboundAuthority: annexControl.InboundAuthority = {
  * grant filtering, member no-lock, heartbeat and revocation all apply to it
  * unchanged. It has no `message` listener: the only way in is the control
  * connection's `client` frames (P5), handed to handleWsMessage directly. Its
- * shells are its own and close with it, as a direct socket's do.
+ * shells are its own, and on its end they detach for the same reattach grace a
+ * direct socket's do (#3843), fenced as reverse.
  */
 class ReverseSubscriber extends EventEmitter {
   readyState: number = WebSocket.OPEN;

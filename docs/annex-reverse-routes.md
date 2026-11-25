@@ -87,6 +87,17 @@ Stop, disconnect, forget, trust replacement and link loss retire subscriptions,
 pending requests and tracked reverse terminal handles. A refused/ended stream is
 not subscribed again in the same epoch without explicit Retry.
 
+On the target, a reverse subscription's shells end as a direct socket's do
+(#3843): when the subscription ends they detach for the same reattach grace,
+private, with the same caps, tombstones and expiry. They end at once if the
+member was removed or the subscription was revoked. The fence that keeps a
+detached shell alive authorizes the member as reverse, on each heartbeat and
+again after a reattach snapshot. `pty:reattach-shell` is an allowed client frame
+over the subscription. Only the same device, by certificate fingerprint and pin,
+takes a shell back, on whichever route it returns; a reattach never spawns. An
+older target answers the frame `not_allowed_over_reverse` and keeps the
+subscription.
+
 Only a compatible current stream snapshot projects live renderer consumer state.
 Request capability alone does not mint a snapshot or live state. The existing
 direct connectivity/publication predicate remains direct-only, and device reach

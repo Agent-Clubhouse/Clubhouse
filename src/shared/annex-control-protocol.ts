@@ -56,7 +56,7 @@ export const CONTROL_FEATURES = ['request', 'subscribe', 'ws-control', 'bulk', '
  * socket, for the subscription's virtual client.
  */
 export const CONTROL_WS_CLIENT_TYPES = [
-  'pty:input', 'pty:resize', 'pty:spawn-shell', 'pty:close', 'pty:attach',
+  'pty:input', 'pty:resize', 'pty:spawn-shell', 'pty:close', 'pty:attach', 'pty:reattach-shell',
   'agent:spawn', 'agent:wake', 'agent:kill', 'agent:reorder', 'canvas:mutation', 'clipboard:image',
 ] as const;
 export type ControlFeature = typeof CONTROL_FEATURES[number];
