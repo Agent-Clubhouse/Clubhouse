@@ -204,7 +204,8 @@ export function remoteMachineOf(targetId: string): string | null {
 let deliveries = createAnnexDeliveryStore();
 export type AgentCallBody = DurableAgentCall;
 type OutboxItem = DeliveryOutboxItem;
-type DeliveryAuthorization = { allowed: true } | { allowed: false; reason: string };
+/** `notReady`: the receiver hasn't published what this needs yet (#3829); nothing was sent and it waits, until expiry. */
+type DeliveryAuthorization = { allowed: true } | { allowed: false; reason: string; notReady?: true };
 let authorizeQueuedCall: ((item: OutboxItem) => Promise<DeliveryAuthorization>) | undefined;
 let onDeliveryFailure: ((notice: AnnexDeliveryFailure) => Promise<boolean | void>) | undefined;
 
@@ -434,6 +435,32 @@ async function deliverFailureNotices(): Promise<void> {
   }
 }
 
+/**
+ * How long a not-ready wait lasts: the readiness retry at first, growing with
+ * the item's age up to the ordinary maximum, so a receiver that never becomes
+ * ready sees a bounded number of tries before the seven-day expiry (#3829).
+ */
+function readinessBackoff(queuedAt: string, at = Date.now()): number {
+  return Math.min(RETRY_MAX_MS, Math.max(READINESS_RETRY_MS, Math.floor((at - Date.parse(queuedAt)) / 4)));
+}
+
+/**
+ * Waits for a receiver that hasn't published what this delivery needs (#3829).
+ * No input was sent. The wait grows with the item's age, between the readiness
+ * retry and the ordinary maximum, and the seven-day expiry still ends it.
+ */
+async function deferNotReady(item: OutboxItem, machine: string, detail: string): Promise<void> {
+  const retry = readinessBackoff(item.queuedAt);
+  await deliveries.update((file) => {
+    const saved = file.deliveries.find((r) => r.callId === item.id)!;
+    // Marked sending just before the last check, but nothing went: this attempt doesn't count.
+    if (saved.state === 'sending' && saved.attempts > 0) saved.attempts--;
+    Object.assign(saved, { state: 'retry_later', reason: 'receiver_not_ready', readinessRetry: false, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });
+  });
+  appLog('core:annex', 'info', 'An agent delivery waits for the receiver', { meta: { callId: item.id, targetAgent: item.body.to, detail, retryMs: retry } });
+  retryLater(machine, retry);
+}
+
 async function finishDelivery(item: OutboxItem, state: 'delivered' | 'refused' | 'expired' | 'indeterminate', result: McpToolResult, reason?: string): Promise<void> {
   await deliveries.update((file) => {
     const status = file.deliveries.find((r) => r.callId === item.id)!;
@@ -443,7 +470,9 @@ async function finishDelivery(item: OutboxItem, state: 'delivered' | 'refused' |
     file.outbox = file.outbox.filter((i) => i.id !== item.id);
   });
   if (state !== 'delivered') {
-    appLog('core:annex', 'warn', 'An agent delivery ended without confirmed delivery', { meta: { callId: item.id, targetAgent: item.body.to, state, reason } });
+    // The refusal text names which check refused (#3829); it is fixed product text, never message content.
+    const detail = reason === 'authorization_revoked' ? result.content.find((part) => part.type === 'text')?.text : undefined;
+    appLog('core:annex', 'warn', 'An agent delivery ended without confirmed delivery', { meta: { callId: item.id, targetAgent: item.body.to, state, reason, ...(detail && { detail }) } });
     await notifyFailures();
   }
 }
@@ -547,6 +576,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const authorization = authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };
       if (generation !== lifecycle) return;
       if (authorization.allowed === false) {
+        if (authorization.notReady) { await deferNotReady(item, machine, authorization.reason); deferred.add(deliveryLane(item.body)); continue; }
         await finishDelivery(item, 'refused', text(authorization.reason, true), 'authorization_revoked');
         continue;
       }
@@ -555,7 +585,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const savedDeadline = Date.parse(status.nextAttemptAt ?? '');
       // A reason string is diagnostic, not proof of safe readiness retry. Old
       // unmarked records keep their stored deadline because provenance is unknown.
-      const deadline = status.readinessRetry === true ? Math.min(savedDeadline, Date.parse(status.updatedAt) + READINESS_RETRY_MS) : savedDeadline;
+      const deadline = status.readinessRetry === true ? Math.min(savedDeadline, Date.parse(status.updatedAt) + readinessBackoff(item.queuedAt, Date.parse(status.updatedAt))) : savedDeadline;
       const delay = deadline - Date.now();
       if (delay > 0) { deferred.add(deliveryLane(item.body)); retryLater(machine, delay); continue; }
       let supported: boolean;
@@ -586,6 +616,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const currentAuthorization = await authorize!(item);
       if (generation !== lifecycle) return;
       if (currentAuthorization.allowed === false) {
+        if (currentAuthorization.notReady) { await deferNotReady(item, machine, currentAuthorization.reason); deferred.add(deliveryLane(item.body)); continue; }
         await finishDelivery(item, 'refused', text(currentAuthorization.reason, true), 'authorization_revoked');
         continue;
       }
@@ -627,7 +658,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
         reason = receipt?.reason ?? (answer?.isError ? 'tool_retry_later' : `http_${response.status}`);
         targetNotReady = receipt?.state === 'retry_later' && receipt.reason === 'target_not_ready';
       }
-      const retry = targetNotReady ? READINESS_RETRY_MS : Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
+      const retry = targetNotReady ? readinessBackoff(item.queuedAt) : Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
       await deliveries.update((file) => {
         const saved = file.deliveries.find((r) => r.callId === item.id)!;
         Object.assign(saved, { state: 'retry_later', reason, readinessRetry: targetNotReady, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });

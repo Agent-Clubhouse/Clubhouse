@@ -7,7 +7,7 @@ vi.mock('./dispatcher-federation-context', () => ({ federationTurnInputs: m.effe
 vi.mock('../telemetry/facade', () => ({ tel: { exception: m.effect } }));
 vi.mock('../telemetry/dispatcher-telemetry', () => ({ recordFederatedRequest: m.effect, recordFederationLimit: m.effect }));
 vi.mock('./dispatcher-federation-telemetry', () => ({ watchFederationTelemetry: () => m.stop }));
-vi.mock('./annex-agent-calls', () => ({ captureControllerPublication: m.effect, forwardPreparedAgentCall: m.effect, flushOutbox: m.effect, getDelivery: m.effect }));
+vi.mock('./annex-agent-calls', () => ({ captureControllerPublication: m.effect, forwardPreparedAgentCall: m.effect, flushOutbox: m.effect, getDelivery: m.effect, isNetworkComputer: m.effect }));
 vi.mock('./annex-identity', () => ({ getIdentity: m.effect }));
 vi.mock('./annex-network-membership', () => ({ ownPairing: m.effect }));
 vi.mock('./annex-peers', () => ({ listPeers: m.effect }));

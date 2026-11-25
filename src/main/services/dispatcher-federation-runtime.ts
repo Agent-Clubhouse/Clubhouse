@@ -4,7 +4,7 @@ import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-addres
 import { tel } from '../telemetry/facade';
 import { recordFederatedRequest, recordFederationLimit } from '../telemetry/dispatcher-telemetry';
 import { watchFederationTelemetry } from './dispatcher-federation-telemetry';
-import { captureControllerPublication, forwardPreparedAgentCall, flushOutbox, getDelivery, type DispatcherAgentCallReceiver } from './annex-agent-calls';
+import { captureControllerPublication, forwardPreparedAgentCall, flushOutbox, getDelivery, isNetworkComputer, type DispatcherAgentCallReceiver } from './annex-agent-calls';
 import { getIdentity } from './annex-identity';
 import { ownPairing } from './annex-network-membership';
 import { listPeers } from './annex-peers';
@@ -47,6 +47,11 @@ export function startFederatedRequests(): () => void {
       const guard = captureControllerPublication(machine);
       return active && guard.current() && isDispatcherEnabled() && guard.epoch.sender === epoch.sender && guard.epoch.receiver === epoch.receiver
         && !!controllerDirection({ agentId: getDispatcherAgentId() ?? '' }, { agentId: agent, machineId: machine });
+    },
+    awaitingController: (machine, epoch) => {
+      const guard = captureControllerPublication(machine);
+      return active && guard.current() && isDispatcherEnabled() && isNetworkComputer(machine)
+        && guard.epoch.sender === epoch.sender && guard.epoch.receiver === epoch.receiver && !remoteFederationController(machine)?.agentId;
     },
     authorizedNews: (machine, epoch) => {
       const guard = captureControllerPublication(machine);
