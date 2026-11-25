@@ -35,15 +35,13 @@ import { appLog } from './log-service';
 import {
   readClaudeMd, writeClaudeMd, readPermissions, writePermissions,
   readSkillContent, writeSkillContent, deleteSkill,
-  readAgentTemplateContent, writeAgentTemplateContent, deleteAgentTemplate,
-  listAgentTemplateFiles, listSkills, listAgentTemplates,
+  listSkills,
   readMcpRawJson, writeMcpRawJson, readMcpConfig,
   readLaunchWrapper, readDefaultMcps,
   readProjectAgentDefaults, writeProjectAgentDefaults, projectSettingsMutationState, applyAgentDefaults,
   readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot,
   readMcpConfigs, writeMcpConfigs,
-  listSourceMissions, readSourceMissionContent,
-  writeSourceMissionContent, deleteSourceMission,
+  readSourceMissionContent,
   SettingsConventions,
 } from './agent-settings-service';
 import type { WrapperCatalogSnapshot } from '../../shared/types';
@@ -239,26 +237,6 @@ describe('writePermissions', () => {
 
 // --- Skill content CRUD ---
 
-describe('listSourceMissions', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('lists .md files from .clubhouse/missions/ with id derived from filename', async () => {
-    vi.mocked(fsp.readdir).mockResolvedValue([
-      { name: 'implement.md', isFile: () => true, isDirectory: () => false } as any,
-      { name: 'investigate.md', isFile: () => true, isDirectory: () => false } as any,
-      { name: 'README', isFile: () => true, isDirectory: () => false } as any, // ignored — no .md
-      { name: 'sub', isFile: () => false, isDirectory: () => true } as any,    // ignored — directory
-    ]);
-    const missions = await listSourceMissions('/project');
-    expect(missions.map((m) => m.id).sort()).toEqual(['implement', 'investigate']);
-  });
-
-  it('returns empty array when missions dir is missing', async () => {
-    vi.mocked(fsp.readdir).mockRejectedValue(makeEnoent('/project/.clubhouse/missions'));
-    expect(await listSourceMissions('/project')).toEqual([]);
-  });
-});
-
 describe('readSourceMissionContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
@@ -280,32 +258,6 @@ describe('readSourceMissionContent', () => {
   it('returns empty string for empty mission id without touching disk', async () => {
     expect(await readSourceMissionContent('/project', '')).toBe('');
     expect(fsp.readFile).not.toHaveBeenCalled();
-  });
-});
-
-describe('writeSourceMissionContent', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('creates the missions dir and writes <id>.md', async () => {
-    await writeSourceMissionContent('/project', 'implement', '# Mission body');
-    expect(fsp.mkdir).toHaveBeenCalledWith(path.join('/project', '.clubhouse', 'missions'), { recursive: true });
-    expect(fsp.writeFile).toHaveBeenCalledWith(
-      path.join('/project', '.clubhouse', 'missions', 'implement.md'),
-      '# Mission body',
-      'utf-8',
-    );
-  });
-});
-
-describe('deleteSourceMission', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('removes the mission file with force (no-op when missing)', async () => {
-    await deleteSourceMission('/project', 'old');
-    expect(fsp.rm).toHaveBeenCalledWith(
-      path.join('/project', '.clubhouse', 'missions', 'old.md'),
-      { force: true },
-    );
   });
 });
 
@@ -358,86 +310,6 @@ describe('deleteSkill', () => {
 });
 
 // --- Agent template content CRUD ---
-
-describe('readAgentTemplateContent', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('reads .md file first', async () => {
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('my-agent.md')) return '# Agent';
-      throw new Error('ENOENT');
-    });
-    expect(await readAgentTemplateContent(WORKTREE, 'my-agent')).toBe('# Agent');
-  });
-
-  it('falls back to directory README.md', async () => {
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('README.md')) return '# Directory Agent';
-      throw new Error('ENOENT');
-    });
-    expect(await readAgentTemplateContent(WORKTREE, 'my-agent')).toBe('# Directory Agent');
-  });
-
-  it('returns empty when neither exists', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
-    expect(await readAgentTemplateContent(WORKTREE, 'missing')).toBe('');
-  });
-});
-
-describe('writeAgentTemplateContent', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('creates directory and writes .md file', async () => {
-    await writeAgentTemplateContent(WORKTREE, 'new-agent', '# Agent');
-    expect(fsp.mkdir).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude', 'agents'),
-      { recursive: true },
-    );
-    expect(fsp.writeFile).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude', 'agents', 'new-agent.md'),
-      '# Agent',
-      'utf-8',
-    );
-  });
-});
-
-describe('deleteAgentTemplate', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('removes both .md file and directory forms', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
-    await deleteAgentTemplate(WORKTREE, 'old-agent');
-    expect(fsp.unlink).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude', 'agents', 'old-agent.md'),
-    );
-    expect(fsp.rm).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude', 'agents', 'old-agent'),
-      { recursive: true, force: true },
-    );
-  });
-});
-
-describe('listAgentTemplateFiles', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('lists .md files and directories', async () => {
-    vi.mocked(fsp.readdir).mockResolvedValue([
-      { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
-      { name: 'builder', isFile: () => false, isDirectory: () => true },
-    ] as any);
-    vi.mocked(pathExists).mockResolvedValue(false);
-
-    const result = await listAgentTemplateFiles(WORKTREE);
-    expect(result).toHaveLength(2);
-    expect(result[0].name).toBe('reviewer');
-    expect(result[1].name).toBe('builder');
-  });
-
-  it('returns empty array when directory does not exist', async () => {
-    vi.mocked(fsp.readdir).mockRejectedValue(new Error('ENOENT'));
-    expect(await listAgentTemplateFiles(WORKTREE)).toEqual([]);
-  });
-});
 
 // --- MCP raw JSON ---
 
@@ -744,20 +616,6 @@ describe('orchestrator convention routing', () => {
     expect(result[0].path).toContain('.github');
   });
 
-  it('listAgentTemplates uses convention configDir/agentTemplatesDir', async () => {
-    vi.mocked(fsp.readdir).mockResolvedValue([
-      { name: 'builder', isDirectory: () => true, isFile: () => false },
-    ] as any);
-    vi.mocked(pathExists).mockResolvedValue(false);
-
-    const result = await listAgentTemplates(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fsp.readdir).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents'),
-      { withFileTypes: true },
-    );
-    expect(result[0].path).toContain('.github');
-  });
-
   it('readSkillContent uses convention paths', async () => {
     vi.mocked(fsp.readFile).mockResolvedValue('# Skill');
     await readSkillContent(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
@@ -785,56 +643,6 @@ describe('orchestrator convention routing', () => {
     expect(fsp.rm).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'skills', 'test-skill'),
       { recursive: true, force: true },
-    );
-  });
-
-  it('readAgentTemplateContent uses convention paths', async () => {
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('my-agent.md')) return '# Agent';
-      throw new Error('ENOENT');
-    });
-    await readAgentTemplateContent(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
-    expect(fsp.readFile).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
-      'utf-8',
-    );
-  });
-
-  it('writeAgentTemplateContent uses convention paths', async () => {
-    await writeAgentTemplateContent(WORKTREE, 'my-agent', '# Agent', COPILOT_CONVENTIONS);
-    expect(fsp.mkdir).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents'),
-      { recursive: true },
-    );
-    expect(fsp.writeFile).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
-      '# Agent',
-      'utf-8',
-    );
-  });
-
-  it('deleteAgentTemplate uses convention paths', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
-    await deleteAgentTemplate(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
-    expect(fsp.unlink).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
-    );
-    expect(fsp.rm).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents', 'my-agent'),
-      { recursive: true, force: true },
-    );
-  });
-
-  it('listAgentTemplateFiles uses convention paths', async () => {
-    vi.mocked(fsp.readdir).mockResolvedValue([
-      { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
-    ] as any);
-    vi.mocked(pathExists).mockResolvedValue(false);
-
-    await listAgentTemplateFiles(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fsp.readdir).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'agents'),
-      { withFileTypes: true },
     );
   });
 
@@ -1078,17 +886,6 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('listAgentTemplates logs warning on directory read failure', async () => {
-    vi.mocked(fsp.readdir).mockRejectedValue(new Error('EACCES'));
-    const result = await listAgentTemplates(WORKTREE);
-    expect(result).toEqual([]);
-    expect(appLog).toHaveBeenCalledWith(
-      'core:agent-settings', 'warn',
-      expect.stringContaining('Failed to list agent templates'),
-      expect.objectContaining({ meta: { error: 'EACCES' } }),
-    );
-  });
-
   it('readPermissions does not log warning on ENOENT', async () => {
     vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
     const result = await readPermissions(WORKTREE);
@@ -1118,17 +915,6 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readAgentTemplateContent logs warning when both forms fail', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
-    const result = await readAgentTemplateContent(WORKTREE, 'missing');
-    expect(result).toBe('');
-    expect(appLog).toHaveBeenCalledWith(
-      'core:agent-settings', 'warn',
-      expect.stringContaining('Failed to read agent template "missing"'),
-      expect.objectContaining({ meta: { error: 'ENOENT' } }),
-    );
-  });
-
   it('readMcpRawJson rejects an unreadable file instead of fabricating an empty config', async () => {
     vi.mocked(fsp.readFile).mockRejectedValue(new Error('EACCES'));
     await expect(readMcpRawJson(WORKTREE)).rejects.toThrow('Could not read local MCP');
@@ -1138,17 +924,6 @@ describe('error logging in catch blocks', () => {
     vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
     await readMcpRawJson(WORKTREE);
     expect(appLog).not.toHaveBeenCalled();
-  });
-
-  it('listAgentTemplateFiles logs warning on directory read failure', async () => {
-    vi.mocked(fsp.readdir).mockRejectedValue(new Error('EACCES'));
-    const result = await listAgentTemplateFiles(WORKTREE);
-    expect(result).toEqual([]);
-    expect(appLog).toHaveBeenCalledWith(
-      'core:agent-settings', 'warn',
-      expect.stringContaining('Failed to list agent template files'),
-      expect.objectContaining({ meta: { error: 'EACCES' } }),
-    );
   });
 
   it('applyAgentDefaults logs warning on invalid MCP JSON', async () => {

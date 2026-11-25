@@ -206,23 +206,6 @@ export async function listSkills(worktreePath: string, conv?: SettingsConvention
   }
 }
 
-export async function listAgentTemplates(worktreePath: string, conv?: SettingsConventions): Promise<AgentTemplateEntry[]> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const agentsDir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
-  try {
-    const entries = await fsp.readdir(agentsDir, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory());
-    return Promise.all(dirs.map(async (e) => {
-      const agentPath = path.join(agentsDir, e.name);
-      const hasReadme = await pathExists(path.join(agentPath, 'README.md'));
-      return { name: e.name, path: agentPath, hasReadme };
-    }));
-  } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to list agent templates from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-    return [];
-  }
-}
-
 function assertStrictProjectSettings(value: unknown): asserts value is ProjectSettings {
   const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
   const text = (v: unknown) => typeof v === 'string' && v.length <= 65_536;
@@ -445,25 +428,6 @@ export async function deleteSourceSkill(projectPath: string, skillName: string):
 }
 
 /**
- * List source mission files under .clubhouse/missions/.
- * Each mission is a single .md file; the mission ID is the basename without extension.
- */
-export async function listSourceMissions(projectPath: string): Promise<Array<{ id: string; path: string }>> {
-  const missionsDir = path.join(projectPath, '.clubhouse', 'missions');
-  try {
-    const entries = await fsp.readdir(missionsDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isFile() && e.name.endsWith('.md'))
-      .map((e) => ({ id: e.name.replace(/\.md$/, ''), path: path.join(missionsDir, e.name) }));
-  } catch (err) {
-    if (!isEnoent(err)) {
-      appLog(LOG_NS, 'warn', `Failed to list missions from ${missionsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-    }
-    return [];
-  }
-}
-
-/**
  * Read the content of a mission file at .clubhouse/missions/<id>.md.
  * Returns empty string when the mission file does not exist or fails to read.
  */
@@ -478,24 +442,6 @@ export async function readSourceMissionContent(projectPath: string, missionId: s
     }
     return '';
   }
-}
-
-/**
- * Write the content of a mission file at .clubhouse/missions/<id>.md, creating
- * the directory if needed.
- */
-export async function writeSourceMissionContent(projectPath: string, missionId: string, content: string): Promise<void> {
-  const dir = path.join(projectPath, '.clubhouse', 'missions');
-  await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, `${missionId}.md`), content, 'utf-8');
-}
-
-/**
- * Delete a mission file at .clubhouse/missions/<id>.md. No-op if missing.
- */
-export async function deleteSourceMission(projectPath: string, missionId: string): Promise<void> {
-  const filePath = path.join(projectPath, '.clubhouse', 'missions', `${missionId}.md`);
-  await fsp.rm(filePath, { force: true });
 }
 
 /**
@@ -532,62 +478,6 @@ export async function deleteSourceAgentTemplate(projectPath: string, agentName: 
   const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
   const dir = path.join(projectPath, '.clubhouse', agentsSubdir, agentName);
   await fsp.rm(dir, { recursive: true, force: true });
-}
-
-function makeTemplateReadme(kind: 'skill' | 'agent', name: string): string {
-  const label = kind === 'skill' ? 'Skill' : 'Agent';
-  return `---\n# ${label}: ${name}\n---\n\n# ${name}\n\nDescribe what this ${kind} does.\n`;
-}
-
-export async function createSkillDir(basePath: string, name: string, isSource: boolean, conv?: SettingsConventions): Promise<string> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = isSource
-    ? path.join(basePath, name)
-    : path.join(basePath, skillsFolderOf(c), name);
-  await fsp.mkdir(dir, { recursive: true });
-  const readmePath = path.join(dir, 'README.md');
-  if (!(await pathExists(readmePath))) {
-    await fsp.writeFile(readmePath, makeTemplateReadme('skill', name), 'utf-8');
-  }
-
-  // Auto-set defaultSkillsPath if this is the first source skill
-  if (isSource) {
-    const projectPath = path.resolve(basePath, '..', '..');
-    // Only if basePath is under .clubhouse/
-    if (basePath.includes(path.join('.clubhouse', ''))) {
-      await updateSettings(projectPath, (settings): void | null => {
-        if (settings.defaultSkillsPath) return null;
-        settings.defaultSkillsPath = path.relative(path.join(projectPath, '.clubhouse'), basePath);
-      });
-    }
-  }
-
-  return readmePath;
-}
-
-export async function createAgentTemplateDir(basePath: string, name: string, isSource: boolean, conv?: SettingsConventions): Promise<string> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = isSource
-    ? path.join(basePath, name)
-    : path.join(basePath, c.configDir, c.agentTemplatesDir, name);
-  await fsp.mkdir(dir, { recursive: true });
-  const readmePath = path.join(dir, 'README.md');
-  if (!(await pathExists(readmePath))) {
-    await fsp.writeFile(readmePath, makeTemplateReadme('agent', name), 'utf-8');
-  }
-
-  // Auto-set defaultAgentsPath if this is the first source agent template
-  if (isSource) {
-    const projectPath = path.resolve(basePath, '..', '..');
-    if (basePath.includes(path.join('.clubhouse', ''))) {
-      await updateSettings(projectPath, (settings): void | null => {
-        if (settings.defaultAgentsPath) return null;
-        settings.defaultAgentsPath = path.relative(path.join(projectPath, '.clubhouse'), basePath);
-      });
-    }
-  }
-
-  return readmePath;
 }
 
 /**
@@ -648,84 +538,6 @@ export async function deleteSkill(worktreePath: string, skillName: string, conv?
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = path.join(worktreePath, skillsFolderOf(c), skillName);
   await fsp.rm(dir, { recursive: true, force: true });
-}
-
-/**
- * Read the content of an agent template markdown file.
- */
-export async function readAgentTemplateContent(worktreePath: string, agentName: string, conv?: SettingsConventions): Promise<string> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const filePath = path.join(worktreePath, c.configDir, c.agentTemplatesDir, agentName + '.md');
-  try {
-    return await fsp.readFile(filePath, 'utf-8');
-  } catch {
-    // Fallback: check if it's a directory-based template
-    const dirPath = path.join(worktreePath, c.configDir, c.agentTemplatesDir, agentName, 'README.md');
-    try {
-      return await fsp.readFile(dirPath, 'utf-8');
-    } catch (err) {
-      appLog(LOG_NS, 'warn', `Failed to read agent template "${agentName}" (tried .md and directory forms)`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-      return '';
-    }
-  }
-}
-
-/**
- * Write the content of an agent template markdown file, creating directory if needed.
- */
-export async function writeAgentTemplateContent(worktreePath: string, agentName: string, content: string, conv?: SettingsConventions): Promise<void> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
-  await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, agentName + '.md'), content, 'utf-8');
-}
-
-/**
- * Delete an agent template (both .md file and directory forms).
- */
-export async function deleteAgentTemplate(worktreePath: string, agentName: string, conv?: SettingsConventions): Promise<void> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const baseDir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
-  const filePath = path.join(baseDir, agentName + '.md');
-  if (await pathExists(filePath)) {
-    await fsp.unlink(filePath);
-  }
-  const dirPath = path.join(baseDir, agentName);
-  await fsp.rm(dirPath, { recursive: true, force: true });
-}
-
-/**
- * List agent template .md files and directories under the agent templates dir.
- */
-export async function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConventions): Promise<AgentTemplateEntry[]> {
-  const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const agentsDir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
-  try {
-    const entries = await fsp.readdir(agentsDir, { withFileTypes: true });
-    const results: AgentTemplateEntry[] = [];
-    // Collect .md files (flat agent definitions)
-    for (const e of entries) {
-      if (e.isFile() && e.name.endsWith('.md')) {
-        const name = e.name.replace(/\.md$/, '');
-        results.push({ name, path: path.join(agentsDir, e.name), hasReadme: false });
-      }
-    }
-    // Also collect directory-based templates
-    for (const e of entries) {
-      if (e.isDirectory()) {
-        const agentPath = path.join(agentsDir, e.name);
-        const hasReadme = await pathExists(path.join(agentPath, 'README.md'));
-        // Skip if already listed as .md file
-        if (!results.find((r) => r.name === e.name)) {
-          results.push({ name: e.name, path: agentPath, hasReadme });
-        }
-      }
-    }
-    return results;
-  } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to list agent template files from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-    return [];
-  }
 }
 
 /** Missing and intentionally empty are different. Never hide read errors or non-JSON files. */

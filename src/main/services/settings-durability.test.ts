@@ -12,7 +12,7 @@ vi.mock('./settings-audit', () => ({ auditChanges: vi.fn(), projectAuditTarget: 
 
 import { backupUnreadableFile, createSettingsStore, replaceFile } from './settings-store';
 import {
-  createAgentTemplateDir, createSkillDir, projectSettingsMutationState,
+  projectSettingsMutationState,
   updateProjectAgentDefaults, writeDefaultMcps, writeLaunchWrapper, writeMcpCatalog,
   writeMcpConfigs, writeProjectAgentDefaults, writeWrapperCatalogSnapshot,
 } from './agent-settings-service';
@@ -174,8 +174,6 @@ describe('project settings persistence on disk', () => {
       writeDefaultMcps(state.dir, ['server']),
       writeWrapperCatalogSnapshot(state.dir, snapshot),
       writeMcpConfigs(state.dir, { server: { url: 'local' } }),
-      createSkillDir(path.join(state.dir, '.clubhouse', 'source-skills'), 'skill', true),
-      createAgentTemplateDir(path.join(state.dir, '.clubhouse', 'source-agents'), 'agent', true),
     ];
     expect(projectSettingsMutationState(state.dir).pending).toBe(true);
     await Promise.all(writes);
@@ -185,7 +183,6 @@ describe('project settings persistence on disk', () => {
       ...legacy, agentDefaults: { instructions: 'saved instructions', buildCommand: 'build' },
       launchWrapper: wrapper, mcpCatalog: catalog, defaultMcps: ['server'],
       wrapperCatalogSnapshot: snapshot, mcpConfigs: { server: { url: 'local' } },
-      defaultSkillsPath: 'source-skills', defaultAgentsPath: 'source-agents',
     });
     expect(JSON.parse(fs.readFileSync(`${projectFile()}.bak`, 'utf-8'))).toMatchObject(legacy);
     expect(fs.readdirSync(path.dirname(projectFile())).some((name) => name.includes('.tmp-'))).toBe(false);
