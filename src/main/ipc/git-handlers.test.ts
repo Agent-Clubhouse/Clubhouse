@@ -16,7 +16,6 @@ vi.mock('../services/git-service', () => ({
   push: vi.fn(),
   pull: vi.fn(),
   getFileDiff: vi.fn(() => 'diff --git a/file'),
-  createBranch: vi.fn(),
   stash: vi.fn(),
   stashPop: vi.fn(),
   getHeadSha: vi.fn(async () => 'abc1234'),

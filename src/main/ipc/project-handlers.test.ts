@@ -67,8 +67,6 @@ vi.mock('../services/agent-settings-service', () => ({
   writeMcpCatalog: vi.fn(async () => undefined),
   readDefaultMcps: vi.fn(async () => []),
   writeDefaultMcps: vi.fn(async () => undefined),
-  readMcpConfigs: vi.fn(async () => ({})),
-  writeMcpConfigs: vi.fn(async () => undefined),
   readWrapperCatalogSnapshot: vi.fn(async () => undefined),
   writeWrapperCatalogSnapshot: vi.fn(async () => undefined),
 }));
