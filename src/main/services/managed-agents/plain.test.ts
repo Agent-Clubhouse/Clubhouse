@@ -33,6 +33,7 @@ import { backupInstructions } from './before-managed';
 import { backupMcpFile } from './mcp-backup';
 import { linesAddedSince, previewSwitchToPlain, switchToPlain, withAddedLines, type PlainDeps } from './plain';
 import type { OrchestratorProvider } from '../../orchestrators/types';
+import { memoryReceiptStore, setAntigravityReceiptStore } from '../../orchestrators/antigravity/workspace-json';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
@@ -291,5 +292,41 @@ describe('what was added since (#2927)', () => {
   it('puts the added runs after the earlier text', () => {
     expect(withAddedLines('old\n\n', [['one'], ['two', 'three']])).toBe('old\n\none\n\ntwo\nthree\n');
     expect(withAddedLines('old\n', [])).toBe('old\n');
+  });
+});
+
+describe('Switch to plain on Antigravity (#3792)', () => {
+  const agyConv = { configDir: '.agents', skillsDir: 'skills', skillsRoot: '.agents/skills', mcpConfigFile: '.agents/mcp_config.json', legacyInstructionsFile: 'AGENTS.md', localSettingsFile: 'hooks.json', settingsFormat: 'json' };
+  const agy = () => provider(agyConv, 'antigravity-cli');
+  // CRLF, multibyte and bytes that aren't UTF-8: the person's text, outside Clubhouse's block.
+  const MINE = Buffer.concat([Buffer.from('# Project rules\r\nUse tabs. é😀\r\n'), Buffer.from([0xff, 0xfe]), Buffer.from('\r\nlast')]);
+  const agentsMd = () => fs.readFileSync(path.join(wt, 'AGENTS.md'));
+  beforeEach(() => { setAntigravityReceiptStore(memoryReceiptStore()); });
+
+  async function deliveredOnAntigravity(): Promise<void> {
+    fs.writeFileSync(path.join(wt, 'AGENTS.md'), MINE);
+    const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'Managed rules.' } }));
+    agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
+    deps = { ...deps, providerFor: async () => agy() };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: agy() }));
+    expect(agentsMd().subarray(agentsMd().length - MINE.length).equals(MINE)).toBe(true);
+  }
+
+  it('keeps the delivered text as the person\'s, taking out only the markers, when nothing is brought back', async () => {
+    await deliveredOnAntigravity();
+    const preview = await user(() => previewSwitchToPlain(deps, project, agent.id));
+    expect(preview.instructions).toMatchObject({ file: 'AGENTS.md', exists: true, changedSince: false, addedLines: 0, before: null });
+    await user(() => switchToPlain(deps, project, agent.id, { token: preview.token }));
+    expect(agentsMd().equals(Buffer.concat([Buffer.from('Managed rules.\n'), MINE]))).toBe(true);
+    expect(agent.managed).toBeUndefined();
+  });
+
+  it('brings back AGENTS.md without Clubhouse\'s block, the person\'s bytes exactly', async () => {
+    await backupInstructions(agent.id, 'AGENTS.md', MINE.toString('utf-8'));
+    await deliveredOnAntigravity();
+    const preview = await user(() => previewSwitchToPlain(deps, project, agent.id));
+    expect(preview.instructions.before?.result).toBe(MINE.toString('utf-8'));
+    await user(() => switchToPlain(deps, project, agent.id, { restoreInstructions: true, token: preview.token }));
+    expect(agentsMd().equals(MINE)).toBe(true);
   });
 });

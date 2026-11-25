@@ -1,7 +1,7 @@
 /**
  * The prepare-handoff skill (#3344), followed step by step by a scripted agent
  * through the real handoff tools on a fixture repository: the live host,
- * preflight and preparation, with fake peers and no model. It proves the
+ * preflight, preparation and real agreement/grant scope, with fake peers and no model. It proves the
  * skill's instructions produce a valid offer, and that every tool it names exists.
  */
 import { execFile } from 'child_process';
@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpToolResult } from './clubhouse-mcp/types';
+import type { DurableAgentConfig } from '../../shared/types';
 
 const state = vi.hoisted(() => ({
   dir: '', sender: '', receiver: '', machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
@@ -21,29 +22,30 @@ vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.machine }), getOrCreateIdentity: () => ({ fingerprint: state.machine }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: 'this-computer', enableServer: true, networkEnabled: true, acceptHandoffs: true }), networkEnabled: () => true }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.peer, alias: 'machine-b', role: 'member', kind: 'desktop' }] }));
-vi.mock('./annex-client', () => ({ getSatellite: () => undefined, isMachineConnected: () => true, postToMachine: vi.fn(), onSatelliteConnected: () => () => {} }));
+vi.mock('./annex-client', () => ({ getSatellite: (): undefined => undefined, isMachineConnected: () => true, postToMachine: vi.fn(), onSatelliteConnected: () => () => {} }));
 vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => true }));
-vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => false, sendMessage: vi.fn(async () => ({})) }) }));
-vi.mock('./agent-config', () => ({ peekDurableConfigs: async (project: string) => project === state.sender ? [{ id: 'sender', name: 'Sender' }] : [{ id: 'receiver', name: 'Receiver' }] }));
-vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'source-project', name: 'example-project', path: state.sender }, { id: 'destination-project', name: 'Destination', path: state.receiver }] }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
-vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' }] }));
-vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => ({ link: true }) }));
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: () => [] } }));
-vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
-vi.mock('./clubhouse-mcp/tool-registry', () => ({
-  callTool: vi.fn(), setHandoffParticipantCheck: vi.fn(),
-  registerGlobalTool: (name: string, _definition: unknown, handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>) => { state.handlers.set(name, handler); },
+vi.mock('./project-store', () => ({
+  peekProjects: async () => [{ id: 'source-project', name: 'example-project', path: state.sender }, { id: 'destination-project', name: 'Destination', path: state.receiver }],
+  onProjectsChanged: (): (() => void) => () => {},
 }));
-vi.mock('./clubhouse-mcp/arg-targets', () => ({ setHandoffGrantTargetResolver: vi.fn() }));
+vi.mock('./dispatcher/dispatcher-service', () => ({
+  getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }),
+  isDispatcherAgentId: (id: string) => id === 'dispatcher', onDispatcherChanged: (): (() => void) => () => {},
+}));
+vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => ({ link: true }), onConnectionGrantsChanged: (): (() => void) => () => {} }));
+vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: (): [] => [], getBindingsForAgent: (): [] => [], onChange: (): (() => void) => () => {} } }));
+vi.mock('./clubhouse-mcp/tool-registry', async (original) => {
+  const actual = await original<typeof import('./clubhouse-mcp/tool-registry')>();
+  return {
+    ...actual,
+    registerGlobalTool: (...args: Parameters<typeof actual.registerGlobalTool>) => {
+      state.handlers.set(args[0], args[2]);
+      actual.registerGlobalTool(...args);
+    },
+  };
+});
 vi.mock('./clubhouse-mcp/ask-first', () => ({ describeCallsForAsk: vi.fn() }));
-vi.mock('./clubhouse-mcp/handoff-permissions', async (original) => ({
-  ...await original<typeof import('./clubhouse-mcp/handoff-permissions')>(),
-  // The person allowed this agent to offer: the call runs, as it would after Allow.
-  withHandoffAgreementCall: (_call: unknown, work: () => Promise<unknown>) => work(),
-  handoffAgreementCallApproved: async () => true,
-}));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ defaultHelperTemplateId: async () => 'person-helper-template' }) }));
 vi.mock('./clubhouse-mcp/tools/agent-lifecycle', () => ({ wakeWiredAgent: vi.fn() }));
 
@@ -76,12 +78,35 @@ beforeEach(async () => {
   await git(state.sender, 'add', '.'); await git(state.sender, '-c', `core.hooksPath=${path.join(state.dir, 'no-hooks')}`, 'commit', '-qm', 'Base');
   await git(state.dir, 'clone', state.sender, state.receiver);
   await git(state.receiver, 'remote', 'remove', 'origin');
+  const configStore = await import('./agent-config');
+  const callerGate = await import('./clubhouse-mcp/mcp-call-gate');
+  for (const [agent, project] of [['sender', state.sender], ['receiver', state.receiver]]) {
+    const row: DurableAgentConfig = { id: agent, name: agent === 'sender' ? 'Sender' : 'Receiver', color: 'indigo',
+      createdAt: '2026-01-01T00:00:00.000Z', worktreePath: project };
+    fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true });
+    fs.writeFileSync(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([row]));
+    configStore.clearAgentConfigCache(project);
+    callerGate.setMcpCaller(agent, project, row);
+  }
+  await (await import('./agent-grants-store')).updateAgentGrantChanges('sender', () => ({
+    changes: [
+      { action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' },
+      { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' },
+    ],
+  }));
   // Work in progress: an uncommitted change, an ignored fixture the receiver needs, and a key file it must not get.
   fs.writeFileSync(path.join(state.sender, 'cart.test.ts'), 'discount cases');
   fs.mkdirSync(path.join(state.sender, 'fixtures')); fs.writeFileSync(path.join(state.sender, 'fixtures', 'orders.json'), '[]');
   fs.writeFileSync(path.join(state.sender, 'deploy.key'), 'not for the receiver');
 });
-afterEach(async () => { await stopHandoffs(); vi.unstubAllEnvs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
+afterEach(async () => {
+  await stopHandoffs();
+  const callerGate = await import('./clubhouse-mcp/mcp-call-gate');
+  callerGate.forgetMcpCaller('sender'); callerGate.forgetMcpCaller('receiver');
+  (await import('./agent-config')).clearAgentConfigCache();
+  vi.unstubAllEnvs();
+  fs.rmSync(state.dir, { recursive: true, force: true });
+});
 
 describe('the prepare-handoff skill (#3344)', () => {
   it('names only registered tools, in the order a scripted agent follows', () => {
@@ -122,6 +147,20 @@ describe('the prepare-handoff skill (#3344)', () => {
     const followed = await call('get_handoff', { id: offered.body.id });
     expect(followed.body).toMatchObject({ id: offered.body.id, state: 'offered' });
     expect(handoffHost().store.get(offered.body.id)?.task.brief).toBe(brief);
+  }, 30_000);
+
+  it('refuses the same prepared offer when its original agreement scope is bypassed', async () => {
+    const prepared = await call('prepare_handoff', { mode: 'worktree', exclude: ['deploy.key'] });
+    expect(prepared.body).toMatchObject({ ready: true });
+    const catalog = path.join(state.dir, 'handoff-preparations.json');
+    const before = fs.readFileSync(catalog, 'utf8');
+    const agreement = await import('./clubhouse-mcp/handoff-permissions');
+    vi.spyOn(agreement, 'withHandoffAgreementCall').mockImplementation((_call, work) => work());
+    const offered = await call('offer_handoff', { to: 'Receiver', task: 'Continue', brief: 'Goal: continue.',
+      mode: 'worktree', manifest: prepared.body.summary });
+    expect(offered.result.isError).toBe(true);
+    expect(handoffHost().store.list()).toEqual([]);
+    expect(fs.readFileSync(catalog, 'utf8')).toBe(before);
   }, 30_000);
 
   it('tells a too-big refusal apart from a secret finding, and a dirty branch from both', () => {

@@ -48,7 +48,7 @@ Clubhouse turns each level into models for your provider through the Auto mappin
 
 To pick the models instead, turn on **Choose models yourself** in **Settings > Dispatcher**, under Behavior. It shows two rows, **Talking with you** and **Working in the background**, each with a provider, model, effort and, where the provider offers it, context. The two can use different providers. Behavior then sets only how often it checks in and keeps up its memory, and the chip says the models are yours.
 
-A new model or effort applies at once where the provider allows it, otherwise at its next start. A new provider or context applies at its next start. Turn the switch off to let Behavior choose again: it goes back to the provider and context it had before, and your picks are kept for next time. While the switch is on, change its provider here rather than from your phone's provider change. Going through setup again turns it off, since setup picks one provider.
+A new model or effort applies at once where the provider allows it, otherwise at its next start. A new provider or context applies at its next start. While it runs on its old provider, Settings says so and offers the restart that switches it, with a new conversation; Restart Dispatcher and Start new chat switch it too. Saving alone never restarts it. Turn the switch off to let Behavior choose again: it goes back to the provider and context it had before, and your picks are kept for next time. While the switch is on, change its provider here rather than from your phone's provider change. Going through setup again turns it off, since setup picks one provider.
 
 ## Memory
 
@@ -60,6 +60,8 @@ It keeps memory as plain markdown files in `~/.clubhouse/dispatcher/memory/`, so
 - a page for each piece of work, marked confirmed or unconfirmed with where it came from.
 
 It searches its memory and your agents' transcripts when it needs something older. Upkeep runs on its own: it rolls up the timeline, fixes links that moved and sets aside stale unconfirmed notes. There's no view or editor for memory in the app.
+
+Older versions copied the memory index into the Dispatcher's instructions file. When you update, a copy left in the instructions file of a provider it no longer runs on is removed, and the original file is kept in `~/.clubhouse/dispatcher/.clubhouse/instruction-backups/` (and the same folder under `dispatcher-chat`).
 
 **Forget everything** is at the bottom of **Settings > Dispatcher**. After you confirm, it clears its memory and any news waiting for the next check-in. Your agents, connections, Actions, settings and its chat stay. To start the chat over too, use **Start new chat**.
 

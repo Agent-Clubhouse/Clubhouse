@@ -1,0 +1,718 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T21:30:53.919962+00:00",
+  "source": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+  "sourceTree": "7ef23b3be3767f3c41227190be819295e41e4671",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "base": "7d244fcd153df00668ecac3d0709cece054801e3",
+  "pr": {
+    "baseRefName": "main",
+    "baseRefOid": "50c474b48f57e0256661244bd29b9343ec112bc4",
+    "headRefName": "lane-3613-p2-routes/handoff-recipient-continuity",
+    "headRefOid": "7d244fcd153df00668ecac3d0709cece054801e3",
+    "number": 3779,
+    "state": "OPEN",
+    "url": "https://github.com/Agent-Clubhouse/Clubhouse/pull/3779"
+  },
+  "publicationRef": "refs/heads/lane-3613-p2-routes/handoff-producer-hosted-correction",
+  "selectedFiles": [
+    "src/main/services/prepare-handoff-skill.test.ts",
+    "test/annex-v2/handoff-producer-admission.test.ts"
+  ],
+  "diffStat": "src/main/services/prepare-handoff-skill.test.ts  | 81 ++++++++++++++++++------\n test/annex-v2/handoff-producer-admission.test.ts | 61 ++++++++++++++++--\n 2 files changed, 117 insertions(+), 25 deletions(-)",
+  "runs": [
+    {
+      "prefix": "132-skill-original-refusal",
+      "head": "3e82ffa1c08ea058776e4782b8046f83f3daf148",
+      "tree": "5ba5d0a40fa64ead1d81b857a59500207b40c19a",
+      "srcTree": "89abaf0b13cc97fd61aa95fa35c830ff2c2fe54f",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run src/main/services/prepare-handoff-skill.test.ts -t 'followed step by step on a fixture repository' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/132-skill-original-refusal-original.xml",
+      "exit": 1,
+      "relevantHashes": 16,
+      "declarations": 5,
+      "counts": {
+        "skip": 4,
+        "fail": 1
+      },
+      "failureNodes": 1
+    },
+    {
+      "prefix": "135-skill-original-scope",
+      "head": "71b929176e5fa67d952398d919e9f429d2ea1e0b",
+      "tree": "56c5fa27f991c8e41dc915f273d908523038012c",
+      "srcTree": "0b7f629c30853893f5d8edb92bc182293ddfd269",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run src/main/services/prepare-handoff-skill.test.ts -t 'followed step by step on a fixture repository' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/135-skill-original-scope-original.xml",
+      "exit": 1,
+      "relevantHashes": 16,
+      "declarations": 5,
+      "counts": {
+        "skip": 4,
+        "fail": 1
+      },
+      "failureNodes": 1
+    },
+    {
+      "prefix": "136-skill-scope-green",
+      "head": "a0b564ed499acc9dff2121c12849ee237401f20b",
+      "tree": "5ceecf920d51774462d3a60532008d344513f471",
+      "srcTree": "c927f7e2bdab30ac003449de2982bb610ec9a74a",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run src/main/services/prepare-handoff-skill.test.ts --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/136-skill-scope-green-original.xml",
+      "exit": 0,
+      "relevantHashes": 16,
+      "declarations": 6,
+      "counts": {
+        "pass": 6
+      },
+      "failureNodes": 0
+    },
+    {
+      "prefix": "139-fixture-ownership-red",
+      "head": "330ff895484a86e899bfc86ae9454be77044134f",
+      "tree": "51db518b3faa007261286252da692878ba561f2a",
+      "srcTree": "c927f7e2bdab30ac003449de2982bb610ec9a74a",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'keeps actual fixture preparation alive until teardown settles it' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/139-fixture-ownership-red-original.xml",
+      "exit": 1,
+      "relevantHashes": 16,
+      "declarations": 52,
+      "counts": {
+        "fail": 1,
+        "skip": 51
+      },
+      "failureNodes": 3
+    },
+    {
+      "prefix": "140-fixture-ownership-green",
+      "head": "dd508e39270d6d55bfd2c62eee5d3a974d5ea220",
+      "tree": "8473eef8c47d5b67defa89324b76ba1128e88b3d",
+      "srcTree": "c927f7e2bdab30ac003449de2982bb610ec9a74a",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'keeps actual fixture preparation alive until teardown settles it|keeps current sender authority, source bytes and durable binding through a held history queue' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/140-fixture-ownership-green-original.xml",
+      "exit": 0,
+      "relevantHashes": 16,
+      "declarations": 52,
+      "counts": {
+        "pass": 2,
+        "skip": 50
+      },
+      "failureNodes": 0
+    },
+    {
+      "prefix": "141-hosted-correction-types",
+      "head": "dd508e39270d6d55bfd2c62eee5d3a974d5ea220",
+      "tree": "8473eef8c47d5b67defa89324b76ba1128e88b3d",
+      "srcTree": "c927f7e2bdab30ac003449de2982bb610ec9a74a",
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --project node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --noEmit --listFiles --pretty false",
+      "exit": 2,
+      "relevantHashes": 16,
+      "diagnostics": [
+        "src/main/services/prepare-handoff-skill.test.ts(24,50): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type.",
+        "src/main/services/prepare-handoff-skill.test.ts(36,87): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any[]' return type.",
+        "src/main/services/prepare-handoff-skill.test.ts(36,118): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any[]' return type.",
+        "src/main/services/prepare-handoff-skill.test.ts(88,45): error TS2559: Type '{ id: string; name: string; color: string; createdAt: string; worktreePath: string; }' has no properties in common with type 'Pick<DurableAgentConfig, \"parentAgentId\">'."
+      ],
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "142-hosted-correction-types",
+      "head": "a923690f3c3a649a35ec32f23d2bc597c9327907",
+      "tree": "50248aa376df71265b9b25b47e8bbaaf301f159d",
+      "srcTree": "4dab8b07c05ac2e9549d03924e6d10c07545e28e",
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --project node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --noEmit --listFiles --pretty false",
+      "exit": 2,
+      "relevantHashes": 16,
+      "diagnostics": [
+        "src/main/services/prepare-handoff-skill.test.ts(25,50): error TS7011: Function expression, which lacks return-type annotation, implicitly has an 'any' return type."
+      ],
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "143-hosted-correction-types",
+      "head": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+      "tree": "7ef23b3be3767f3c41227190be819295e41e4671",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 6 -- npx tsc --project node_modules/.cache/native-handoff-ingress/133-producer-hosted-correction-tsconfig.json --noEmit --listFiles --pretty false",
+      "exit": 0,
+      "relevantHashes": 16,
+      "diagnostics": [],
+      "orderedListFilesRows": 3959
+    },
+    {
+      "prefix": "144-hosted-correction-lint",
+      "head": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+      "tree": "7ef23b3be3767f3c41227190be819295e41e4671",
+      "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+      "command": "desktop-test-gate.sh lane-p2 4 -- npx eslint src/main/services/prepare-handoff-skill.test.ts test/annex-v2/handoff-producer-admission.test.ts --format json --output-file node_modules/.cache/native-handoff-ingress/144-hosted-correction-lint-original.json",
+      "exit": 0,
+      "relevantHashes": 16,
+      "lintFiles": 2,
+      "errors": 0,
+      "warnings": 0
+    }
+  ],
+  "archives": [
+    {
+      "file": "132-skill-original-refusal-testcase-rows.json.gz",
+      "bytes": 1507,
+      "sha256": "aebfa0aef64018e0c879e603f099aa09ae93c6c98966c85e683432c2ca7453ae",
+      "gzipBytes": 484,
+      "gzipSha256": "abe470af853b070382aedd4901b4af8151178abd0996471b782ad7226d5e1489"
+    },
+    {
+      "file": "132-skill-original-refusal-after.json.gz",
+      "bytes": 4387,
+      "sha256": "9ab0b9a9a493eb17b8ab67aa51ee4ff53fc82f3b6574b06d8ea24d33d6be3dcc",
+      "gzipBytes": 1876,
+      "gzipSha256": "2e22d53fe7f68539ad3bc46eb64985a7ab40b9ad45d786357a4e41bb193fff61"
+    },
+    {
+      "file": "132-skill-original-refusal-before.json.gz",
+      "bytes": 4261,
+      "sha256": "2c6c093309b815b168d7dda7b131f7858bc4bf2cf4708bf98380ea2111e209bd",
+      "gzipBytes": 1845,
+      "gzipSha256": "96598703312387efd71852251db2923fde6232f14ea5c62c36fd98df3ed09d5e"
+    },
+    {
+      "file": "132-skill-original-refusal-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "132-skill-original-refusal-original.log.gz",
+      "bytes": 4901,
+      "sha256": "e691c3b0dfefafec32582f9a2980cc93ac5b98e89367d7e440434424ede5b9bf",
+      "gzipBytes": 1589,
+      "gzipSha256": "5321f8725942130756d8a37b2b689d2d58aec4ea381aab733aca669d600a3544"
+    },
+    {
+      "file": "132-skill-original-refusal-original.xml.gz",
+      "bytes": 3856,
+      "sha256": "aea654cd9b8d4b25f0a20c828ec64803965896bda0da15d5a689e68871be26c7",
+      "gzipBytes": 999,
+      "gzipSha256": "9dac947cdefa3a40adb7912c58bbb72523f27014a6b7f12b70df8bebec8329b4"
+    },
+    {
+      "file": "135-skill-original-scope-testcase-rows.json.gz",
+      "bytes": 1507,
+      "sha256": "4ba1431fc9d8d1e2250f7b2eec1d394d362e70358e35fb5838c678a83fc97126",
+      "gzipBytes": 484,
+      "gzipSha256": "a355fc47c4b06a8107b0e916d27f3db7b1012cf239659d191788b2368da018d7"
+    },
+    {
+      "file": "135-skill-original-scope-after.json.gz",
+      "bytes": 4383,
+      "sha256": "603c02cf7967b4b0c29ac6a034bba99460ebb22bd5eaaaee8c6ec8e1da2f411a",
+      "gzipBytes": 1872,
+      "gzipSha256": "58049015f4001660af52d021bbb075e30b7de1786cbf8732f7b0d059a9f60424"
+    },
+    {
+      "file": "135-skill-original-scope-before.json.gz",
+      "bytes": 4259,
+      "sha256": "e41b77147a1fe076d902aca7a20645fba221d75918dcc389fefd13d12e173bae",
+      "gzipBytes": 1840,
+      "gzipSha256": "da72836b0047306aaee71dde9df670c410f99ef0f848367f5075a73eb461b563"
+    },
+    {
+      "file": "135-skill-original-scope-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "135-skill-original-scope-original.log.gz",
+      "bytes": 3814,
+      "sha256": "42a55a57638cfc3ecd611769ff81db295e40fa839e6b9ec2376f411f4354e857",
+      "gzipBytes": 1513,
+      "gzipSha256": "273203ffdcbd5caee2f3ac243a03624cabe5e6b68ae25b683fcff1d72e8bc3a6"
+    },
+    {
+      "file": "135-skill-original-scope-original.xml.gz",
+      "bytes": 2773,
+      "sha256": "34d7ddbcb935796357ffca944af86c7344b682f88aeb728fdf827e759430d4e2",
+      "gzipBytes": 927,
+      "gzipSha256": "c22d93031cf1b4e56690e4f584408958ec775cc473c57a027cbb3a41eb7348fd"
+    },
+    {
+      "file": "136-skill-scope-green-testcase-rows.json.gz",
+      "bytes": 1478,
+      "sha256": "312dfc3fc14a90d53d13ecdf71deaaa6e64ec686d31cc9d744238746a661aeab",
+      "gzipBytes": 401,
+      "gzipSha256": "155daa29a23cae09318df3ad6a867f553a62a1a5bd4bb6b2f8716bfc2b9415dc"
+    },
+    {
+      "file": "136-skill-scope-green-after.json.gz",
+      "bytes": 4326,
+      "sha256": "0c5f095c2af39bac43ef672bff7ca497db5d323e9c2b6f5efb74b17fc1869d2c",
+      "gzipBytes": 1834,
+      "gzipSha256": "691c378aba86df29d6ad6f4f8cd0f08017a1d4ef1d991ac5214ce9b6d8cc058d"
+    },
+    {
+      "file": "136-skill-scope-green-before.json.gz",
+      "bytes": 4205,
+      "sha256": "17f8cfd488cc3a922549514e5f7e5e11128e91e3e69315008a2f2f90f9ff3ade",
+      "gzipBytes": 1803,
+      "gzipSha256": "ab90b0b7d527cb5c2156a7a11bae86b31336da6b08ce39d36a78ca1107d1cae3"
+    },
+    {
+      "file": "136-skill-scope-green-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "136-skill-scope-green-original.log.gz",
+      "bytes": 1652,
+      "sha256": "0255d474cc479ea44ad33c79c327ee6d74ab2a119d6e41b151f26b7e4420278a",
+      "gzipBytes": 898,
+      "gzipSha256": "fb2c447e39a4cd130af7bb38e4e5745e955e2c706b0526b7318d8f1d35d0364a"
+    },
+    {
+      "file": "136-skill-scope-green-original.xml.gz",
+      "bytes": 1817,
+      "sha256": "d4b26a08c18de6a22e3ec88ca0709e9752f386c3c8498bff7f1d5b5b190e2b61",
+      "gzipBytes": 606,
+      "gzipSha256": "cc43806664eb7ccdc784024af0520611b41dc7fdfcd8cfe0d8783ed737c770e6"
+    },
+    {
+      "file": "139-fixture-ownership-red-testcase-rows.json.gz",
+      "bytes": 17490,
+      "sha256": "9c1f6c451685e7c718618f246b785eb280bf2ebaee925b16f56d7e5f68642370",
+      "gzipBytes": 1637,
+      "gzipSha256": "009b1703d5d46cc0d3f52e102c3f077c7920314b5995992bf27cd5c1d17f4308"
+    },
+    {
+      "file": "139-fixture-ownership-red-after.json.gz",
+      "bytes": 4405,
+      "sha256": "3c9daa720c4bf6f22ec80af8d1eff9c1c6426f053b47ee7c58807ec88e6e3fd2",
+      "gzipBytes": 1878,
+      "gzipSha256": "18c300ff54998e308f148cb12e389d6a238869c59631a5b876229826da7874bf"
+    },
+    {
+      "file": "139-fixture-ownership-red-before.json.gz",
+      "bytes": 4280,
+      "sha256": "cfa96c5888e2c0f90d0fbaf67b5fd1aa85ead0e70c10e9b154014b216f0a3aec",
+      "gzipBytes": 1848,
+      "gzipSha256": "f867d8095ea4b7c9bf3a61213876e3d71033184ead57f0598405442fcbc2a305"
+    },
+    {
+      "file": "139-fixture-ownership-red-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "139-fixture-ownership-red-original.log.gz",
+      "bytes": 8754,
+      "sha256": "024d79080f46562cea811e6ff7b1d6bdabc821a049b675581982d68211c6d2c7",
+      "gzipBytes": 2417,
+      "gzipSha256": "4203fb30442ff7bd3d06be58ec43a3a41fbf215caedb3fd65db2702d7f328803"
+    },
+    {
+      "file": "139-fixture-ownership-red-original.xml.gz",
+      "bytes": 18330,
+      "sha256": "7da2e4ea454c9f1ce7298b4846720a4750a35e56e19a374901b3eff549276b00",
+      "gzipBytes": 1789,
+      "gzipSha256": "b76771d6726e62d9ece28d24638bd4821c406b2c704349d56e584b286fc9179b"
+    },
+    {
+      "file": "140-fixture-ownership-green-testcase-rows.json.gz",
+      "bytes": 16577,
+      "sha256": "e4efc9cc514decd2da91f29add303883d9dadd5f5ad1687012eaba8ba79548ed",
+      "gzipBytes": 1449,
+      "gzipSha256": "194e075c5f3ac6a07b814c81ef2a491f45d5314a862d8c9b5505af5e4453046e"
+    },
+    {
+      "file": "140-fixture-ownership-green-after.json.gz",
+      "bytes": 4503,
+      "sha256": "9f8c50ca4f79ec1ecb0dc6173de6b63ba8d31dd7b0b357359321c67205a64da5",
+      "gzipBytes": 1948,
+      "gzipSha256": "719d16b8fe97857c556a7346c64329d7f85604e10ae8211526c68ac55a7d866a"
+    },
+    {
+      "file": "140-fixture-ownership-green-before.json.gz",
+      "bytes": 4376,
+      "sha256": "5d79cc87cec0e634719f992616faa9020fb3365b92627252b0d2146756106e5a",
+      "gzipBytes": 1916,
+      "gzipSha256": "9a3ccafc4772f692ffd7b9405ce53d613d27484159072b20bdfe340426ef5d6c"
+    },
+    {
+      "file": "140-fixture-ownership-green-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "140-fixture-ownership-green-original.log.gz",
+      "bytes": 1761,
+      "sha256": "23c928228e2e5ea9e87fbbb39bfaedb71097d8bdc21a2cd2a424952b7ebf71e5",
+      "gzipBytes": 903,
+      "gzipSha256": "9c973e1d616f75d1145889e20a85f1d1cfa601ce6a7b4bc1df1a4d1c4a376446"
+    },
+    {
+      "file": "140-fixture-ownership-green-original.xml.gz",
+      "bytes": 17481,
+      "sha256": "679bb37b3085712aeda4cd650a6318dc95bbe8aa639379aa7efc55925b8cd8d2",
+      "gzipBytes": 1638,
+      "gzipSha256": "db479d866faf6b0c3aa87672d264109b4c451ae33d9f2c391a7de2918365ccca"
+    },
+    {
+      "file": "141-hosted-correction-types-after.json.gz",
+      "bytes": 4263,
+      "sha256": "df6223cd8df45e1a9e27a2bf627bf1a36321f133399606d734f93f8c2667310b",
+      "gzipBytes": 1791,
+      "gzipSha256": "3140b054a01ac1963c4e51fd22aba7381582e294d9746ae103669c6d72a4ae82"
+    },
+    {
+      "file": "141-hosted-correction-types-before.json.gz",
+      "bytes": 4136,
+      "sha256": "6f93bd9524e0b86ddfd0ccd0cfebf51fa235c518a2831d76be98bc6e98951fa5",
+      "gzipBytes": 1752,
+      "gzipSha256": "2250ec4c62d7d17e4b897925e0326f5f681791a93030778395e41099b0dfb2a9"
+    },
+    {
+      "file": "141-hosted-correction-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "gzipBytes": 22,
+      "gzipSha256": "9d5a1d1f7fb3d248f901f884a71e325f1cb0c035a4704d54b991b6029de1c8c7"
+    },
+    {
+      "file": "141-hosted-correction-types-original.log.gz",
+      "bytes": 735781,
+      "sha256": "871229038769daf7bec5d20ed41fdb41ceb943df6663b8e2267cb8b9f177aefb",
+      "gzipBytes": 33046,
+      "gzipSha256": "41c4c99f3c90fbbd2d4dca245f9a6e9afb8b173cb944b4804f3718f38845c697"
+    },
+    {
+      "file": "142-hosted-correction-types-after.json.gz",
+      "bytes": 4263,
+      "sha256": "beb4c4be67f17504e5c248f6d0722976bfed99e5d275f74f0697c8613e3c96ac",
+      "gzipBytes": 1791,
+      "gzipSha256": "f1f7cbd1d4cbf39977aeae641af899a0d5cc7472052454e65692ce8dbdfc3ac2"
+    },
+    {
+      "file": "142-hosted-correction-types-before.json.gz",
+      "bytes": 4136,
+      "sha256": "3086c0c786edaaebd3c962a8fd9e39fd398e6e3942ac148536f390f1b4952152",
+      "gzipBytes": 1753,
+      "gzipSha256": "342d5ddd8fe436bac8f0d415271015281c007e3865489128333fa1e1d39efd8e"
+    },
+    {
+      "file": "142-hosted-correction-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+      "gzipBytes": 22,
+      "gzipSha256": "9d5a1d1f7fb3d248f901f884a71e325f1cb0c035a4704d54b991b6029de1c8c7"
+    },
+    {
+      "file": "142-hosted-correction-types-original.log.gz",
+      "bytes": 735202,
+      "sha256": "05cadd596af1814eb7aa28384fde1e91b13a72e869f604cb16dd70d5f2b24579",
+      "gzipBytes": 32881,
+      "gzipSha256": "5aa79eee7865c81ffc9e5dcf42144055ffea38d455ef9e7eefbd5578066689a9"
+    },
+    {
+      "file": "143-hosted-correction-types-after.json.gz",
+      "bytes": 4263,
+      "sha256": "abfacb0d9481dc63df48763de6390c81f2a98de4d26c17d7fe2b0a247de1cf45",
+      "gzipBytes": 1791,
+      "gzipSha256": "680d88713e095584268b00570a8e94381eee07e20baff67df6d643241d484395"
+    },
+    {
+      "file": "143-hosted-correction-types-before.json.gz",
+      "bytes": 4136,
+      "sha256": "8fcf539d4c97cbc08cfb30679f851c809bc9da33db2d8f5680007162a73eda02",
+      "gzipBytes": 1752,
+      "gzipSha256": "350bc44ce8bbb40ea48afc286694c018b508003a48909eac894238de87ef9136"
+    },
+    {
+      "file": "143-hosted-correction-types-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "143-hosted-correction-types-original.log.gz",
+      "bytes": 735038,
+      "sha256": "461ce366d0815ecc5f8321100dc58e4de220440d03498fd43a0f17eeef71bd7b",
+      "gzipBytes": 32758,
+      "gzipSha256": "669672708a3802dc1fe36e049ded7578f3e1da9e49edece0fc96cfc3918f9bfa"
+    },
+    {
+      "file": "144-hosted-correction-lint-after.json.gz",
+      "bytes": 4340,
+      "sha256": "229949fe6dac7ca760bef9b3747d09f2975ccfd4b132c5b56870b7c01ee5e607",
+      "gzipBytes": 1808,
+      "gzipSha256": "32662218e1fc3d94a46175cb11d820fe0cc6a357746a7eb3c72eed06c703ea99"
+    },
+    {
+      "file": "144-hosted-correction-lint-before.json.gz",
+      "bytes": 4214,
+      "sha256": "f967e180ef8c36e587a4abe7ed359dfbe6a38a7a3b30dd706bc307d4bbe26b6b",
+      "gzipBytes": 1775,
+      "gzipSha256": "53d7a1de0ee9daec2983ec49d99b736ef417f1c50a7e85aa49adc8cbf122c772"
+    },
+    {
+      "file": "144-hosted-correction-lint-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "144-hosted-correction-lint-original.json.gz",
+      "bytes": 704,
+      "sha256": "d5af5ab2e90966752aa8aacfd7791227a6872f1ca2f151856e1f3378d85f1992",
+      "gzipBytes": 273,
+      "gzipSha256": "4bb21c3459727f642e8a59eb07e721173f56815d54835dc08c55b347e57d102e"
+    },
+    {
+      "file": "144-hosted-correction-lint-original.log.gz",
+      "bytes": 375,
+      "sha256": "879d0a68786bd443054d046c4137b727d5450171187bcffcaa8c409535d2d9d6",
+      "gzipBytes": 283,
+      "gzipSha256": "2f6130dfbe4f75924338f647e28bfafee5fc289372f759ce6b0c9b5c02229c82"
+    },
+    {
+      "file": "143-owner-observed-after-execution-input-inventory.json.gz",
+      "bytes": 1875777,
+      "sha256": "088765357921d48c3256b7aa5b73437ad29953a626021cf26a487c674847004a",
+      "gzipBytes": 312568,
+      "gzipSha256": "0f025ff6081e3349ec93e2f8d06297f64a5e229678fea8e6d9cfa07665397a17"
+    },
+    {
+      "file": "fixture-type-only-emission-bridge.json.gz",
+      "bytes": 332,
+      "sha256": "a17965d64907af01924ece29a85fa627dde9eafbf3ba039d2e78cf324b624a06",
+      "gzipBytes": 252,
+      "gzipSha256": "1336d419b432f01e70be20ff24ecedff7b7e267f7810b9dbd4ca8a503afd7d61"
+    },
+    {
+      "file": "fixture-type-only-emission-bridge-script.js.gz",
+      "bytes": 1232,
+      "sha256": "fcdb542c430418e189f43c1742fa9ff14f41df61df9cee2362d8b1d0c94bec4b",
+      "gzipBytes": 702,
+      "gzipSha256": "4f3f90427871050f98d5375437dc9bc9c7a95bbbabda7b67f650ccfaec5efc1c"
+    },
+    {
+      "file": "source-330ff895484a86e899bfc86ae9454be77044134f-prepare-handoff-skill.test.ts.gz",
+      "bytes": 12973,
+      "sha256": "97807132abbb24dcbc3cd10418c8ee3370df8494e057216cd50e437ee53edf0c",
+      "gzipBytes": 4233,
+      "gzipSha256": "576a769046c6d9539909fb79547739bfa8c7c0361e2e3b129f820efd4f45da0d"
+    },
+    {
+      "file": "source-330ff895484a86e899bfc86ae9454be77044134f-handoff-producer-admission.test.ts.gz",
+      "bytes": 55484,
+      "sha256": "288817fd145c6f0afdf67783bbf934a94ef79bcd8ce4db614a7cccaa56bb4d9b",
+      "gzipBytes": 10294,
+      "gzipSha256": "912d82ac4fb455d793871aa676d4df9d92458c873b96042709a5169f53bfbcbb"
+    },
+    {
+      "file": "source-3e82ffa1c08ea058776e4782b8046f83f3daf148-prepare-handoff-skill.test.ts.gz",
+      "bytes": 12044,
+      "sha256": "14c4451d820e99af2f84ff7bc7917a9a12478a1ecfbd12ae283b26c624fd496d",
+      "gzipBytes": 4070,
+      "gzipSha256": "42559459090244c397421626a5b9cf35ff3ce5602209760bd6a49229d54c8f70"
+    },
+    {
+      "file": "source-3e82ffa1c08ea058776e4782b8046f83f3daf148-handoff-producer-admission.test.ts.gz",
+      "bytes": 54459,
+      "sha256": "689ece2cdef157b0981b9e76f644c240dc8b09bab478f9ab9bdfc9354ef1abe7",
+      "gzipBytes": 10107,
+      "gzipSha256": "e828deea6f0aeb4276ed0449e1ac1a99126a8949542e92bda3b03dc6226e7e53"
+    },
+    {
+      "file": "source-71b929176e5fa67d952398d919e9f429d2ea1e0b-prepare-handoff-skill.test.ts.gz",
+      "bytes": 12591,
+      "sha256": "ca7eccc665dc09549f2ac608f4a90c0862722d90502d74d6752268e3ff02423a",
+      "gzipBytes": 4238,
+      "gzipSha256": "4a18855bde132de5db8277785c00a216de20d39df300e4aa637ad5760b64132c"
+    },
+    {
+      "file": "source-71b929176e5fa67d952398d919e9f429d2ea1e0b-handoff-producer-admission.test.ts.gz",
+      "bytes": 54459,
+      "sha256": "689ece2cdef157b0981b9e76f644c240dc8b09bab478f9ab9bdfc9354ef1abe7",
+      "gzipBytes": 10107,
+      "gzipSha256": "e828deea6f0aeb4276ed0449e1ac1a99126a8949542e92bda3b03dc6226e7e53"
+    },
+    {
+      "file": "source-7d244fcd153df00668ecac3d0709cece054801e3-prepare-handoff-skill.test.ts.gz",
+      "bytes": 11740,
+      "sha256": "478915076c1fd5d3d03a8d940c5d8607cc8cc4a8309d38c7de4202a0e6772737",
+      "gzipBytes": 3949,
+      "gzipSha256": "b11eab6d1a2ad736329df81b77616801eeadc079d175ed05131f5bed058f912a"
+    },
+    {
+      "file": "source-7d244fcd153df00668ecac3d0709cece054801e3-handoff-producer-admission.test.ts.gz",
+      "bytes": 54459,
+      "sha256": "689ece2cdef157b0981b9e76f644c240dc8b09bab478f9ab9bdfc9354ef1abe7",
+      "gzipBytes": 10107,
+      "gzipSha256": "e828deea6f0aeb4276ed0449e1ac1a99126a8949542e92bda3b03dc6226e7e53"
+    },
+    {
+      "file": "source-a0b564ed499acc9dff2121c12849ee237401f20b-prepare-handoff-skill.test.ts.gz",
+      "bytes": 12973,
+      "sha256": "97807132abbb24dcbc3cd10418c8ee3370df8494e057216cd50e437ee53edf0c",
+      "gzipBytes": 4233,
+      "gzipSha256": "576a769046c6d9539909fb79547739bfa8c7c0361e2e3b129f820efd4f45da0d"
+    },
+    {
+      "file": "source-a0b564ed499acc9dff2121c12849ee237401f20b-handoff-producer-admission.test.ts.gz",
+      "bytes": 54459,
+      "sha256": "689ece2cdef157b0981b9e76f644c240dc8b09bab478f9ab9bdfc9354ef1abe7",
+      "gzipBytes": 10107,
+      "gzipSha256": "e828deea6f0aeb4276ed0449e1ac1a99126a8949542e92bda3b03dc6226e7e53"
+    },
+    {
+      "file": "source-a923690f3c3a649a35ec32f23d2bc597c9327907-prepare-handoff-skill.test.ts.gz",
+      "bytes": 13119,
+      "sha256": "2d577e2cd37116c7687e86b417b4b6b74ff79a882ea08e5a439175c6c271a48b",
+      "gzipBytes": 4268,
+      "gzipSha256": "024a60ae7f20f217279facfc00e9a52d24081243031c8f29258dba1660a4b195"
+    },
+    {
+      "file": "source-a923690f3c3a649a35ec32f23d2bc597c9327907-handoff-producer-admission.test.ts.gz",
+      "bytes": 56747,
+      "sha256": "f9ffc7bc47867a0720dbf522b2e1f32eada42b1cdc1152e6a7d7c60fc5cf0d7c",
+      "gzipBytes": 10695,
+      "gzipSha256": "0d13dfd0ec59c0ca454c40da48bec5e393a0090654000f7da679452d993ad2ae"
+    },
+    {
+      "file": "source-c1659088c68bd665fc1da0c61873729fcb9a85ee-prepare-handoff-skill.test.ts.gz",
+      "bytes": 13130,
+      "sha256": "960c49c3ee0234b47722805ca3c8ec071d08abc146921804965f269593a447a2",
+      "gzipBytes": 4274,
+      "gzipSha256": "8dbd6b24536d0e1e2941face35eb72610f4352b6bb4bafefdff80c8a85ff2e74"
+    },
+    {
+      "file": "source-c1659088c68bd665fc1da0c61873729fcb9a85ee-handoff-producer-admission.test.ts.gz",
+      "bytes": 56747,
+      "sha256": "f9ffc7bc47867a0720dbf522b2e1f32eada42b1cdc1152e6a7d7c60fc5cf0d7c",
+      "gzipBytes": 10695,
+      "gzipSha256": "0d13dfd0ec59c0ca454c40da48bec5e393a0090654000f7da679452d993ad2ae"
+    },
+    {
+      "file": "source-dd508e39270d6d55bfd2c62eee5d3a974d5ea220-prepare-handoff-skill.test.ts.gz",
+      "bytes": 12973,
+      "sha256": "97807132abbb24dcbc3cd10418c8ee3370df8494e057216cd50e437ee53edf0c",
+      "gzipBytes": 4233,
+      "gzipSha256": "576a769046c6d9539909fb79547739bfa8c7c0361e2e3b129f820efd4f45da0d"
+    },
+    {
+      "file": "source-dd508e39270d6d55bfd2c62eee5d3a974d5ea220-handoff-producer-admission.test.ts.gz",
+      "bytes": 56747,
+      "sha256": "f9ffc7bc47867a0720dbf522b2e1f32eada42b1cdc1152e6a7d7c60fc5cf0d7c",
+      "gzipBytes": 10695,
+      "gzipSha256": "0d13dfd0ec59c0ca454c40da48bec5e393a0090654000f7da679452d993ad2ae"
+    },
+    {
+      "file": "delta-7d244fcd153df00668ecac3d0709cece054801e3-c1659088c68bd665fc1da0c61873729fcb9a85ee.patch.gz",
+      "bytes": 14005,
+      "sha256": "bc2f26c197c400eeec7a1442e15e829dbd4fdb566f0a9f3a0b787b81bfe19a99",
+      "gzipBytes": 4520,
+      "gzipSha256": "1e8e19f56ae0da140a8a7c03240b4572145935de6f5f4017beb968a36439e220"
+    },
+    {
+      "file": "delta-71b929176e5fa67d952398d919e9f429d2ea1e0b-a0b564ed499acc9dff2121c12849ee237401f20b.patch.gz",
+      "bytes": 3573,
+      "sha256": "928fa413669dd774ff2b7d9bbc9151b8675fb22bd1ebde27b5fa73e496a69347",
+      "gzipBytes": 1583,
+      "gzipSha256": "0803616f422c0443294cad9028206ffbf74a36d2c805d31518e8fe1fbbdcb27e"
+    },
+    {
+      "file": "delta-330ff895484a86e899bfc86ae9454be77044134f-dd508e39270d6d55bfd2c62eee5d3a974d5ea220.patch.gz",
+      "bytes": 2540,
+      "sha256": "7cde57bc01519250b2dae3d86d9253259cc5d334d5a4b1dacabc2bba4bf4d503",
+      "gzipBytes": 1082,
+      "gzipSha256": "fdee36a75aca464866db4ba896ad56db3741cf4171a82893a4f425ec2c3c4c1c"
+    },
+    {
+      "file": "delta-dd508e39270d6d55bfd2c62eee5d3a974d5ea220-c1659088c68bd665fc1da0c61873729fcb9a85ee.patch.gz",
+      "bytes": 4025,
+      "sha256": "36e079a96679744b44d5a2a8a9ac2ec6018661268b826b5fb458be3007f6ba39",
+      "gzipBytes": 1376,
+      "gzipSha256": "1ebe9912b60a9e2191e1b2db1c27f1fdac41b880e7212d974b005698eb2be1c9"
+    },
+    {
+      "file": "original-windows-log-lines-63510-63565.txt.gz",
+      "bytes": 13405,
+      "sha256": "70b57a1d842be9a7cfae2cdca5c29c8d0ee350b37f39c755c3906570437ec5b1",
+      "gzipBytes": 2748,
+      "gzipSha256": "9314c6cc761b62072e84fc84dd99901c78211c2af54085500cb6bb299981cf54"
+    },
+    {
+      "file": "131-hosted-correction-command-receipt.cjs.gz",
+      "bytes": 2528,
+      "sha256": "73a357c517491c443cd4e043927f4fca9e1c384a29226fe15f03c605519b95f6",
+      "gzipBytes": 1024,
+      "gzipSha256": "56d46e3cd1653f4dc2724654889a9c457165b5943b47f95e65fdb4ca850b533d"
+    },
+    {
+      "file": "133-producer-hosted-correction-tsconfig.json.gz",
+      "bytes": 341,
+      "sha256": "c42e7ed4d268efc9b0de0f6a5c5bac7672b16a0a2ab805a2d5379bc1c7b6a6f3",
+      "gzipBytes": 212,
+      "gzipSha256": "e08b5a7dd7d296644d8f92deefa1214f3ff103552925d33ae02f391662198f3d"
+    },
+    {
+      "file": "145-correction-pr-original.json.gz",
+      "bytes": 292,
+      "sha256": "9df96392bcb59629bd735a6614fc005bb1d6ca2e92c02d4a25d9eb00ba8b1221",
+      "gzipBytes": 230,
+      "gzipSha256": "7a66ff6ea1e3b963bab5e2b47d8d653fde7625219a608cc8342a6d3a62f96db2"
+    },
+    {
+      "file": "145-correction-refs-original.txt.gz",
+      "bytes": 258,
+      "sha256": "b415d535b8d18fa352869652762e711b7cb7dc35d7ae2af082e99530f026f664",
+      "gzipBytes": 179,
+      "gzipSha256": "80d694b64be4a9260019327fc9150c8d32e2ee69dbaaff548ab131d9a1ee9c2b"
+    },
+    {
+      "file": "126-producer-recipient-final-review-454-original.md.gz",
+      "bytes": 16134,
+      "sha256": "fb095f8d7a30d4508856c469a5e685f9459de78d0268df47d91234866b9e8183",
+      "gzipBytes": 6904,
+      "gzipSha256": "81a5c64563f48764ac22a3dd45aa7bd13ef6b8a4b225629bd60ab64bc303568c"
+    },
+    {
+      "file": "145-freeze-hosted-fixture-correction.py.gz",
+      "bytes": 10373,
+      "sha256": "a449c185f2861d2441cedbac724e87a958fa29415d83bebe87c9eb3e1735cdb6",
+      "gzipBytes": 4023,
+      "gzipSha256": "e4ae079be8a85ea8ddb3121336ba6d5e89f3078303deb9a441ff82a01fecba73"
+    }
+  ],
+  "archiveCount": 77,
+  "junitRows": 120,
+  "compilerInputs": {
+    "rows": 3959,
+    "trackedVerified": 2471,
+    "dependencyObserved": 1488,
+    "timing": "AFTER execution; not a pre/atomic/full dynamic runtime seal"
+  },
+  "bridge": {
+    "typescript": "5.9.3",
+    "fixture": "src/main/services/prepare-handoff-skill.test.ts",
+    "oldHead": "a0b564ed499acc9dff2121c12849ee237401f20b",
+    "newHead": "c1659088c68bd665fc1da0c61873729fcb9a85ee",
+    "emittedBytes": 15874,
+    "sha256": "fb4c0ed5fb859f2786acf487cf67c700630aeefafc0a926239892fdde2dc52c9",
+    "identical": true
+  },
+  "sourceAttribution": "136 six-case runtime only at a0;140 two-case runtime only at dd508. Final c165 has same producer bytes and type-only skill delta/identical TS emission. No final-head aggregate runtime execution.",
+  "originalHostedFailure": {
+    "run": 45068217103,
+    "attempt": 1,
+    "proof": "ab853c28ab03472425279bf159c370e16c27cc57",
+    "conclusion": "failure"
+  },
+  "review": "45495858a176a5971494cef2cfc5ae67ffbf9b18",
+  "unresolved": "Windows first5000ms body timeout phase remains UNKNOWN. Cleanup ownership red/green does not prove all36 Windows timeout closure. No producer full52/final-head runtime, fullhandoff, CI/update/landing acceptance."
+}

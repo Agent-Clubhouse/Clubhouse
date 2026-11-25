@@ -29,6 +29,12 @@ export interface HandoffServiceOptions {
 /** A new offer additionally checks policy captured before its awaited admission. */
 export type HandoffReceiveGuard = (newOffer?: Handoff) => void;
 
+export interface HandoffOfferAdmission {
+  verify(): Promise<void>;
+  check(): void;
+  admit(record: Handoff): void;
+}
+
 export const HANDOFF_OFFER_TTL_MS = 24 * 60 * 60 * 1000;
 export const HANDOFF_ACTIVE_LIMIT = 512;
 export const HANDOFF_PEER_LIMIT = 64;
@@ -87,17 +93,21 @@ export class HandoffService {
       && (!state || record.state === state));
   }
 
-  async offer(input: HandoffOffer, sender: HandoffAgent, beforeCommit?: (record: Handoff) => Promise<void>): Promise<Handoff> {
+  async offer(input: HandoffOffer, sender: HandoffAgent, beforeCommit?: (record: Handoff) => Promise<void>, admission?: HandoffOfferAdmission): Promise<Handoff> {
     this.requireLocal(sender);
     const at = this.now();
     const record = parseHandoff({
       ...input, schemaVersion: 1, id: this.newId(), createdAt: at, updatedAt: at, version: 1, from: sender,
       state: 'offered', history: [{ operationId: this.newId(), at, by: { kind: 'agent', address: sender }, state: 'offered' }],
     });
-    if (!await this.options.authorize({ action: 'handoff.offer', actor: sender, record, stage: 'offered' })) throw new Error('Handoff offer is not authorized.');
     return this.options.store.transact(record.id, async (current) => {
       if (current) throw new Error('Handoff id already exists.');
       if (this.options.incomingAvailable?.(record) === false || this.options.store.list().filter((item) => !isTerminalHandoff(item.state)).length >= HANDOFF_ACTIVE_LIMIT) throw new Error('Handoff capacity reached.');
+      const authorized = await this.options.authorize({ action: 'handoff.offer', actor: sender, record, stage: 'offered' });
+      await admission?.verify();
+      admission?.check();
+      if (!authorized) throw new Error('Handoff offer is not authorized.');
+      admission?.admit(record);
       await beforeCommit?.(record);
       return record;
     });

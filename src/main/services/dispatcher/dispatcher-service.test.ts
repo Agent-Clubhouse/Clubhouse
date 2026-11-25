@@ -67,9 +67,17 @@ function fakeProvider(id: string, file: string, conventions?: { configDir: strin
     conventions,
     // What each CLI lists, for Choose models yourself (#3191).
     getModelOptions: vi.fn(async () => (MODEL_LISTS[id] ?? []).map((m) => ({ id: m, label: m }))),
+    readInstructions: vi.fn(async (dir: string) => {
+      try { return await fs.promises.readFile(path.join(dir, file), 'utf-8'); } catch { return ''; }
+    }),
     writeInstructions: vi.fn(async (dir: string, content: string) => {
       await fs.promises.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.promises.writeFile(path.join(dir, file), content);
+    }),
+    replaceInstructionsIfUnchanged: vi.fn(async (dir: string, expected: string, content: string) => {
+      if (await fs.promises.readFile(path.join(dir, file), 'utf-8') !== expected) return false;
+      await fs.promises.writeFile(path.join(dir, file), content);
+      return true;
     }),
   };
 }
@@ -145,7 +153,7 @@ import * as svc from './dispatcher-service';
 import { dispatcherSkills } from './dispatcher-skills';
 import { getSettings, updateSettings } from './dispatcher-settings';
 import { _resetDispatcherBehaviorForTesting, getDispatcherBehaviorPlan } from './dispatcher-behavior';
-import { agentRegistry } from '../agent-registry';
+import { agentRegistry, untrackAgent } from '../agent-registry';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 import { DEFAULT_DISPATCHER_PERSONALITY, PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../shared/dispatcher-personality';
 
@@ -1011,6 +1019,46 @@ describe('two agents, one identity (#3036)', () => {
     expect(fs.readFileSync(index, 'utf-8')).toBe('- webapp-lead owns checkout\n');
   });
 
+  it('first start after beta.7 bounds both roles\' files for every CLI and keeps the person\'s text', async () => {
+    await svc.setDispatcherEnabled(true);
+    const index = '# Dispatcher memory\n\n' + Array.from({ length: 150 }, (_, i) => `- **Entry ${i}:** ${'detail '.repeat(8)}`).join('\n') + '\n';
+    const beta7 = (head: string) => `${head}\n\n## Your memory index\n\nThis is \`memory/index.md\` as it was when this file was written.\n\n${index}`;
+    const files = [
+      path.join(dispatcherDir(), 'AGENTS.md'), path.join(chatDir(), 'AGENTS.md'),
+      path.join(dispatcherDir(), '.github', 'copilot-instructions.md'), path.join(chatDir(), '.github', 'copilot-instructions.md'),
+    ];
+    const ownText = 'MY OWN RULE: ask before touching prod.';
+    for (const file of files) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, beta7(`# Dispatcher\n\nOlder role text.\n\n${ownText}`));
+      expect(fs.statSync(file).size).toBeGreaterThan(8 * 1024);
+    }
+    // The active CLI's own file, as beta.7 left it.
+    fs.writeFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), beta7('# Dispatcher\n\nOlder role text.'));
+    fs.writeFileSync(path.join(chatDir(), 'CLAUDE.md'), beta7('# Dispatcher\n\nOlder role text.'));
+
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1');
+
+    for (const file of files) {
+      const text = fs.readFileSync(file, 'utf-8');
+      expect(fs.statSync(file).size).toBeLessThan(200);
+      expect(text).toContain(ownText);
+      expect(text).not.toContain('Entry 1:');
+    }
+    for (const file of [path.join(dispatcherDir(), 'CLAUDE.md'), path.join(chatDir(), 'CLAUDE.md')]) {
+      const text = fs.readFileSync(file, 'utf-8');
+      expect(text).not.toContain('Entry 1:');
+      expect(Buffer.byteLength(text)).toBeLessThan(16 * 1024 + 4 * 1024);
+    }
+    expect(fs.readdirSync(path.join(dispatcherDir(), '.clubhouse', 'instruction-backups'))).toHaveLength(2);
+    expect(fs.readdirSync(path.join(chatDir(), '.clubhouse', 'instruction-backups'))).toHaveLength(2);
+
+    // A second start finds nothing left to clean and writes no more backups.
+    await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1');
+    expect(fs.readdirSync(path.join(dispatcherDir(), '.clubhouse', 'instruction-backups'))).toHaveLength(2);
+  });
+
   it('writes both instructions files again on request, with the index as it is now, and nothing while off (#3046)', async () => {
     await svc.setDispatcherEnabled(true);
     const index = path.join(dispatcherDir(), 'memory', 'index.md');
@@ -1449,6 +1497,44 @@ describe('Choose models yourself (#3191)', () => {
     await settle();
     expect(setModel).not.toHaveBeenCalled();
     expect(chat()).toMatchObject({ orchestrator: 'codex-cli' });
+  });
+
+  it('reports nothing pending for a chat that stopped on its old provider, and tells Settings it changed', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    runningChat('claude-code');
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await settle();
+    expect(svc.getDispatcherState().providerPending?.chat).toBe('claude-code');
+    const seen: Array<string | null | undefined> = [];
+    const off = svc.onDispatcherChanged((state) => { seen.push(state.providerPending?.chat); });
+    // What a chat session's end does (chat-spawn cleanup): its registration goes.
+    untrackAgent('durable_2');
+    off();
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
+    expect(seen.at(-1)).toBeNull();
+  });
+
+  it('reports a job whose running session is still on its old provider, from the session, until it restarts', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    runningChat('claude-code');
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
+    const state = await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await settle();
+    // Saved, not applied: the record names the new provider and the session is still on the old one.
+    expect(chat()).toMatchObject({ orchestrator: 'codex-cli' });
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: 'claude-code', work: null });
+    expect(state.models.chat?.provider).toBe('codex-cli');
+    // Saving never stops or restarts it.
+    expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    // Once the session is on the saved provider, nothing is pending.
+    untrackAgent('durable_2');
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
+    agentRegistry.register('durable_2', { projectPath: chatDir(), cwd: chatDir(), orchestrator: 'codex-cli', runtime: 'pty' });
+    expect(svc.getDispatcherState().providerPending).toEqual({ chat: null, work: null });
   });
 
   it('refuses a provider Clubhouse doesn\'t know, a model its CLI doesn\'t list, and a pick while it\'s off, saving nothing', async () => {

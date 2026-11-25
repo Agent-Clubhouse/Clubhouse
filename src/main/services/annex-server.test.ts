@@ -6253,6 +6253,7 @@ describe('annex-server', () => {
       expect(payload).not.toHaveProperty('appCanvasState');
       expect(payload).not.toHaveProperty('canvasState');
       expect(payload.agentIcons.a0).toBeDefined();
+      expect(payload.agentRunStateVersion).toBe(1);
       expect(payload.snapshotTruncated).toEqual({
         version: 1, reason: 'frame_limit', omitted: ['canvasState', 'appCanvasState'], bytes: expect.any(Number),
       });
@@ -6438,6 +6439,7 @@ describe('annex-server', () => {
         const inline = await connectWithRefs(false);
 
         const [withRefs] = snapshots(refs);
+        expect(withRefs.agentRunStateVersion).toBe(1);
         expect(withRefs.agentIcons).toEqual({});
         expect(withRefs.projectIcons).toEqual({});
         expect(withRefs.iconRefs.agents.a0).toEqual({
@@ -6446,6 +6448,7 @@ describe('annex-server', () => {
         expect(JSON.stringify(withRefs)).not.toContain('base64');
 
         const [withInline] = snapshots(inline);
+        expect(withInline.agentRunStateVersion).toBe(1);
         expect(withInline.iconRefs).toBeUndefined();
         expect(withInline.agentIcons.a0).toMatch(/^data:image\/png;base64,/);
       }, 30_000);
@@ -7392,6 +7395,7 @@ describe('annex-server', () => {
 
       await vi.waitFor(() => expect(sent(live).some((f) => f.type === 'snapshot')).toBe(true));
       const refresh = sent(live).find((f) => f.type === 'snapshot');
+      expect(refresh.payload.agentRunStateVersion).toBe(1);
       expect(refresh.payload.lastSeq).toBe(seqOfEvent);
       expect(refresh.payload.agents.p[0].status).toBe('running');
     });

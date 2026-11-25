@@ -1,0 +1,298 @@
+{
+  "source": "25317bb72a41d8b04f9bda104cc32b5908bed3b1",
+  "sourceTree": "083a74ed6a6f15bb2e1a613133a3391c45f60994",
+  "baselineProduction": "50c474b48f57e0256661244bd29b9343ec112bc4",
+  "productionTreeUnchanged": "37846f7ebb5aca51201a664739f39970e1c676a8",
+  "publishedSourceRef": "refs/heads/lane-3613-p2-routes/handoff-usable-path",
+  "originalBoundary": {
+    "commit": "664effcd1d6d10858c0c7904983628a0393a0780",
+    "publishedRef": "refs/heads/lane-3613-p2-routes/handoff-producer-boundary",
+    "branchFieldMeaning": "Original664 branch field names an unpublished local work branch at that time, not the published boundary review ref"
+  },
+  "design": {
+    "commit": "2d363a2c592133155979ddd599d17453aa578404",
+    "blob": "9e9c5ffbbea2934b3178fb8016b7ee2309bf2c05",
+    "mcpGateBlob": "1e9c4e99e2700082b5946a88d6b4adf18cb60f37",
+    "disposition": "DESIGN READY with refinements; production candidate not yet implemented or reviewed"
+  },
+  "executions": [
+    {
+      "number": 69,
+      "source": "07a65c84c2a2ca90dac41cd4d0f8429f1bc512d0",
+      "exit": 1,
+      "pass": 2,
+      "fail": 2,
+      "cases": 4,
+      "attribution": "Genuine stale-offer/catalog mutation case has three soft assertion failures; separate Ask fixture metadata incorrectly expected .args instead of actual .argumentsText after actual refusal/history/catalog assertions had passed"
+    },
+    {
+      "number": 70,
+      "source": "2ce67b22a5f81e34b57369fcd142ee7e3f7481e1",
+      "exit": 0,
+      "pass": 1,
+      "skip": 3,
+      "cases": 4,
+      "attribution": "Only corrected Ask-first argumentsText case executed; no stale/current/Off rerun"
+    },
+    {
+      "number": 71,
+      "source": "2ce67b22a5f81e34b57369fcd142ee7e3f7481e1",
+      "exit": 2,
+      "diagnostics": 1,
+      "attribution": "Own fixture implicit-any callback from untyped Function.bind; preserved original FAIL"
+    },
+    {
+      "number": 73,
+      "source": "25317bb72a41d8b04f9bda104cc32b5908bed3b1",
+      "exit": 0,
+      "diagnostics": 0,
+      "attribution": "Only two erased method type annotations added; same complete fixture plus ordinary production graph"
+    },
+    {
+      "number": 74,
+      "source": "25317bb72a41d8b04f9bda104cc32b5908bed3b1",
+      "exit": 0,
+      "errors": 0,
+      "warnings": 0
+    }
+  ],
+  "typeGraph": {
+    "source": "25317bb72a41d8b04f9bda104cc32b5908bed3b1",
+    "tree": "083a74ed6a6f15bb2e1a613133a3391c45f60994",
+    "roots": 2466,
+    "productionRoots": 2465,
+    "fixtureRoots": 1,
+    "inputs": 3957,
+    "errors": 0,
+    "warnings": 0
+  },
+  "cases": [
+    {
+      "execution": "baseline-original",
+      "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "pass",
+      "failureNodes": 0
+    },
+    {
+      "execution": "baseline-original",
+      "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "fail",
+      "failureNodes": 3
+    },
+    {
+      "execution": "baseline-original",
+      "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "fail",
+      "failureNodes": 1
+    },
+    {
+      "execution": "baseline-original",
+      "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "pass",
+      "failureNodes": 0
+    },
+    {
+      "execution": "ask-metadata-correction",
+      "name": "isolated real MCP producer domain admission > keeps current sender authority, source bytes and durable binding through a held history queue",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "skip",
+      "failureNodes": 0
+    },
+    {
+      "execution": "ask-metadata-correction",
+      "name": "isolated real MCP producer domain admission > refuses original sender grant retirement before queued offer admission without adding history or binding",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "skip",
+      "failureNodes": 0
+    },
+    {
+      "execution": "ask-metadata-correction",
+      "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses ask offer before handler admission",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "pass",
+      "failureNodes": 0
+    },
+    {
+      "execution": "ask-metadata-correction",
+      "name": "isolated real MCP producer domain admission > keeps explicit prepared source but refuses off offer before handler admission",
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "status": "skip",
+      "failureNodes": 0
+    }
+  ],
+  "actualWitness": {
+    "generalGate": "open",
+    "sourceUnchanged": true,
+    "handoffOfferGrant": "no_grant",
+    "resultIsError": false,
+    "beforeHistory": [
+      "620aec12-baad-40cf-a5b0-f944bdc77c9d"
+    ],
+    "afterHistory": [
+      "620aec12-baad-40cf-a5b0-f944bdc77c9d",
+      "5623235a-3c35-4fac-bbb5-8eade960353f"
+    ],
+    "beforeCatalog": {
+      "v": 1,
+      "entries": [
+        {
+          "id": "1549f050-ed2b-4512-8550-2afd8402d1e5",
+          "owner": "producer-sender",
+          "project": "proj_1795371079567_qai0ch",
+          "mode": "worktree",
+          "at": 1795371080760,
+          "summary": {
+            "fileCount": 2,
+            "totalBytes": 302,
+            "sha256": "34f887e30a2d0d8caaa0203568348284e4f3b64b116cf45f27a62146e465180a"
+          },
+          "boundTo": [
+            "620aec12-baad-40cf-a5b0-f944bdc77c9d"
+          ]
+        }
+      ]
+    },
+    "afterCatalog": {
+      "v": 1,
+      "entries": [
+        {
+          "id": "1549f050-ed2b-4512-8550-2afd8402d1e5",
+          "owner": "producer-sender",
+          "project": "proj_1795371079567_qai0ch",
+          "mode": "worktree",
+          "at": 1795371080760,
+          "summary": {
+            "fileCount": 2,
+            "totalBytes": 302,
+            "sha256": "34f887e30a2d0d8caaa0203568348284e4f3b64b116cf45f27a62146e465180a"
+          },
+          "boundTo": [
+            "620aec12-baad-40cf-a5b0-f944bdc77c9d",
+            "5623235a-3c35-4fac-bbb5-8eade960353f"
+          ]
+        }
+      ]
+    }
+  },
+  "archives": [
+    {
+      "original": "67-producer-boundary-packet.json",
+      "bytes": 7764,
+      "sha256": "566fa42741c1029f7ac33bf2138dfb7b7e0077b4a4efd26b55a4e2dc96b7fbae",
+      "archive": "67-producer-boundary-packet.json.gz",
+      "archiveSha256": "a155c312eb81e4c07254d055e463c7a5cac824a7be2b5fee4cb1b89663dcaa68"
+    },
+    {
+      "original": "68-producer-boundary-readback.json",
+      "bytes": 484,
+      "sha256": "4f961e21ad0064395d60f2e4a731e863d33925de9064a3f1e52f68b7ca6135d2",
+      "archive": "68-producer-boundary-readback.json.gz",
+      "archiveSha256": "8a84ccd2a33fee053c3c9058117576e167ac1418470bc052b8ddc79efcb279c8"
+    },
+    {
+      "original": "69-producer-baseline-original.log",
+      "bytes": 8440,
+      "sha256": "ee5c00982051b07ba101ade664f1384c635c610dbd5c2e53217da0dc4dc02cb9",
+      "archive": "69-producer-baseline-original.log.gz",
+      "archiveSha256": "8e29a4d38143c0484a5044b5bd7b428fa4db40981bbdcef3accd3d17b26b6977"
+    },
+    {
+      "original": "69-producer-baseline-original.xml",
+      "bytes": 7625,
+      "sha256": "01f679a7d7835bd280ee2589c522f11a3a59e0bb7233e0a92724cfc37ee6c711",
+      "archive": "69-producer-baseline-original.xml.gz",
+      "archiveSha256": "1a70a8b5a83036c07a8c05305d006fc32cbfc88cb24612458f45a171f00384af"
+    },
+    {
+      "original": "70-producer-ask-metadata-original.log",
+      "bytes": 1559,
+      "sha256": "3cc750f9fab356aea06a73ee57646b30d72b87471b02f0efddf306b78cad7e65",
+      "archive": "70-producer-ask-metadata-original.log.gz",
+      "archiveSha256": "501ce2b8d4fe5e66b30ef0b476e89d7e600af47a04d983cbfbe6f825ba1e3cca"
+    },
+    {
+      "original": "70-producer-ask-metadata-original.xml",
+      "bytes": 1461,
+      "sha256": "aebc20a9ade0eb37ce42cf8574000d631ecc70a4517786ff3cbf40ea050635db",
+      "archive": "70-producer-ask-metadata-original.xml.gz",
+      "archiveSha256": "ef56d895887110507df048bd53ee2e087fbf72fbea00f40eb5dac0ac7aed5205"
+    },
+    {
+      "original": "70-producer-fixture-tsconfig.json",
+      "bytes": 180,
+      "sha256": "212713ed1e0e60b1b385d962b5029323587b1ef8eb3962d69bb456c844e7d67a",
+      "archive": "70-producer-fixture-tsconfig.json.gz",
+      "archiveSha256": "0465e32b47badb10a376ac28234e080b2cf7b49404819d63a93c83231d5a60e0"
+    },
+    {
+      "original": "71-producer-fixture-types-original.log",
+      "bytes": 734777,
+      "sha256": "acbeac8065c41f6727d024ca38dc7763087dc7b29c8254b6e53d22633d43efac",
+      "archive": "71-producer-fixture-types-original.log.gz",
+      "archiveSha256": "8704268375fe52bb1b4e3bc32b24959415c4ae1c84a52ba9d83ae3da609ecc50"
+    },
+    {
+      "original": "73-producer-fixture-types-original.log",
+      "bytes": 734656,
+      "sha256": "5c676e78b5a289cbeaa8ea7ca831286cae63931fd8ab1ee8cbaab72920a34932",
+      "archive": "73-producer-fixture-types-original.log.gz",
+      "archiveSha256": "73edcf7f6ff5a583cb2753a96078d5e5445d95b5a202134cbdaac73160998df7"
+    },
+    {
+      "original": "74-producer-fixture-eslint-original.json",
+      "bytes": 353,
+      "sha256": "44caf17c2e2975f4b267628ee08971b3fcb17b89dbd79af781619a6fc64f4b27",
+      "archive": "74-producer-fixture-eslint-original.json.gz",
+      "archiveSha256": "a4e9979b787e3ae7c7adfd83073debe76d359a53091df0275c599104d68e522b"
+    },
+    {
+      "original": "74-producer-fixture-eslint-original.log",
+      "bytes": 327,
+      "sha256": "23b2598be8684773a8513f965b2cd52d25a183977182caf1ca5e09ff30c4b56b",
+      "archive": "74-producer-fixture-eslint-original.log.gz",
+      "archiveSha256": "5b818d3a243b4e3a6a6208be5414cd15063b16efaace50da68fb1ab294c93e58"
+    },
+    {
+      "original": "75-producer-checks-readback.json",
+      "bytes": 228,
+      "sha256": "de264c9238f666bf44cb1fbdde47b835ab0149653c886988c778ef8f10f4fbbf",
+      "archive": "75-producer-checks-readback.json.gz",
+      "archiveSha256": "8c06758fa4ba1bc7d1b967942e3f22a697755611696fc52d8debe9e37c0c5d42"
+    },
+    {
+      "original": "76-review-download-enobufs-original.txt",
+      "bytes": 20969,
+      "sha256": "967e5e7f5d6fccf40cdc783c3d88e8150fdf3f65ed22f13449f0ca604ea2e65f",
+      "archive": "76-review-download-enobufs-original.txt.gz",
+      "archiveSha256": "ce4d9ae88489abd94406763d25a68f1f905bacfba835ddc5a2f60c9f10faff37"
+    },
+    {
+      "original": "2d363-producer-design-review.md",
+      "bytes": 22054,
+      "sha256": "7d326d1a97473f5563043f879aaeebfd3870ec46282f77e8bac80ff7ec44c8fd",
+      "archive": "2d363-producer-design-review.md.gz",
+      "archiveSha256": "313846b2a0e6595b78b9fbd4d085f8474e2a527cc78150688bb6e03f4964e6a4"
+    },
+    {
+      "original": "77-freeze-producer-baseline.py",
+      "bytes": 6396,
+      "sha256": "d3a27f3406a2a898c8ea5edee6418f22c55301767e755bf6592adb5d91d48c21",
+      "archive": "77-freeze-producer-baseline.py.gz",
+      "archiveSha256": "b4edada105f99223b6717fd10aa9b55da54c0dfa3156d4cb7d1cf697ae8bdf8d"
+    }
+  ],
+  "limits": [
+    "No final253 aggregate four-case execution or aggregate PASS claim",
+    "No production edits, local E2E, live grants, human approval, bridge nonce, provider or agent process",
+    "Actual real callTool/current evaluator/grantstore/exact call context, registered project and source, Git preparation/catalog and actual coordinator/history stores",
+    "Only test queue scheduling is instrumented; every actual updater, authorizer, bind and save runs production code",
+    "Explicit prepare happened before grant retirement; failed offer is not a global zero-local-IO assertion",
+    "No native grant/preparation/content transport/application/wake/two-host/full-handoff/full-duplex acceptance transfer",
+    "Original earlier166FAIL scoped nonregression and71/247 warnings remain separately attributed unchanged",
+    "No global MCP-gate/forget cancellation change"
+  ]
+}

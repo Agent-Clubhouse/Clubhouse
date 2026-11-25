@@ -299,6 +299,16 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   };
 }
 
+/**
+ * Run `fn` with deliveries to the Dispatcher held: one under way finishes
+ * first, and any that arrive wait until `fn` settles. A restart onto a new
+ * provider stops the controller in here, so no hand-off reaches the old
+ * conversation as it ends. `fn` must not deliver or wake, which would wait on itself.
+ */
+export function holdDispatcherDeliveries<T>(targetId: string, fn: () => Promise<T>): Promise<T> {
+  return inOrder(dispatcherInboxId(targetId), fn);
+}
+
 /** For tests. */
 export function _resetDispatcherDeliveryForTesting(): void {
   queues.clear();

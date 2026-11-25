@@ -1,5 +1,6 @@
+import { useRemoteChat } from '../remote-chat';
 import { localMarkdownTarget } from '../../../../utils/local-markdown-links';
-import { isRemoteProjectId } from '../../../../stores/remoteProjectStore';
+import { isRemoteAgentId, isRemoteProjectId } from '../../../../stores/remoteProjectStore';
 import { chatLinkPath, openLocalFileLink } from '../../../../utils/file-preview';
 import { useFilePreviewStore } from '../../../../stores/filePreviewStore';
 import {
@@ -37,6 +38,7 @@ const HOVER_DELAY_MS = 350;
 
 interface RichLinkContextValue {
   agentId: string;
+  remote: boolean;
   projectId: string | null;
   /** The project's GitHub repo ("owner/repo"), once resolved. */
   repo: string | null;
@@ -227,8 +229,8 @@ async function openChatLink(agentId: string, href: string): Promise<void> {
 }
 
 /** Open a link: a local path in the app, the project's own issues in the Issues view when it's installed there, else the browser. */
-export function openLink(href: string, rich: (Pick<RichLinkContextValue, 'projectId' | 'repo'> & { agentId?: string }) | null, ambiguous = false): void {
-  const local = !isRemoteProjectId(rich?.projectId || '');
+export function openLink(href: string, rich: (Pick<RichLinkContextValue, 'projectId' | 'repo'> & { agentId?: string; remote?: boolean }) | null, ambiguous = false): void {
+  const local = !rich?.remote && !isRemoteAgentId(rich?.agentId || '') && !isRemoteProjectId(rich?.projectId || '');
   const linkPath = local && rich?.agentId ? chatLinkPath(href) : null;
   if (linkPath) { void openChatLink(rich!.agentId!, linkPath); return; }
   if (local && openLocalFileLink(href)) return;
@@ -336,10 +338,12 @@ function GithubRefCard({ state, repo }: { state: CardState; repo: string | null 
  */
 export function RichLinkProvider({ agentId, children }: { agentId: string; children: ReactNode }) {
   const enabled = useRichChatContent();
+  const remote = !!useRemoteChat() || isRemoteAgentId(agentId);
   const projectId = useAgentStore((s) => s.agents[agentId]?.projectId ?? null);
   const worktree = useAgentStore((s) => s.agents[agentId]?.worktreePath);
   const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === projectId)?.path);
-  const dir = worktree ?? projectPath;
+  // Host provenance cannot depend on a local store containing remote metadata.
+  const dir = remote || isRemoteProjectId(projectId || '') ? undefined : worktree ?? projectPath;
   const [repo, setRepo] = useState<string | null>(null);
   const [card, setCard] = useState<CardState | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -390,8 +394,8 @@ export function RichLinkProvider({ agentId, children }: { agentId: string; child
   useEffect(() => clear, []);
 
   const value = useMemo<RichLinkContextValue | null>(
-    () => (enabled ? { agentId, projectId, repo, showCard, hideCard } : null),
-    [enabled, agentId, projectId, repo, showCard, hideCard],
+    () => (enabled ? { agentId, remote, projectId: remote ? null : projectId, repo: remote ? null : repo, showCard, hideCard } : null),
+    [enabled, agentId, remote, projectId, repo, showCard, hideCard],
   );
 
   return (

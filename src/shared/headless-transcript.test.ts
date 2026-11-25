@@ -136,9 +136,22 @@ describe('summarizeHeadlessTranscript', () => {
       filesModified: [],
       toolsUsed: [],
       toolCalls: 0,
-      inputTokens: 0,
-      outputTokens: 0,
     });
+  });
+
+  it('leaves token counts out when nothing reported them, keeps a reported 0, and keeps one side when only it was reported', () => {
+    const none = summarizeHeadlessTranscript(([{ type: 'turn.completed', usage: {} }] as unknown as StreamJsonEvent[]).flatMap(createCodexHeadlessNormalizer()));
+    expect(none).not.toHaveProperty('inputTokens');
+    expect(none).not.toHaveProperty('outputTokens');
+    const zero = summarizeHeadlessTranscript([{ type: 'assistant', message: { id: 'm', usage: { input_tokens: 0, output_tokens: 0 } } }]);
+    expect(zero).toMatchObject({ inputTokens: 0, outputTokens: 0 });
+    const outputOnly = summarizeHeadlessTranscript(([{ type: 'turn.completed', usage: { output_tokens: 4 } }] as unknown as StreamJsonEvent[]).flatMap(createCodexHeadlessNormalizer()));
+    expect(outputOnly.outputTokens).toBe(4);
+    expect(outputOnly).not.toHaveProperty('inputTokens');
+    // A per-message figure for one side and none for the other: the other stays absent.
+    const cacheOnly = summarizeHeadlessTranscript([{ type: 'assistant', message: { id: 'm', usage: { cache_read_input_tokens: 7 } } }]);
+    expect(cacheOnly).toMatchObject({ inputTokens: 7 });
+    expect(cacheOnly).not.toHaveProperty('outputTokens');
   });
 
   it('reads summary, cost and duration from the result event', () => {

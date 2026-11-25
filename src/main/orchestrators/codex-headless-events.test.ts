@@ -62,6 +62,13 @@ describe('createCodexHeadlessNormalizer', () => {
     expect(result.message?.usage).toEqual({ input_tokens: 15599, output_tokens: 5 });
   });
 
+  it('leaves usage out when Codex reports none, instead of reporting zero tokens', () => {
+    const [none] = run([{ type: 'turn.completed', usage: {} }] as unknown as StreamJsonEvent[]);
+    expect(none.message).toBeUndefined();
+    const [partial] = run([{ type: 'turn.completed', usage: { input_tokens: 12, output_tokens: 'x' } }] as unknown as StreamJsonEvent[]);
+    expect(partial.message?.usage).toEqual({ input_tokens: 12 });
+  });
+
   it('pairs a shell command with its output', () => {
     const events = run([
       { type: 'item.started', item: { id: 'c1', type: 'command_execution', command: 'ls -la' } },

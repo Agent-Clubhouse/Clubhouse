@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   projects: [] as Array<{ path: string }>, agents: [] as Array<{ id: string }>,
   runtimes: new Map<string, { isRunning(): boolean; getState(): string; hasPendingWork?(): boolean }>(),
   quota: 'unknown', allowed: true, devices: [] as unknown[], post: vi.fn(),
+  agreed: new Set<string>(), agreedCalls: [] as Array<[string, string]>,
 }));
 const machine = Array(32).fill('aa').join(':');
 vi.mock('./annex-identity', () => ({ getOrCreateIdentity: () => ({ fingerprint: Array(32).fill('aa').join(':') }) }));
@@ -20,6 +21,9 @@ vi.mock('./headless-manager', () => ({ isHeadless: (id: string) => id === 'headl
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: (id: string) => state.runtimes.get(id) }));
 vi.mock('./provider-quota', () => ({ peekProviderQuota: () => ({ state: state.quota }) }));
 vi.mock('./clubhouse-mcp/grant-check', () => ({ holdsGrant: () => state.allowed }));
+vi.mock('./annex-control', () => ({
+  peerAgreedFeature: (fingerprint: string, feature: string) => { state.agreedCalls.push([fingerprint, feature]); return state.agreed.has(fingerprint); },
+}));
 import { acceptingRemoteHandoffs, capacityAgentCounts, capacityProviders, handoffCapacityService, receiveCapacityProbe } from './handoff-capacity-host';
 
 beforeEach(() => {
@@ -29,6 +33,8 @@ beforeEach(() => {
   state.runtimes.clear();
   state.allowed = true;
   state.quota = 'unknown';
+  state.agreed = new Set();
+  state.agreedCalls = [];
 });
 
 it('defaults acceptance to the active Annex setting, and honors either off switch', () => {
@@ -44,7 +50,35 @@ it.each([
   ['unknown', 'unknown'], ['known', 'available'], ['low', 'limited'], ['near_limit', 'limited'], ['exhausted', 'unavailable'],
 ])('maps cached quota %s to %s without querying a provider', (quota, expected) => {
   state.quota = quota;
-  expect(Object.values(capacityProviders())).toEqual([expected, expected, expected]);
+  expect(Object.values(capacityProviders())).toEqual([expected, expected, expected, expected]);
+});
+
+it('samples every tracked provider locally, Antigravity included', () => {
+  expect(Object.keys(capacityProviders())).toEqual(['claude-code', 'copilot-cli', 'codex-cli', 'antigravity-cli']);
+});
+
+it('answers a peer without the capacity-providers feature with exactly the legacy keys', async () => {
+  state.projects = [{ path: os.tmpdir() }];
+  const peer = Array(32).fill('cd').join(':');
+  const answer = await receiveCapacityProbe(peer, {}, Date.now());
+  expect(answer.online && Object.keys(answer.providers)).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
+  expect(state.agreedCalls).toEqual([[peer, 'capacity-providers']]);
+});
+
+it('answers a peer whose current link agreed the feature with every tracked provider', async () => {
+  state.projects = [{ path: os.tmpdir() }];
+  const peer = Array(32).fill('ce').join(':');
+  state.agreed.add(peer);
+  const answer = await receiveCapacityProbe(peer, {}, Date.now());
+  expect(answer.online && Object.keys(answer.providers)).toEqual(['claude-code', 'copilot-cli', 'codex-cli', 'antigravity-cli']);
+});
+
+it('reads the agreement after sampling, so a link lost meanwhile gets the legacy shape', async () => {
+  state.projects = [{ path: os.tmpdir() }];
+  const peer = Array(32).fill('cf').join(':');
+  state.agreed.add(peer);
+  const answer = await receiveCapacityProbe(peer, {}, Date.now(), () => false);
+  expect(answer.online && Object.keys(answer.providers)).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
 });
 
 it('counts idle durable, sleeping, busy and quick agents once across duplicate project entries', async () => {

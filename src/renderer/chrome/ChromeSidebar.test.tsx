@@ -853,6 +853,17 @@ describe('ChromeSidebar', () => {
       });
     });
 
+    it('keeps the selected remote agent through the App project-switch restore', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId(`agent-item-${ra}`));
+      expect(useProjectStore.getState().activeProjectId).toBe(rp);
+      expect(useAgentStore.getState().activeAgentId).toBe(ra);
+      // App.tsx runs this effect after the row switches the active project.
+      act(() => useAgentStore.getState().restoreProjectAgent(rp));
+      expect(useAgentStore.getState().activeAgentId).toBe(ra);
+      expect(screen.getByTestId(`agent-item-${ra}`)).toHaveAttribute('aria-current', 'true');
+    });
+
     it('lists every machine\'s projects and agents together, a remote agent with its machine and this machine\'s with none (#3065)', () => {
       render(<ChromeSidebar />);
       expect(screen.getByTestId('project-p1')).toBeTruthy();

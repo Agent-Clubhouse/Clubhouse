@@ -308,7 +308,7 @@ One sample per finished turn, deduplicated by the turn id, and a closing sample 
 
 | Field | Meaning |
 | --- | --- |
-| `source` | Who did the arithmetic: `provider_turn` (the provider's own figure for one turn), `summed_calls` (our sum of per-call figures, the Copilot SDK), `cumulative_delta` (our difference of two running totals, Codex), `provider_session_cumulative` (the provider's running total as last reported) |
+| `source` | Who did the arithmetic: `provider_turn` (the provider's own figure for one turn), `summed_calls` (our sum of per-call figures, the Copilot SDK), `cumulative_delta` (our difference of two running totals, Codex), `provider_session_cumulative` (the provider's running total as last reported), `unknown` (a driver that declared no `usageSource` and has no known method; see [usage-attribution.md](usage-attribution.md)) |
 | `scope` | `main` is the helper alone, `inclusive` also counts its subagents, `unscoped` means the driver did not say. Never add samples of different scope |
 | `dedup` | `turn_id`, `thread_cumulative`, or `none` when repeats could not be told apart. Without a turn id a turn is one start and its end: two turns with equal figures are two turns, and only a second end for a turn already closed is dropped |
 | `baseline` | Closing samples only. `run`: the total is this run's own. `lifetime`: the run resumed a native session, whose total carries earlier use, so the run's share is unknown from this sample (the turn samples are the run's measured use). `after_reset`: the total went down mid-run (/clear, compaction), so it covers only what came after |

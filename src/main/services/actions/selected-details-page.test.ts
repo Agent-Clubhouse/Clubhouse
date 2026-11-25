@@ -88,3 +88,18 @@ it('keeps invalid Date-domain run time unknown while preserving the recorded out
   expect(page).toMatchObject({ state: 'recorded', rows: [{ lastRun: { outcome: 'done' } }, {}, {}] });
   if (page.state !== 'recorded') throw new Error('Expected page'); expect(page.rows[0].lastRun).not.toHaveProperty('startedAt');
 });
+
+it('describes the Dispatcher page as its single Dispatcher group, keeping the ordinary three-group note', () => {
+  const made = (i: number): Action => ({ ...action(i), owner: { kind: 'dispatcher' } });
+  const engine = { list: () => [made(1), made(2), action(3)], lastRunForDisplay: () => undefined };
+  const dispatcherPage = readSelectedActionRelationshipPage(engine, { agentId: 'selected', dispatcher: true }, { offset: 0, authorized: () => true, target: { current: () => true }, sourceCurrent: () => true, names, receipts: [] });
+  if (dispatcherPage.state !== 'recorded') throw new Error('Expected page');
+  expect(isRemoteActionRelationshipPage(dispatcherPage)).toBe(true);
+  expect(dispatcherPage.rows.map((r) => r.group)).toEqual(['dispatcher', 'dispatcher']);
+  expect(dispatcherPage.notes[0]).toBe('Relationship rows list Actions made by the Dispatcher, ordered by saved creation time and stable identity.');
+  expect(dispatcherPage.notes.join(' ')).not.toMatch(/owner, target and trigger|multiple groups/);
+  const ordinary = read([action(1)]).page;
+  if (ordinary.state !== 'recorded') throw new Error('Expected page');
+  expect(ordinary.notes[0]).toBe('Relationship rows are grouped by owner, target and trigger, ordered by saved creation time and stable identity. One Action may appear in multiple groups.');
+  expect(dispatcherPage.notes[1]).toBe(ordinary.notes[1]);
+});

@@ -76,15 +76,14 @@ export function registerHandoffTools(): void {
     if (!known(args, ['to', 'task', 'brief', 'mode', 'manifest']) || typeof args.to !== 'string'
       || typeof args.task !== 'string' || !args.task.trim() || args.task.length > 256 || typeof args.brief !== 'string' || !args.brief.trim() || args.brief.length > 16_000
       || !['branch', 'worktree'].includes(String(args.mode))) return text('Give to, task (1–256 characters), brief (1–16000), mode (branch/worktree), and an optional manifest summary.', true);
+    const originalArgs = structuredClone(args);
     try {
-      const host = await import('../../handoff-host');
-      const target = await host.resolveHandoffTarget(args.to);
-      const senderName = await host.handoffSenderName(agentId);
-      const record = await withHandoffAgreementCall({ agentId, name: 'offer_handoff', args }, async () => {
-        const manifest = await (await import('../../handoff-preparations')).ensurePreparedHandoff(agentId, args.mode as 'branch' | 'worktree', args.manifest as HandoffManifestSummary | undefined);
-        return host.handoffHost().coordinator.offer({
-          to: target, senderName, task: { title: args.task as string, brief: args.brief as string }, mode: args.mode as 'branch' | 'worktree', manifest,
-        }, host.localHandoffAgent(agentId));
+      const record = await withHandoffAgreementCall({ agentId, name: 'offer_handoff', args: originalArgs }, async () => {
+        const host = await import('../../handoff-host');
+        return host.offerCallerHandoff(agentId, {
+          reference: originalArgs.to as string, task: { title: originalArgs.task as string, brief: originalArgs.brief as string },
+          mode: originalArgs.mode as 'branch' | 'worktree', manifest: originalArgs.manifest as HandoffManifestSummary | undefined,
+        });
       });
       return text(record);
     } catch (error) {

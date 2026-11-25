@@ -25,7 +25,8 @@
  *   named, each reported with `main` coverage, every declared subagent among
  *   them) that all report the same figures; otherwise it is left out.
  * - `source` says who did the arithmetic: the provider's turn figure, our sum of
- *   its per-call figures, or our difference of its running totals.
+ *   its per-call figures, or our difference of its running totals. A turn's own
+ *   `usageSource` wins; a driver with no declared or known method is `unknown`.
  * - Nothing here reads message text, tool input or output.
  */
 import type { ChatDriverId } from '../../shared/chat/capabilities';
@@ -105,10 +106,22 @@ function clean(f: UsageFigures): UsageFigures {
   return out;
 }
 
-/** Who computed a turn figure for this driver. */
-function turnSourceFor(driver: ChatDriverId): UsageSource {
-  // The Copilot SDK reports each model call; the turn is our sum. Codex reports running totals; the turn is our difference.
-  return driver === 'copilot_sdk' ? 'summed_calls' : driver === 'codex_app_server' ? 'cumulative_delta' : 'provider_turn';
+/**
+ * How each existing driver makes a turn figure, for turns that don't declare
+ * `usageSource`. A driver missing here (a new adapter) is `unknown`, never assumed.
+ */
+const KNOWN_TURN_SOURCES: Partial<Record<ChatDriverId, UsageSource>> = {
+  claude_agent_sdk: 'provider_turn',
+  claude_stream_json: 'provider_turn',
+  // Codex reports running totals; the turn is our difference.
+  codex_app_server: 'cumulative_delta',
+  // The Copilot SDK reports each model call; the turn is our sum.
+  copilot_sdk: 'summed_calls',
+};
+
+/** Who computed a turn figure: what the turn declared, else the driver's known method, else unknown. */
+function turnSourceFor(driver: ChatDriverId, declared: UsageSource | undefined): UsageSource {
+  return declared ?? KNOWN_TURN_SOURCES[driver] ?? 'unknown';
 }
 
 function finalSourceFor(driver: ChatDriverId): UsageSource {
@@ -206,7 +219,7 @@ export class RunUsageTracker {
     if (Object.keys(figures).length === 0) this.counts.turnsMissing++;
     return this.admit({
       kind: 'turn',
-      source: turnSourceFor(this.driver),
+      source: turnSourceFor(this.driver, data.usageSource),
       dedup: turnId !== undefined ? 'turn_id' : 'none',
       scope: turn?.coverage ?? 'unscoped',
       figures,

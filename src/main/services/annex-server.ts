@@ -1390,6 +1390,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
 
   return { icons, iconRefs, payload: {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
+    agentRunStateVersion: 1,
     // Which machine this is (#3063): its agents' addresses are `<agentId>@<fingerprint>`.
     ...thisMachine(),
     projects: projects.map((p) => (repoKeys?.[p.id] ? { ...p, repoKey: repoKeys[p.id] } : p)),

@@ -39,6 +39,9 @@ import { builtinPart, ManagedError, withClubhouseSetup, type ManagedAgentsServic
 import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
 import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
+import { ANTIGRAVITY_PATHS, ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
+import { commitAntigravityInstructions, hasAntigravityMarkerLine, parseAntigravityInstructions, planAntigravityInstructions, removeAntigravityInstructionsBlock, type AntigravityInstructionsReceipt } from './antigravity-instructions';
+import { isManagedStartRefused, ManagedStartRefused } from './start-refused';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
 export const SKILLS_MANIFEST = MANAGED_SKILLS_MANIFEST;
@@ -481,6 +484,7 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
 
 const CLAUDE_CODE_ID = 'claude-code';
 const COPILOT_ID = 'copilot-cli';
+const CODEX_ID = 'codex-cli';
 
 function forwardSlashes(p: string): string {
   return p.replace(/\\/g, '/');
@@ -769,6 +773,8 @@ export interface DeliveryRecord {
   order: string[];
   /** The launch settings the session started with, to name which one changed. */
   launch?: LaunchSettings;
+  /** Antigravity (#3792): the instructions file was within its per-file limit. The aggregate rules budget isn't checked. */
+  instructionsLimit?: AntigravityInstructionsReceipt;
 }
 
 /** Settings only a start delivers: launch flags, or the chat session's options. */
@@ -837,20 +843,56 @@ export async function deliverManagedSetup(params: {
     appLog('core:managed', 'warn', 'MCP parts were stored with env values Clubhouse no longer uses; set these in the environment', { meta: { agentId: agent.id, names: dropped } });
   }
   const instructions = await renderManagedInstructions(projectPath, agent, resolved);
-  await provider.writeInstructions(agent.worktreePath, instructions);
-  const projectOwn = await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
-  for (const skipped of resolved.grantedSkipped ?? []) {
-    // Part names and a folder name only.
-    appLog('core:managed', 'info', grantedSkippedNote(skipped), { meta: { agentId: agent.id, folder: skipped.folder } });
+  const worktree = agent.worktreePath;
+  const antigravity = provider.id === ANTIGRAVITY_PROVIDER_ID;
+  // Antigravity: every check runs before anything is written, so a refusal leaves the folder as it was (#3792).
+  const agyInstructions = antigravity ? await planAntigravityInstructions(worktree, instructions) : null;
+  const servers = mcpServersOf(resolved);
+  // Antigravity's MCP file holds the person's servers too: the managed ones are merged in, never written over it.
+  // The merge checks before it writes, so it runs before anything else is written.
+  if (antigravity) await mergeAntigravityMcp(worktree, servers);
+  let projectOwn: string[];
+  try {
+    if (agyInstructions) await commitAntigravityInstructions(agyInstructions);
+    else {
+      // Codex writes AGENTS.md whole, as it always has. An AGENTS.md from an Antigravity start is checked first (#3792).
+      if (provider.id === CODEX_ID) await keepTextBesideAntigravityBlock(agent.id, worktree);
+      await provider.writeInstructions(worktree, instructions);
+    }
+    projectOwn = await writeSkills(worktree, provider, resolved.skills, params.backupRoot);
+    for (const skipped of resolved.grantedSkipped ?? []) {
+      // Part names and a folder name only.
+      appLog('core:managed', 'info', grantedSkippedNote(skipped), { meta: { agentId: agent.id, folder: skipped.folder } });
+    }
+    for (const folder of projectOwn) {
+      // A built-in skill folder name, never project content.
+      appLog('core:managed', 'info', `${projectOwnSkillNote(folder)}; its built-in isn't delivered`, { meta: { agentId: agent.id, folder } });
+    }
+    if (!antigravity) await writeMcpFile(worktree, provider, servers);
+    if (provider.id === CLAUDE_CODE_ID) await writeClaudeExcludes(worktree, provider);
+    // Another CLI doesn't read them, so the entries Clubhouse added for Claude Code come out.
+    else await removeManagedClaudeExcludes(worktree);
+    // The servers Clubhouse merged into Antigravity's MCP file for an earlier start come out, by its receipt; the person's stay.
+    if (!antigravity && await fsp.lstat(path.join(worktree, ANTIGRAVITY_PATHS.mcpConfig)).then(() => true, () => false)) {
+      const { mergeAntigravityMcpServers } = await import('../../orchestrators/antigravity/mcp-config');
+      await mergeAntigravityMcpServers(worktree, {}).catch((err: unknown) => {
+        // telemetry-exempt: logged; this CLI's start goes ahead as it did before #3792.
+        appLog('core:managed', 'warn', 'Could not take Clubhouse\'s servers out of the Antigravity MCP file', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+      });
+    }
+    // Another CLI that doesn't write AGENTS.md whole gets Clubhouse's Antigravity block taken out; the rest stays. Codex replaces the file, as before.
+    if (!antigravity && provider.id !== CODEX_ID) {
+      await removeAntigravityInstructionsBlock(worktree, (rel) => isTrackedFile(worktree, rel)).catch((err: unknown) => {
+        // telemetry-exempt: logged; this CLI's start goes ahead as it did before #3792.
+        appLog('core:managed', 'warn', 'Could not take Clubhouse\'s Antigravity block out of AGENTS.md', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+      });
+    }
+  } catch (err) {
+    if (!antigravity || isManagedStartRefused(err)) throw err;
+    // Part of the setup may be on disk: the start doesn't go ahead on it.
+    throw new ManagedStartRefused('antigravity_delivery_incomplete',
+      `The agent's setup couldn't be written in full (${err instanceof Error ? err.message : String(err)}), so it did not start. Start it again; text outside Clubhouse's block in AGENTS.md is kept.`, { cause: err });
   }
-  for (const folder of projectOwn) {
-    // A built-in skill folder name, never project content.
-    appLog('core:managed', 'info', `${projectOwnSkillNote(folder)}; its built-in isn't delivered`, { meta: { agentId: agent.id, folder } });
-  }
-  await writeMcpFile(agent.worktreePath, provider, mcpServersOf(resolved));
-  if (provider.id === CLAUDE_CODE_ID) await writeClaudeExcludes(agent.worktreePath, provider);
-  // Another CLI doesn't read them, so the entries Clubhouse added for Claude Code come out.
-  else await removeManagedClaudeExcludes(agent.worktreePath);
   const record = setupFingerprint(agent, resolved);
   return {
     ...record,
@@ -865,7 +907,103 @@ export async function deliverManagedSetup(params: {
       settings: await managedSettingsRows(service, agent, provider, params.projectPath),
     },
     ...(resolved.missing.length > 0 && { missing: resolved.missing.length }),
+    ...(agyInstructions && { instructionsLimit: agyInstructions.receipt }),
   };
+}
+
+/**
+ * Before Codex writes AGENTS.md whole, over a file an Antigravity start left
+ * (#3792): with the person's text beside a valid Clubhouse block, the file's
+ * exact bytes are copied to app data (never over an earlier copy); a copy
+ * that can't be made refuses the start, so nothing is overwritten. Markers
+ * that can't be read, or a link whose file has markers, also refuse with how
+ * to fix it. So does an AGENTS.md whose text can't be known: unreadable, a
+ * link Clubhouse can't follow, or something other than a plain file or
+ * folder (never read, since that could block). An AGENTS.md that is
+ * missing, a folder, a link to nothing, or text without Antigravity markers
+ * is Codex's as before.
+ */
+async function keepTextBesideAntigravityBlock(agentId: string, worktree: string): Promise<void> {
+  const file = path.join(worktree, ANTIGRAVITY_PATHS.instructions);
+  const unknown = (why: string) => new ManagedStartRefused('antigravity_instructions_unsafe',
+    `Clubhouse can't read ${ANTIGRAVITY_PATHS.instructions} (${why}), so it can't tell whether an Antigravity start left your text in it, and Codex won't write over it. Nothing was written and the agent did not start. Make AGENTS.md a plain, readable file (or remove it), then start it again.`);
+  const code = (err: unknown) => (err as NodeJS.ErrnoException).code ?? 'unknown';
+  let st;
+  try {
+    st = await fsp.lstat(file);
+  } catch (err) {
+    if (code(err) === 'ENOENT') return;
+    throw unknown(code(err));
+  }
+  // A folder can't be written over (Codex's write fails, as before); any other non-file is never read, which could block.
+  if (st.isDirectory()) return;
+  if (st.isSymbolicLink()) {
+    let target;
+    try {
+      target = await fsp.stat(file);
+    } catch (err) {
+      // A link to nothing holds no text to lose: Codex's write goes ahead as before.
+      if (code(err) === 'ENOENT') return;
+      throw unknown(`a link Clubhouse can't follow: ${code(err)}`);
+    }
+    if (!target.isFile()) throw unknown('a link to something other than a plain file');
+  } else if (!st.isFile()) {
+    throw unknown('not a plain file');
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await fsp.readFile(file);
+  } catch (err) {
+    throw unknown(code(err));
+  }
+  if (st.isSymbolicLink()) {
+    // Read through the link only to see whether an Antigravity start wrote there; never written through when it did.
+    if (!hasAntigravityMarkerLine(bytes)) return;
+    throw new ManagedStartRefused('antigravity_instructions_unsafe',
+      `${ANTIGRAVITY_PATHS.instructions} is a link and has Clubhouse's Antigravity block markers, so Codex won't write over it. Nothing was written and the agent did not start. Replace the link with a plain file, or take the clubhouse-managed block out of the file it points to.`);
+  }
+  if (!hasAntigravityMarkerLine(bytes)) return;
+  let outside: Buffer;
+  try {
+    const parsed = parseAntigravityInstructions(bytes);
+    outside = parsed.hasBlock ? Buffer.concat([parsed.before, parsed.after]) : bytes;
+  } catch (err) {
+    if (!isManagedStartRefused(err)) throw err;
+    throw new ManagedStartRefused('antigravity_instructions_markers',
+      `${ANTIGRAVITY_PATHS.instructions} has Clubhouse's Antigravity block markers repeated, out of order or edited, so Codex won't write over it: your text in it could be lost. Nothing was written and the agent did not start. Leave one BEGIN and one END clubhouse-managed line exactly as Clubhouse wrote them, or remove both.`);
+  }
+  if (outside.length === 0) return;
+  // Loaded here, not at the top: before-managed reads state-store, which already imports this module through service.
+  const { backupInstructions } = await import('./before-managed');
+  let kept: string | null;
+  try {
+    kept = await backupInstructions(agentId, ANTIGRAVITY_PATHS.instructions, bytes);
+  } catch (err) {
+    throw new ManagedStartRefused('antigravity_codex_backup_failed',
+      `Clubhouse couldn't keep a copy of ${ANTIGRAVITY_PATHS.instructions} (${err instanceof Error ? err.message : String(err)}), which has your text beside the Antigravity block, so Codex won't write over it. Nothing was written and the agent did not start. Move your text out of AGENTS.md, or free space in Clubhouse's app data, then start it again.`, { cause: err });
+  }
+  // A file name in app data only, never content.
+  appLog('core:managed', 'info', 'Kept a copy of AGENTS.md before Codex replaces it', { meta: { agentId, copy: kept } });
+}
+
+/** Whether git tracks `rel` in `worktree`; null when git can't say. */
+async function isTrackedFile(worktree: string, rel: string): Promise<boolean | null> {
+  const listed = await trackedFiles(worktree, [rel]);
+  return listed.ok ? listed.files.includes(rel) : null;
+}
+
+/**
+ * Merge the managed servers into Antigravity's MCP file (#3793 owns the
+ * file). A refusal there stops the start, before anything else is written.
+ */
+async function mergeAntigravityMcp(worktree: string, servers: Record<string, McpServerDef>): Promise<void> {
+  const { AntigravityMcpConfigError, mergeAntigravityMcpServers } = await import('../../orchestrators/antigravity/mcp-config');
+  try {
+    await mergeAntigravityMcpServers(worktree, servers);
+  } catch (err) {
+    if (!(err instanceof AntigravityMcpConfigError)) throw err;
+    throw new ManagedStartRefused(`antigravity_mcp_${err.code}`, `${err.message} The agent did not start.`, { cause: err });
+  }
 }
 
 /** What a quick agent gets from a template (#2893, D25). */

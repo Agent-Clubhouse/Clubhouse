@@ -96,6 +96,61 @@ transport and positive snapshot receipts. Selected-board query/import/inventory
 hunks remain reserved; Naming's pure alias getter is separate, and its full-list
 label notification is held.
 
+### Bounded real producer admission candidate
+
+The local MCP offer captures its original argument/approval scope before dynamic
+module awaits, then owns the original host and registered source before implicit
+preparation. Its main-only selection binds the exact preparation ID, owner,
+project, worktree, mode and summary; neither a replacement source nor a new
+same-summary preparation can be substituted. Public tool and phone fields are
+unchanged. Valid durable sources need not retain a live runtime; general MCP gate
+closure/forget alone does not cancel an already-running call.
+
+Actual history-queue admission follows duplicate/capacity checks, fresh full
+authorization for the original call and canonical recipient, and synchronous
+original-source/authority/selection continuity. Ask first needs that exact consumed
+approval and its original version, captured before awaits; fresh Allow does not
+depend on an approval version. The completed positive Ask check seals its exact
+original context; admission synchronously checks that context and original
+version after every source-verification await, without consuming another approval
+or substituting a new grant evaluation. Source verification captures the
+observation promise and revision before reading source/configuration. Any newer
+observation revision refuses that invocation rather than certifying pending work;
+benign work already appended before verification can settle and complete, and a
+fresh call after a benign refusal remains usable. Cosmetic bindings do not retire
+a pending target capture. Admission precedes the first offer-specific delivery
+marker or catalog write, not just history visibility.
+
+For a local agent recipient, the same original ID and project path are bound
+before preparation and must match the positive target's authority metadata.
+Final admission checks its original registered project, current live placement
+and, for durable agents, the existing fresh-primary registration lease's ID,
+createdAt and directory identity. Moving the same ID to another project or
+replacing that durable identity cannot borrow the old project-scoped Ask or Allow.
+Name/color/label changes are not identities. Recipient project lookups share the
+captured verification revision, and lease disposal is owned through settlement;
+no target/alias or permission is recaptured at admission.
+
+Command, preparation and history saves remain independent. Already-admitted
+saves may finish truthfully after retirement, publishing matching committed
+memory; no post-save fake refusal or rollback is added. Marker/binding failures
+retain their actual partial IDs/artifacts. A generic IO failure, including an
+after-rename failure, does not prove disk absence or authorize an automatic
+new-ID retry. Explicit preparation and initial maintenance remain separate work,
+not an offer-wide zero-write guarantee. A producer can own its await of a prior
+independent preparation, then make its own original source/mode selection.
+Stopping that producer denies its continuation, not the already-admitted read.
+
+Stop/replacement account for actual producer work and already-dispatched POSTs,
+including underlying promises beyond the existing five-second waiter deadline.
+A committed offer alone cannot initiate fresh immediate transport from a retired
+producer. Normal retained-history/notice policy is not a call-specific final-sink
+receipt. The isolated real MCP/grant/Git/catalog/history fixture supplies caller
+registration, synthetic approval input and a held transport adapter; it proves
+neither bridge/provider/live-human authority nor native content/apply/wake,
+two-host, whole-handoff or full-duplex acceptance. Independent exact source/proof
+review and ordinary hosted gates remain required.
+
 ### Landed Details transport and positive admission (#3776)
 
 The four existing Settings, selected dispatcher, agent Details and Changes GET

@@ -15,6 +15,7 @@ import {
   namespacedProjectId,
 } from './remoteProjectStore';
 import type { SatelliteSnapshot } from '../../shared/types';
+import { CachedDomain } from './snapshot-delta';
 
 // Mock plugin store
 const mockPluginStoreState = {
@@ -491,16 +492,17 @@ describe('canvas-over-annex state sync', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────
-  // Snapshot race: a stale snapshot must not overwrite a running agent
-  // back to sleeping when agent:woken was already processed.
+  // Cached-read race: an old cached source must not overwrite a newer wake.
+  // Accepted full host snapshots take the host run state; cached lists use deltas.
   // ─────────────────────────────────────────────────────────────────────
 
-  describe('snapshot preserves running agent status (fixes sleep/wake desync)', () => {
-    it('does not downgrade running agent to sleeping on snapshot merge', () => {
+  describe('cached snapshots preserve newer wake state', () => {
+    it('does not downgrade a newer wake from an older cached source', () => {
       const store = useRemoteProjectStore.getState();
 
       // Initial snapshot: agent-a running, agent-b sleeping
-      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot());
+      const cached = makeCanvasSnapshot();
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', cached);
 
       const nsA = namespacedAgentId(SAT_ID, 'agent-a');
       const nsB = namespacedAgentId(SAT_ID, 'agent-b');
@@ -511,15 +513,15 @@ describe('canvas-over-annex state sync', () => {
       store.updateRemoteAgentRunState(SAT_ID, 'agent-b', 'running');
       expect(useRemoteProjectStore.getState().remoteAgents[nsB].status).toBe('running');
 
-      // Stale snapshot arrives with agent-b still sleeping
-      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+      // Cached source still says sleeping after the live wake; it is not a fresh host snapshot.
+      store.applyCachedSatelliteSnapshot(SAT_ID, 'Sat', cached, makeCanvasSnapshot({
         agents: {
           'proj-1': [
             { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'running', projectId: 'proj-1', color: '#ff0000' } as any,
             { id: 'agent-b', name: 'Agent B', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '#00ff00' } as any,
           ],
         },
-      }));
+      }), CachedDomain.Agents);
 
       // agent-b should still be running — snapshot must not downgrade it
       expect(useRemoteProjectStore.getState().remoteAgents[nsB].status).toBe('running');
@@ -581,23 +583,25 @@ describe('canvas-over-annex state sync', () => {
       expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
     });
 
-    it('pty:exit correctly transitions running agent to sleeping after snapshot preservation', () => {
+    it('pty:exit correctly transitions running agent to sleeping after cached-read protection', () => {
       const store = useRemoteProjectStore.getState();
 
       // Snapshot: agent running
-      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot());
+      const cached = makeCanvasSnapshot();
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', cached);
 
       const nsA = namespacedAgentId(SAT_ID, 'agent-a');
       expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
 
-      // Stale snapshot tries to downgrade — preserved as running
-      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+      // A newer wake keeps an old cached sleeping delta from replacing live state.
+      store.updateRemoteAgentRunState(SAT_ID, 'agent-a', 'running');
+      store.applyCachedSatelliteSnapshot(SAT_ID, 'Sat', cached, makeCanvasSnapshot({
         agents: {
           'proj-1': [
             { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '' } as any,
           ],
         },
-      }));
+      }), CachedDomain.Agents);
       expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
 
       // pty:exit event arrives — this is authoritative, should transition to sleeping

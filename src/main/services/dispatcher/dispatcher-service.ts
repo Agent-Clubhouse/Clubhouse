@@ -49,6 +49,7 @@
  * running, loses its connections, and can't be started again until MCP is back,
  * when it returns to what its saved values say and wakes the controller idle.
  */
+import { pickDispatcherDefault } from './dispatcher-default';
 import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -61,6 +62,7 @@ import dispatcherChatInstructions from './dispatcher-chat-instructions.md';
 import { DISPATCHER_INTERNAL_TOOLS } from './dispatcher-internal-tools';
 import { withMemoryIndex } from './dispatcher-memory-migration';
 import { appendSection, instructionsWithSkills, writeDispatcherSkills, type SkillsConventions } from './dispatcher-skills';
+import { removeLegacyMemoryIndexCopies } from './dispatcher-instruction-cleanup';
 
 export { appendSection } from './dispatcher-skills';
 import { appLog } from '../log-service';
@@ -249,7 +251,20 @@ export function getDispatcherState(): DispatcherState {
     models: getDispatcherModels(),
     personality: getDispatcherPersonality(),
     setup: getDispatcherSetup(),
+    providerPending: { chat: runningOnOtherProvider(chatConfig), work: runningOnOtherProvider(config) },
   };
+}
+
+/**
+ * The provider an agent's running session is on, when its record now names
+ * another. The registration is the session itself, so this is what runs, not
+ * what was saved. Null while it is asleep or already on its saved provider.
+ */
+function runningOnOtherProvider(agent: DurableAgentConfig | null): string | null {
+  if (!agent) return null;
+  const running = agentRegistry.get(agent.id)?.orchestrator;
+  const saved = agent.orchestrator ?? defaultDispatcherOrchestrator();
+  return running && saved && running !== saved ? running : null;
 }
 
 function dispatcherProvider(): string | null {
@@ -748,9 +763,7 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
  * New agent page picks it (the first enabled provider in registration order).
  */
 export function defaultDispatcherOrchestrator(): OrchestratorId | undefined {
-  const enabled = getOrchestratorSettings().enabled ?? [];
-  const providers = getAllProviders();
-  return (providers.find((p) => enabled.includes(p.id)) ?? providers[0])?.id;
+  return pickDispatcherDefault(getAllProviders().map((p) => p.id), getOrchestratorSettings().enabled ?? []);
 }
 
 async function readConfig(dir: string = getDispatcherPath()): Promise<DurableAgentConfig | null> {
@@ -868,7 +881,11 @@ async function ensureChat(coordinator: DurableAgentConfig): Promise<DurableAgent
   return mirror(coordinator, fresh, dir);
 }
 
-/** Write each agent's instructions to its CLI's instructions file in its folder. */
+/**
+ * Write each agent's instructions to its CLI's instructions file in its folder.
+ * The file is written whole, never added to. A CLI it no longer runs on has its
+ * file cleaned of the old memory index copy (dispatcher-instruction-cleanup.ts).
+ */
 async function writeInstructions(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
   const providerId = agent.orchestrator ?? defaultDispatcherOrchestrator();
   const provider = providerId ? getProvider(providerId) : undefined;
@@ -877,6 +894,8 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
     return;
   }
   const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
+  // First, so a failed skills write below still leaves the other CLIs' files cleaned.
+  await removeLegacyMemoryIndexCopies(dir, provider, getAllProviders());
   const skills = await writeSkills(dir, role, provider);
   await provider.writeInstructions(dir, await withDispatcherMemory(role === 'chat' ? chatInstructions(agent, skills) : appendSection(instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', skills), `Your name is ${cleanDispatcherName(agent.name) || DEFAULT_DISPATCHER_NAME}. The user chose it; use it when you introduce yourself.`)));
   instructionsWrittenFor.set(dir, instructionsKey(agent, dir));

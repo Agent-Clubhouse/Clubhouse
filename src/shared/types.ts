@@ -1100,6 +1100,7 @@ export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
   DISPATCHER_DEBUG_FLAG,
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
+  'antigravityProvider', // ANTIGRAVITY_EXPERIMENTAL_FLAG (#3785).
 ];
 
 // --- Security settings ---
@@ -1411,6 +1412,8 @@ export interface SnapshotPluginSummary {
 }
 
 export interface SatelliteSnapshot {
+  /** This frame samples agent run state synchronously at assembly/send. Not connection or grant authority. */
+  agentRunStateVersion?: 1;
   /** Sections omitted to fit the transport frame; copied retained fields are not fresh evidence. */
   snapshotTruncated?: { version?: number; reason?: string; omitted?: string[]; bytes?: number };
   /** The machine this snapshot is from (#3063): its agents' addresses are `<agentId>@<fingerprint>`. */

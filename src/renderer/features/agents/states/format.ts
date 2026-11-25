@@ -1,6 +1,20 @@
 /** Plain-text formatting shared by the agent-state views (#2019). */
 
+import { formatTokens } from '../chat/view-model';
+
 export { formatDuration, formatShortDuration, describeSleep } from '../../../../shared/agent-session-display';
+
+/**
+ * A run's token counts: "12k in, 800 out". A side the provider never
+ * reported reads "unknown", and a run that reported none reads "Not reported",
+ * never 0. A reported zero is "0".
+ */
+export function formatRunTokens(input: number | undefined, output: number | undefined): string {
+  if (input === undefined && output === undefined) return 'Not reported';
+  if (input === 0 && output === 0) return '0';
+  const side = (n: number | undefined) => (n === undefined ? 'unknown' : formatTokens(n));
+  return `${side(input)} in, ${side(output)} out`;
+}
 
 /** "just now", "5m ago", "3h ago", "2d ago", then a date. */
 export function formatAgo(at: number, now: number = Date.now()): string {

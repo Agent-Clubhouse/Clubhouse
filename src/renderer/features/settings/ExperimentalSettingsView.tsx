@@ -3,6 +3,7 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import { Button } from '../../components/Button';
 import { DISPATCHER_DEBUG_FLAG, useDispatcherDebugStore } from '../dispatcher/dispatcherDebug';
+import { ANTIGRAVITY_EXPERIMENTAL_FLAG } from '../../../shared/providers/antigravity';
 
 /** Feature definitions for the experimental settings page. */
 export const EXPERIMENTAL_FEATURES: Array<{
@@ -19,6 +20,11 @@ export const EXPERIMENTAL_FEATURES: Array<{
     id: DISPATCHER_DEBUG_FLAG,
     label: 'Dispatcher debug view',
     description: 'Adds a sidebar row for the Dispatcher\'s controller, whose chat opens read-only, and shows the tool calls, Clubhouse updates and agents\' raw news the Dispatcher\'s chat hides, marked as debug. Changes nothing the Dispatcher does.',
+  },
+  {
+    id: ANTIGRAVITY_EXPERIMENTAL_FLAG,
+    label: 'Antigravity CLI provider',
+    description: 'Lists Google\'s Antigravity CLI (agy) under Agent providers, where you can turn it on. Terminal agents only for now. Clubhouse never turns it on or picks it for you. Requires app restart.',
   },
 ];
 

@@ -103,6 +103,7 @@ vi.mock('./annex-peers', () => ({
   noteReached: vi.fn(),
   setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(undefined),
+  peekPeerAlias: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   updateLastSeen: vi.fn(),
   recordLastSeen: vi.fn(),
@@ -202,6 +203,7 @@ function resetAllMocks() {
   vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue(LOCAL_IDENTITY);
   vi.mocked(annexIdentity.getIdentity).mockReturnValue(LOCAL_IDENTITY);
   vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+  vi.mocked(annexPeers.peekPeerAlias).mockReturnValue(undefined);
   vi.mocked(annexSettings.getSettings).mockReturnValue({
     enableServer: true,
     enableClient: true,
@@ -1720,8 +1722,12 @@ describe('annex-client', () => {
         pendingPermissions: [],
         lastSeq: 7,
         protocolVersion: 2,
+        agentRunStateVersion: 1,
       };
       messageHandler!(JSON.stringify({ type: 'snapshot', payload: accepted }));
+      expect(annexClient.getSatellite(FINGERPRINT)?.snapshot).toMatchObject({ agentRunStateVersion: 1 });
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX_CLIENT.SATELLITE_EVENT,
+        expect.objectContaining({ type: 'snapshot', payload: expect.objectContaining({ agentRunStateVersion: 1 }) }));
 
       const mismatched = {
         ...accepted,
@@ -3510,6 +3516,64 @@ describe('annex-client', () => {
       res.emit('end');
     }
 
+    describe('loaded alias projection', () => {
+      it('projects the loaded alias without changing the connected snapshot or authority', async () => {
+        await discover(); sockets[0].handlers.open();
+        annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {},
+        } });
+        const before = annexClient.getSatellite(FP)!;
+        expect(before.snapshotReceipt).toEqual(expect.any(String));
+        const dials = WebSocketMock.mock.calls.length;
+        vi.mocked(annexPeers.getPeer).mockClear();
+        vi.mocked(annexPeers.listPeers).mockClear();
+        vi.mocked(broadcastToAllWindows).mockClear();
+        vi.mocked(annexPeers.peekPeerAlias).mockImplementation((key) => key === FP ? 'Current peer alias' : undefined);
+        const after = annexClient.getSatellite(FP)!;
+        expect(after).toEqual({ ...before, alias: 'Current peer alias' });
+        expect(after.snapshot).toBe(before.snapshot);
+        expect(annexClient.getSatellites()).toEqual([after]);
+        expect(WebSocketMock).toHaveBeenCalledTimes(dials);
+        expect(annexPeers.getPeer).not.toHaveBeenCalled();
+        expect(annexPeers.listPeers).not.toHaveBeenCalled();
+        expect(broadcastToAllWindows).not.toHaveBeenCalled();
+        // Reverting the display lookup proves the retained connection alias was not mutated.
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue(undefined);
+        expect(annexClient.getSatellite(FP)).toEqual(before);
+      });
+
+      it.each([undefined, ''])('retains the connection fallback when the loaded alias is %s', async (alias) => {
+        await discover();
+        const before = annexClient.getSatellite(FP);
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue(alias);
+        expect(annexClient.getSatellite(FP)).toEqual(before);
+        expect(annexClient.getSatellite(FP)?.alias).toBe('Pinned Mac');
+      });
+
+      it('cannot mint positive admission merely by projecting a loaded alias', () => {
+        annexClient._addConnectedSatelliteForTesting(FP);
+        const before = annexClient.getSatellite(FP)!;
+        expect(before.snapshotReceipt).toBeUndefined();
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue('Current peer alias');
+        expect(annexClient.getSatellite(FP)).toEqual({ ...before, alias: 'Current peer alias' });
+        expect(annexClient.getSatellites()[0].snapshotReceipt).toBeUndefined();
+      });
+
+      it('uses the loaded alias only in the derived problem label', async () => {
+        await discover();
+        sockets[0].handlers.error(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+        const before = annexClient.getSatellite(FP)!;
+        expect(before.problem?.code).toBe('refused');
+        vi.mocked(annexPeers.peekPeerAlias).mockReturnValue('Current peer alias');
+        const after = annexClient.getSatellite(FP)!;
+        expect(after).toEqual({ ...before, alias: 'Current peer alias', problem: {
+          ...before.problem, message: "Current peer alias isn't accepting connections.",
+        } });
+        expect(after.lastError).toBe(before.lastError);
+        expect(after.snapshotReceipt).toBeUndefined();
+      });
+    });
+
     describe('local positive snapshot receipts', () => {
       const payload = (lastSeq = 1): Record<string, unknown> => ({ protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
         dispatcher: { enabled: true, agent: null }, dispatcherPresence: { remotes: [] } });
@@ -4769,6 +4833,40 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
+    describe('remote image transport (#2398)', () => {
+      const ref = `${'a'.repeat(64)}.png`;
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const caps = { richContent: { version: 1, enabled: true, maximumBytes: 8 * 1024 * 1024 }, attachments: { version: 1, imageTypes: ['image/png'], maxImageBytes: 3932160, maxCount: 10 } };
+      const image = { kind: 'image', name: ref, mimeType: 'image/png', base64: png.toString('base64') };
+      beforeEach(() => { vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as never); });
+      it('reads only the pinned host ref route through the actual bounded request path', async () => {
+        answers.push({ status: 200, body: caps }, { status: 200, body: image });
+        expect(await annexClient.requestChatMedia(FP, 'a?/#', ref)).toEqual({ mimeType: 'image/png', data: new Uint8Array(png) });
+        expect(requests.map((r) => r.url)).toEqual([expect.stringContaining('/api/v1/mobile/capabilities'), expect.stringContaining(`/api/v1/mobile/agents/a%3F%2F%23/content?mediaRef=${ref}`)]);
+      });
+      it.each(['disconnect', 'pin'])('discards a valid media response after %s without local fallback', async (change) => {
+        let finish: (() => void) | undefined;
+        answers.push({ status: 200, body: caps }, { status: 200, body: image, hold: (done) => { finish = done; } });
+        const pending = annexClient.requestChatMedia(FP, 'a', ref);
+        const rejected = expect(pending).rejects.toThrow(/aborted|revoked/);
+        await vi.waitFor(() => expect(finish).toBeDefined());
+        if (change === 'disconnect') annexClient._receiveSatelliteDisconnectForTesting(FP);
+        else vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'replacement-pin' } as never);
+        finish!(); await rejected;
+      });
+      it('writes raw image bytes, never a JSON path or base64 wrapper', async () => {
+        const writes: Buffer[] = [];
+        vi.mocked(https.request).mockImplementation(((_url: string, options: https.RequestOptions, callback: (response: unknown) => void) => Object.assign(new EventEmitter(), {
+          destroy: vi.fn(), write: (bytes: Buffer) => writes.push(bytes), end: () => {
+            const response = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(response);
+            response.emit('data', Buffer.from(JSON.stringify(options.method === 'GET' ? caps : { version: 1, attachmentId: 'id', mimeType: 'image/png', bytes: png.length }))); response.emit('end');
+          },
+        })) as never);
+        expect(await annexClient.requestChatImageUpload(FP, 'agent', png)).toMatchObject({ attachmentId: 'id' });
+        expect(writes).toEqual([png]);
+      });
+    });
+
     describe('selected Dispatcher role transport', () => {
       const response = (): SelectedDispatcherDetails => ({ version: 1, role: 'dispatcher', agentId: 'role1', details: { version: 1, agentId: 'role1', readOnly: true, readAt: 1, providerId: 'PRIVATE_ROLE_RESPONSE', running: false, status: 'sleeping', spawnedAt: null,
         sessionId: null, nativeSessionId: null, settings: null, cards: REMOTE_DETAILS_CARD_IDS.map<RemoteDetailsCard>((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) } });
@@ -4925,6 +5023,31 @@ describe('annex-client', () => {
         annexClient.stopClient();
         vi.mocked(annexControl.getLinkReadiness).mockRestore();
         vi.mocked(annexControl.request).mockRestore();
+      });
+
+      it('routes remote image refs and raw upload bytes through the existing reverse lease and bulk request', async () => {
+        const ref = `${'a'.repeat(64)}.png`;
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        const caps = { richContent: { version: 1, enabled: true, maximumBytes: 8388608 }, attachments: { version: 1, imageTypes: ['image/png'], maxImageBytes: 3932160, maxCount: 10 } };
+        vi.mocked(annexControl.request).mockImplementation(async (_fp, input) => ({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(input.path.endsWith('capabilities') ? caps : input.method === 'POST' ? { version: 1, attachmentId: 'id', mimeType: 'image/png', bytes: png.length } : { kind: 'image', name: ref, mimeType: 'image/png', base64: png.toString('base64') })) }));
+        await expect(annexClient.requestChatMedia(FP, 'agent', ref)).resolves.toEqual({ mimeType: 'image/png', data: new Uint8Array(png) });
+        await expect(annexClient.requestChatImageUpload(FP, 'agent', png)).resolves.toMatchObject({ attachmentId: 'id' });
+        expect(annexControl.request).toHaveBeenCalledWith(FP, expect.objectContaining({ method: 'POST', path: '/api/v1/mobile/agents/agent/attachments', body: png }), expect.objectContaining({ maxResponseBytes: 65536, signal: expect.any(AbortSignal) }));
+        expect(https.request).not.toHaveBeenCalled();
+      });
+      it('withholds reverse image content if the original trust changes during the read', async () => {
+        const ref = `${'a'.repeat(64)}.png`;
+        let finish: ((value: annexControl.ControlResult) => void) | undefined;
+        vi.mocked(annexControl.request).mockImplementation((_fp, input) => input.path.endsWith('capabilities')
+          ? Promise.resolve({ status: 200, headers: {}, body: Buffer.from(JSON.stringify({ richContent: { version: 1, enabled: true, maximumBytes: 8388608 } })) })
+          : new Promise((resolve) => { finish = resolve; }));
+        const pending = annexClient.requestChatMedia(FP, 'agent', ref);
+        const rejected = expect(pending).rejects.toThrow(/revoked|aborted/);
+        await vi.waitFor(() => expect(finish).toBeDefined());
+        targetPeer!.tlsCertificateFingerprint = 'new-pin';
+        finish!({ status: 200, headers: {}, body: Buffer.from(JSON.stringify({ kind: 'image', name: ref, mimeType: 'image/png', base64: 'iVBORw0KGgo=' })) });
+        await rejected;
+        expect(https.request).not.toHaveBeenCalled();
       });
 
       it('preserves read revision across one actual notification burst without revising unrelated presence', async () => {

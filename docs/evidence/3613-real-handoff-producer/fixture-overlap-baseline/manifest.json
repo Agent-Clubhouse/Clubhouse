@@ -1,0 +1,376 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-11-22T22:53:50.583807+00:00",
+  "base": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+  "source": "c535d031ef94617c2364e745a9765c91c2a31726",
+  "sourceTree": "e602a6b981ce7fabb60edf75a9d16744ad8195f8",
+  "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+  "selectedFile": "test/annex-v2/handoff-producer-admission.test.ts",
+  "publicationRef": "refs/heads/lane-3613-p2-routes/handoff-producer-overlap-baseline",
+  "originalHostedCustody": "16991dca76a7a6117a3c7e26232ecae5b86d89d0",
+  "prBeforeFreeze": {
+    "baseRefOid": "50c474b48f57e0256661244bd29b9343ec112bc4",
+    "headRefOid": "76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2",
+    "number": 3779,
+    "state": "OPEN"
+  },
+  "diffStat": "test/annex-v2/handoff-producer-admission.test.ts | 47 ++++++++++++++++++++++++\n 1 file changed, 47 insertions(+)",
+  "bridges": {
+    "completeOriginalFixture": {
+      "bytes": 66098,
+      "sha256": "77d6ebe34cee0b16d824e116d7dc8a7d96289f94c14a69ba6d1556de0e1d5738",
+      "gitBlob": "b455b81fd8dc3561df4ddedec77eadf1dc193cff",
+      "identicalAfterRemovingOneControl": true
+    },
+    "originalOwnedWrapperAndCleanup": {
+      "bytes": 2781,
+      "sha256": "8b1c5bb91599a5f4a900ec45986dfa05fe654cff94065b2ab880a7cfd85d21f0",
+      "identical": true
+    },
+    "addedControl": {
+      "bytes": 2401,
+      "sha256": "5ad3b762525d10c334f099e97943fd20a87009b93507ee2bd74512fa602ab112",
+      "lines": 47
+    }
+  },
+  "run": {
+    "prefix": "164-overlap-original-red",
+    "command": "desktop-test-gate.sh lane-p2 4 -- npx vitest run test/annex-v2/handoff-producer-admission.test.ts -t 'keeps overlapping cleanup behind the original actual preparation drain' --maxWorkers=1 --reporter=default --reporter=junit --outputFile.junit=node_modules/.cache/native-handoff-ingress/164-overlap-original-red-original.xml",
+    "node": "v24.22.1",
+    "sourceHead": "c535d031ef94617c2364e745a9765c91c2a31726",
+    "sourceTree": "e602a6b981ce7fabb60edf75a9d16744ad8195f8",
+    "srcTree": "505ff0699b01779e52338e06a239d7cc15a6d2b1",
+    "cleanPrePost": true,
+    "matchingRelevantInputs": 16,
+    "exit": 1,
+    "declarations": 59,
+    "counts": {
+      "fail": 1,
+      "skip": 58
+    },
+    "failureNodes": 4,
+    "failedCaseAttributes": {
+      "classname": "test/annex-v2/handoff-producer-admission.test.ts",
+      "name": "isolated real MCP producer domain admission > keeps overlapping cleanup behind the original actual preparation drain",
+      "time": "1.360444417"
+    }
+  },
+  "limits": [
+    "ONE original76656 negative-control execution;58 declarations skipped",
+    "No correction, new framework, phase instrumentation or hosted execution",
+    "No new type/lint execution or transfer of earlier proof to the added runtime hunk",
+    "No preparation-success claim; actual preparation settlement awaited after hold release",
+    "Shared cleanup settlement is not actual raw-body completion",
+    "First Windows body delay/all57 closure and underlying Chat PDF cause remain unknown",
+    "Proposed minimal hunk contract awaits existing independent reviewer/full design"
+  ],
+  "archives": [
+    {
+      "file": "164-overlap-original-red-after.json.gz",
+      "bytes": 4408,
+      "sha256": "ac38825f124dcf9c49f6aec9a313b07c72d58ba67be235b587ab0b451d2562b0",
+      "gzipBytes": 1887,
+      "gzipSha256": "5d65aef2b9dc94db82b2d2df6d8f3215165d31230f2459e4ad8f7cd1426504f9"
+    },
+    {
+      "file": "164-overlap-original-red-before.json.gz",
+      "bytes": 4284,
+      "sha256": "45255da716f8bd7c7af810fa132fad8b0c894cfe9aa7ec886326be4af60f276b",
+      "gzipBytes": 1855,
+      "gzipSha256": "bdde5b95ec34ac848817691d0c80f90e3cb619d77498057430011624566c852f"
+    },
+    {
+      "file": "164-overlap-original-red-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "gzipBytes": 22,
+      "gzipSha256": "e90a5df1e4731c80807cd1158a710d9d52313a7930921de3488037d616dbf3ac"
+    },
+    {
+      "file": "164-overlap-original-red-original.log.gz",
+      "bytes": 10577,
+      "sha256": "ffebb02ed1f7070a432cd3d667170d36a5e3e469259ccb0922caf908b814118e",
+      "gzipBytes": 2716,
+      "gzipSha256": "54cbcfa29b00499df45132f257bf0f819d599ae273c800c21e5b146cb0727981"
+    },
+    {
+      "file": "164-overlap-original-red-original.xml.gz",
+      "bytes": 20721,
+      "sha256": "810d89c5941f589b958a4c54b25b974b4eb6eb75dce8cb0cfc55d975801121bd",
+      "gzipBytes": 2023,
+      "gzipSha256": "b764a564c01e336006e1588f1b3cb8b4993e5e1218b5f127c4e903acb9034aed"
+    },
+    {
+      "file": "165-overlap-minimal-hunk-contract.txt.gz",
+      "bytes": 5362,
+      "sha256": "621891d41c7c66f01bbc7ee6ba1d795b69653848ba66bba17b05eb7762011914",
+      "gzipBytes": 2671,
+      "gzipSha256": "8a128ec5f2ed86d18f86a8f1e403dd970dd7be6292a64145f828948f2328b1c9"
+    },
+    {
+      "file": "166-overlap-pr-original.json.gz",
+      "bytes": 143,
+      "sha256": "cb2470cd76c19fa43e0c41dfec81e1dabdca2171d7e8fbbd9be2ee3e9564ccc9",
+      "gzipBytes": 135,
+      "gzipSha256": "bcd346a1bc8e61057f25b804388909bf154c05d340dbff5313fd2701e6cf13e6"
+    },
+    {
+      "file": "166-overlap-refs-original.txt.gz",
+      "bytes": 479,
+      "sha256": "2cf86424722136a73f3508ae67e55641fce39bb73846fae06c381d4fd4512a27",
+      "gzipBytes": 228,
+      "gzipSha256": "ae03de04369bf4cceb9a4596826e79d4b27cc52f6154b0952672004e74861d7e"
+    },
+    {
+      "file": "131-hosted-correction-command-receipt.cjs.gz",
+      "bytes": 2528,
+      "sha256": "73a357c517491c443cd4e043927f4fca9e1c384a29226fe15f03c605519b95f6",
+      "gzipBytes": 1024,
+      "gzipSha256": "56d46e3cd1653f4dc2724654889a9c457165b5943b47f95e65fdb4ca850b533d"
+    },
+    {
+      "file": "133-producer-hosted-correction-tsconfig.json.gz",
+      "bytes": 341,
+      "sha256": "c42e7ed4d268efc9b0de0f6a5c5bac7672b16a0a2ab805a2d5379bc1c7b6a6f3",
+      "gzipBytes": 212,
+      "gzipSha256": "e08b5a7dd7d296644d8f92deefa1214f3ff103552925d33ae02f391662198f3d"
+    },
+    {
+      "file": "166-freeze-overlap-baseline.py.gz",
+      "bytes": 7949,
+      "sha256": "26be074d9c4e642ebb75672c3d02f83baf4641940e4775a8a736c927a9c3749d",
+      "gzipBytes": 3005,
+      "gzipSha256": "9c938cd3d89e7e7a3ae69134d80c71986dde0da688963bcab4e75a052422affa"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-service.ts.gz",
+      "bytes": 15084,
+      "sha256": "5f151ee6789cc60fcfac6e0d8544029eb7b65acd57abd65bd8ef443be80798d9",
+      "gzipBytes": 3633,
+      "gzipSha256": "50031e964bb3a18210188bd074708a4be95a2033e73a4af20d21d8045ddadb29"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-coordinator.ts.gz",
+      "bytes": 22729,
+      "sha256": "3bc235f11a98f912bb503808cfc815dcc9bdf1c85c039f21ed8c73013ccd4de8",
+      "gzipBytes": 5546,
+      "gzipSha256": "5a0367280cc93c9e43238b089bcb32da7bd19bd6c48fa1d7973e3d9d13187ac2"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-preparations.ts.gz",
+      "bytes": 13601,
+      "sha256": "28b746174858ecceaafee4ac9fc3eebc1a4eb4c846589e5d450f4fad3b411609",
+      "gzipBytes": 3855,
+      "gzipSha256": "111867a999902eb851ebd7a75a59cbb2287609249ab5559b655f938359791b41"
+    },
+    {
+      "file": "bound-input-src__main__services__handoff-host.ts.gz",
+      "bytes": 58955,
+      "sha256": "43cc48e70f48699494b79e0b2c52c0b83876f46bcf7c99ae01b6130083f7b48a",
+      "gzipBytes": 14433,
+      "gzipSha256": "7e964ec580270593afec1d7550a8ee31be6e2e0a0f64ab6388082fe9f7d1df63"
+    },
+    {
+      "file": "bound-input-src__main__services__clubhouse-mcp__handoff-permissions.ts.gz",
+      "bytes": 3621,
+      "sha256": "70915cf5c659d378019a48e943e54808779f1a6950fae7975daed2b377d96408",
+      "gzipBytes": 1131,
+      "gzipSha256": "70dc476ba8dd7c349d1c6bec2c4ce33469e7755a748482787d1551e86ae3639a"
+    },
+    {
+      "file": "bound-input-src__main__services__clubhouse-mcp__tools__handoff-tools.ts.gz",
+      "bytes": 15690,
+      "sha256": "3b91fd7345c14c662dec3d95b3b4aacfbb0dc69843b02484442978fbaa2e02ea",
+      "gzipBytes": 4221,
+      "gzipSha256": "5327697a92bde85cc335377cb59ec643c897e51ed65cfd2988dbbcd422a5fc2d"
+    },
+    {
+      "file": "bound-input-src__main__services__clubhouse-mcp__tools__handoff-tools.test.ts.gz",
+      "bytes": 11133,
+      "sha256": "69ace356b0706fc010377a17f276fd50aec3979aa20ed97bbe159bfebeff256e",
+      "gzipBytes": 3101,
+      "gzipSha256": "4d37d24d63b1a86d7a510bd2d76843c886ffd167ff31525b6bbda3eddfdeadf2"
+    },
+    {
+      "file": "bound-input-src__main__services__prepare-handoff-skill.test.ts.gz",
+      "bytes": 13130,
+      "sha256": "960c49c3ee0234b47722805ca3c8ec071d08abc146921804965f269593a447a2",
+      "gzipBytes": 4274,
+      "gzipSha256": "8dbd6b24536d0e1e2941face35eb72610f4352b6bb4bafefdff80c8a85ff2e74"
+    },
+    {
+      "file": "bound-input-test__annex-v2__handoff-producer-admission.test.ts.gz",
+      "bytes": 68499,
+      "sha256": "bca7d6970d7a3a4d95fb0f6fbf1e42222ae0af7e0127d9484f3548d66e059cad",
+      "gzipBytes": 12980,
+      "gzipSha256": "38e9c9d98db4827d39f8fcc4ef1054e06af2efa6a37eb500b385a0a686a838dd"
+    },
+    {
+      "file": "bound-input-docs__annex-reverse-routes.md.gz",
+      "bytes": 29212,
+      "sha256": "902a4a3ae810eed545e2e8c64b4c3c4f96e96c02110760d6b4d238f81fd5c878",
+      "gzipBytes": 11659,
+      "gzipSha256": "0a08f4140533c8d6a72b980174241c79d1466d22377c23f67a7edce055f2eef3"
+    },
+    {
+      "file": "bound-input-package.json.gz",
+      "bytes": 5782,
+      "sha256": "02a5006fdd2b94506ec91db8db8e093bcafeaf0174ee08c0a563f459bc4ac7a9",
+      "gzipBytes": 1885,
+      "gzipSha256": "a0afb77bb6f0f6367fece12494cfcd314526e0555068921c3baede877de250ae"
+    },
+    {
+      "file": "bound-input-package-lock.json.gz",
+      "bytes": 690814,
+      "sha256": "bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d",
+      "gzipBytes": 157625,
+      "gzipSha256": "26749b1aed123b22edc952d479c1c50ef7a05d3a30c8fe8822bb6506ef0e1835"
+    },
+    {
+      "file": "bound-input-tsconfig.json.gz",
+      "bytes": 530,
+      "sha256": "bed57c7a173516b4595951e8af318fc76e40c2e02f64836f0ae0db8249272432",
+      "gzipBytes": 286,
+      "gzipSha256": "ef32588d840266b55d2b582b15e642e53f0c29b7d7efba2db848a14b4e030a56"
+    },
+    {
+      "file": "bound-input-vitest.config.ts.gz",
+      "bytes": 3220,
+      "sha256": "6690a294716c134301d14f5935e79e51ac629e11a84a5ab2c84bf518e1e3e7cc",
+      "gzipBytes": 1034,
+      "gzipSha256": "57ee5bf8d659559d4777fd5983244e3f22d1f73ac56c2aa344fb2bcd1e5d842d"
+    },
+    {
+      "file": "bound-input-node_modules__.cache__native-handoff-ingress__133-producer-hosted-correction-tsconfig.json.gz",
+      "bytes": 341,
+      "sha256": "c42e7ed4d268efc9b0de0f6a5c5bac7672b16a0a2ab805a2d5379bc1c7b6a6f3",
+      "gzipBytes": 212,
+      "gzipSha256": "e08b5a7dd7d296644d8f92deefa1214f3ff103552925d33ae02f391662198f3d"
+    },
+    {
+      "file": "bound-input-node_modules__.cache__native-handoff-ingress__131-hosted-correction-command-receipt.cjs.gz",
+      "bytes": 2528,
+      "sha256": "73a357c517491c443cd4e043927f4fca9e1c384a29226fe15f03c605519b95f6",
+      "gzipBytes": 1024,
+      "gzipSha256": "56d46e3cd1653f4dc2724654889a9c457165b5943b47f95e65fdb4ca850b533d"
+    },
+    {
+      "file": "source-76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2-fixture.test.ts.gz",
+      "bytes": 66098,
+      "sha256": "77d6ebe34cee0b16d824e116d7dc8a7d96289f94c14a69ba6d1556de0e1d5738",
+      "gzipBytes": 12713,
+      "gzipSha256": "131a33067ee3c4ea86d9aa87aa5bdb3ba435d500dd55d8e3278be028e31f3c00"
+    },
+    {
+      "file": "source-76656abec9b5f9a0fb6f6cd12b74178efcbf7ae2-commit.txt.gz",
+      "bytes": 597,
+      "sha256": "a602abed5c0b759f112877fa87ed399af4a7f872331f43a96904422df867ff24",
+      "gzipBytes": 402,
+      "gzipSha256": "b89712f6bbba1ea6992ca0cc0d7a640fef4a4b76697920e1e3feeb03483a54d5"
+    },
+    {
+      "file": "source-c535d031ef94617c2364e745a9765c91c2a31726-fixture.test.ts.gz",
+      "bytes": 68499,
+      "sha256": "bca7d6970d7a3a4d95fb0f6fbf1e42222ae0af7e0127d9484f3548d66e059cad",
+      "gzipBytes": 12980,
+      "gzipSha256": "38e9c9d98db4827d39f8fcc4ef1054e06af2efa6a37eb500b385a0a686a838dd"
+    },
+    {
+      "file": "source-c535d031ef94617c2364e745a9765c91c2a31726-commit.txt.gz",
+      "bytes": 611,
+      "sha256": "bf3fd02e070365d02b87d6c54d5320a81209924a8c6b866df5a1a74ecea2fb4f",
+      "gzipBytes": 395,
+      "gzipSha256": "54c984f70d552deacbb2e334d10f10b8b7c520a3e71d27ccb3050a430f891b63"
+    },
+    {
+      "file": "source-16991dca76a7a6117a3c7e26232ecae5b86d89d0-commit.txt.gz",
+      "bytes": 628,
+      "sha256": "6b2fee190464f367eb3bec1694407dde345a7aa235939d8018541e72f8ab5194",
+      "gzipBytes": 423,
+      "gzipSha256": "d726aa0836f1695aac0114f72e717c0c1eb3484b62d415ca6a2c6f7e06748bb7"
+    },
+    {
+      "file": "baseline-added-control.txt.gz",
+      "bytes": 2401,
+      "sha256": "5ad3b762525d10c334f099e97943fd20a87009b93507ee2bd74512fa602ab112",
+      "gzipBytes": 904,
+      "gzipSha256": "d22872792d595598c0403bd6dd82d448b0b6d5f2e30e7aa0e1187b407c802bad"
+    },
+    {
+      "file": "original-owned-wrapper-and-cleanup.txt.gz",
+      "bytes": 2781,
+      "sha256": "8b1c5bb91599a5f4a900ec45986dfa05fe654cff94065b2ab880a7cfd85d21f0",
+      "gzipBytes": 1163,
+      "gzipSha256": "b4860e40a1af5b025c99ad475b3181776851cb0076525ac475228c1068d30094"
+    },
+    {
+      "file": "baseline-76656-to-c535.patch.gz",
+      "bytes": 3156,
+      "sha256": "5b3b1c6b4cbfcbcf879ef7ad05d71af8eb4566c03f1e63046e6b760a650ff2d7",
+      "gzipBytes": 1192,
+      "gzipSha256": "e916e0e225e6a6839a35d9764e360f9d32dcd9e5f5c192be5a8c70b66e64095b"
+    },
+    {
+      "file": "164-overlap-original-red-testcase-rows.json.gz",
+      "bytes": 22997,
+      "sha256": "ea2f188dc97710872494e55a9a0e329d0e4d245a41070cc73774a377a2327ad4",
+      "gzipBytes": 1968,
+      "gzipSha256": "c08e8cfc8973c6625f9b0ffacd97a68d42880068f2dfa26043924e691e60fb0e"
+    },
+    {
+      "file": "166-original-proposal-manifest.json.gz",
+      "bytes": 13884,
+      "sha256": "6b108f4dbfdaee9b5b52e7decb1c767e73de95714045533b8a2a43b19c1763c4",
+      "gzipBytes": 4915,
+      "gzipSha256": "da9d647080daa4bcb596470544b57192ec3e97924cf3e6dd27439152ef8851bf"
+    },
+    {
+      "file": "166-original-proposal-readme.md.gz",
+      "bytes": 6805,
+      "sha256": "0079c85ac5831612ae0a89251abf1b05b2cfac6d1ad9ba0f6e28d90b97a5ae56",
+      "gzipBytes": 3406,
+      "gzipSha256": "cd0c103246659777fad7ee9c028763f36e40537127681d76c9012d13cdb72f23"
+    },
+    {
+      "file": "166-freeze-overlap-original.log.gz",
+      "bytes": 180,
+      "sha256": "c2c57233b510d1f041f7a621e80b2ecea1fd1ee272a17885e0f01deeb7b12176",
+      "gzipBytes": 157,
+      "gzipSha256": "7236c48ea30378ef4fafc5f30aadf5358fcd260f5053fc3605c96d701d7c816c"
+    },
+    {
+      "file": "166-freeze-overlap-exit.txt.gz",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "gzipBytes": 22,
+      "gzipSha256": "20c148978dbd3180469fa3f43c2076f7a1f97fe430474622903cf1c2954751c0"
+    },
+    {
+      "file": "167-overlap-contract-refinement.txt.gz",
+      "bytes": 2603,
+      "sha256": "62c82a7330ab8a9f2eff9006fa7f05faf0f0cb3112c77c1f8020093a2840ea30",
+      "gzipBytes": 1342,
+      "gzipSha256": "6b4c38065a38a3ee6c6fc3b72673e257e6b0a64ba6e9dd70f30c6af690ad7c39"
+    },
+    {
+      "file": "167-freeze-overlap-contract-refinement.py.gz",
+      "bytes": 2494,
+      "sha256": "aad129d66863c318b3d773ea395364e73cfbe8a2d47e5eda77ef785d64cdcb63",
+      "gzipBytes": 1111,
+      "gzipSha256": "86d9475a99d49a43332cee35481b41e37f6d27961ec5929e25803b9e2eadc46d"
+    }
+  ],
+  "pendingContract": {
+    "initial": "165-overlap-minimal-hunk-contract.txt.gz",
+    "latestAdditiveRequirement": "167-overlap-contract-refinement.txt.gz",
+    "status": "Not implemented/approved; full independent design pending",
+    "originalProposalManifestSha256": "6b108f4dbfdaee9b5b52e7decb1c767e73de95714045533b8a2a43b19c1763c4",
+    "requirements": [
+      "Immutable coalesced original owner and later-directory protection",
+      "Separate actual raw-body completion; no manual cleanup self-await",
+      "Completion record retains exact actual errors AND mandatory teardown outcomes",
+      "Explicit registered/asserted synthetic references, not body resolution or blanket hook swallow",
+      "Unexpected caller/teardown errors remain surfaced"
+    ]
+  }
+}

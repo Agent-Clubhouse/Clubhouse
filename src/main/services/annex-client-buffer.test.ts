@@ -75,6 +75,7 @@ vi.mock('./annex-peers', () => ({
   noteReached: vi.fn(),
   setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(null),
+  peekPeerAlias: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),

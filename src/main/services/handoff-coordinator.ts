@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { isHandoffAgent, isTerminalHandoff, parseHandoff, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffOffer } from '../../shared/handoffs';
 import { scanHandoffSecrets } from '../../shared/handoff-secrets';
 import { assertHandoffExtension, type HandoffStorage } from './handoff-store';
-import { HANDOFF_OFFER_TTL_MS, HandoffOfferRefused, HandoffService, type HandoffReceiveGuard } from './handoff-service';
+import { HANDOFF_OFFER_TTL_MS, HandoffOfferRefused, HandoffService, type HandoffReceiveGuard, type HandoffOfferAdmission } from './handoff-service';
 
 export interface HandoffCancellation {
   id: string;
@@ -26,6 +26,10 @@ export interface HandoffSyncAdmission {
   checkOutgoing(): void;
   holdPost(): () => void;
   release(): void;
+}
+export interface HandoffProducerAdmission extends HandoffOfferAdmission {
+  bind(record: Handoff): Promise<void>;
+  holdPost(): () => void;
 }
 export interface HandoffCoordinatorOptions {
   machine: string;
@@ -86,7 +90,7 @@ export class HandoffCoordinator {
     catch { /* telemetry-exempt: a notice cannot undo a committed agreement; it remains queryable */ }
   }
 
-  async offer(input: HandoffOffer, sender: HandoffAgent): Promise<Handoff> {
+  async offer(input: HandoffOffer, sender: HandoffAgent, producer?: HandoffProducerAdmission): Promise<Handoff> {
     await this.prune();
     let preparingId: string | undefined;
     let record: Handoff;
@@ -95,11 +99,12 @@ export class HandoffCoordinator {
         // The delivery proof is durable before an offer can become visible to a concurrent cancel.
         preparingId = next.id; this.preparing.add(next.id);
         if (next.from.machine !== next.to.machine) await this.options.commands.markUndelivered?.(next.id);
-        await this.options.bindOffer?.(next);
-      });
+        if (producer) await producer.bind(next);
+        else await this.options.bindOffer?.(next);
+      }, producer);
     } finally { if (preparingId) { this.preparing.delete(preparingId); this.options.offerSettled?.(preparingId); } }
     await this.changed(record);
-    await this.trySync(record.id);
+    await this.trySync(record.id, producer);
     return this.options.store.get(record.id)!;
   }
 
@@ -223,23 +228,23 @@ export class HandoffCoordinator {
   }
 
   /** Sync failures retain records/commands for reconnect or the next bounded sweep. */
-  private async trySync(id: string): Promise<void> {
-    try { await this.sync(id); }
+  private async trySync(id: string, producer?: HandoffProducerAdmission): Promise<void> {
+    try { producer?.check(); await this.sync(id, producer); }
     catch {
       // telemetry-exempt: durable retry below; never reflect peer content, task text or a transport URL
     }
   }
 
-  async sync(id: string): Promise<void> {
+  async sync(id: string, producer?: HandoffProducerAdmission): Promise<void> {
     const pending = this.syncing.get(id);
     if (pending) return pending;
     if (this.cancellations.has(id)) return;
-    const run = this.syncRecord(id).finally(() => { this.syncing.delete(id); });
+    const run = this.syncRecord(id, producer).finally(() => { this.syncing.delete(id); });
     this.syncing.set(id, run);
     return run;
   }
 
-  private async syncRecord(id: string): Promise<void> {
+  private async syncRecord(id: string, producer?: HandoffProducerAdmission): Promise<void> {
     const record = this.options.store.get(id);
     if (!record) return;
     if (record.from.machine === record.to.machine) {
@@ -252,29 +257,45 @@ export class HandoffCoordinator {
     const connected = this.options.connected(peer);
     const admission = connected ? undefined : this.options.captureSync?.(record, peer);
     if (!connected && !admission) return;
-    const beforeChange = admission ? () => admission.check() : undefined;
-    const post = (body: Record<string, unknown>) => admission ? this.options.post(peer, body, admission) : this.options.post(peer, body);
+    const check = () => { admission?.check(); producer?.check(); };
+    const checkOutgoing = () => { admission?.checkOutgoing(); producer?.check(); };
+    const beforeChange = admission || producer ? check : undefined;
+    const postAdmission: HandoffSyncAdmission | undefined = producer ? {
+      check, checkOutgoing,
+      holdPost: () => {
+        const release = producer.holdPost();
+        try {
+          const releaseSync = admission?.holdPost();
+          return () => { releaseSync?.(); release(); };
+        } catch (error) { release(); throw error; }
+      },
+      release: () => admission?.release(),
+    } : admission;
+    const post = (body: Record<string, unknown>) => {
+      producer?.check();
+      return postAdmission ? this.options.post(peer, body, postAdmission) : this.options.post(peer, body);
+    };
     const remove = (operationId: string) => admission ? this.options.commands.remove(operationId, beforeChange) : this.options.commands.remove(operationId);
     const authorized = async () => {
-      admission?.checkOutgoing();
+      checkOutgoing();
       const allowed = await this.options.authorizeOutgoing(record);
-      admission?.check();
+      check();
       if (!allowed && !this.options.commands.list().some((command) => command.id === id)) return false;
-      admission?.checkOutgoing();
+      checkOutgoing();
       return true;
     };
     try {
       if (!await authorized()) return;
       const cancellation = sending ? this.options.commands.list().find((command) => command.id === id) : undefined;
       // Persist the attempt before transport: a crash/timeout can never be mistaken for no delivery.
-      admission?.checkOutgoing();
+      checkOutgoing();
       if (sending) await this.options.commands.markAttempted?.(id);
-      admission?.checkOutgoing();
+      checkOutgoing();
       const response = await post(cancellation ? { op: 'cancel', command: cancellation, record: originalHandoffOffer(record) } : sending
         ? { op: 'offer', record: originalHandoffOffer(record) }
         : { op: 'snapshot', record });
       // Membership/grants can change while a request is in flight.
-      admission?.check();
+      check();
       if (!admission && !this.options.connected(peer) || !await authorized()) return;
       const refused = !!response && typeof response === 'object' && 'kind' in response && response.kind === 'refused';
       if (refused && (!sending || Object.keys(response).some((key) => !['kind', 'record'].includes(key)))) throw new Error('Invalid refusal.');
@@ -298,9 +319,9 @@ export class HandoffCoordinator {
           for (const command of this.options.commands.list().filter((item) => item.id === id)) await remove(command.operationId);
         }
         for (const command of this.options.commands.list().filter((item) => item.id === id)) {
-          admission?.check();
+          check();
           const cancelled = parseHandoff(await post({ op: 'cancel', command }));
-          admission?.check();
+          check();
           if (cancelled.id !== id) throw new Error('Invalid handoff reply.');
           await this.service.receiveSnapshot(cancelled, peer, beforeChange);
           if (admission && isTerminalHandoff(cancelled.state)) await this.acknowledgeReverse(id, cancelled.version, admission);
@@ -309,7 +330,7 @@ export class HandoffCoordinator {
       }
       await this.changed(this.options.store.get(id)!);
     } finally {
-      admission?.release();
+      postAdmission?.release();
     }
   }
 

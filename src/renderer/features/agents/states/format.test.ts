@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { describeSleep } from './format';
+import { describeSleep, formatRunTokens } from './format';
 
 describe('describeSleep (#2104)', () => {
   const at = '2026-10-18T03:01:06.000Z';
@@ -14,5 +14,17 @@ describe('describeSleep (#2104)', () => {
     [{ reason: 'exited', at }, 'CLI exited'],
   ] as const)('%o → %s', (info, text) => {
     expect(describeSleep(info)).toBe(text);
+  });
+});
+
+describe('formatRunTokens', () => {
+  it.each([
+    [undefined, undefined, 'Not reported'],
+    [0, 0, '0'],
+    [12_000, 800, '12k in, 800 out'],
+    [undefined, 4, 'unknown in, 4 out'],
+    [0, undefined, '0 in, unknown out'],
+  ] as const)('%s in, %s out → %s', (input, output, text) => {
+    expect(formatRunTokens(input, output)).toBe(text);
   });
 });

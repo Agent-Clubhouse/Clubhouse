@@ -1,3 +1,4 @@
+import { readRemoteChatMedia, uploadRemoteChatImage } from './annex-chat-images';
 import { isSelectedDispatcherDetails, isSelectedDispatcherPage, isSelectedDispatcherPageQuery, type SelectedDispatcherDetails, type SelectedDispatcherPageQuery } from '../../shared/selected-dispatcher-details';
 import { isRemoteCanvasBoardPage, REMOTE_CANVAS_BOARD_SOURCE } from '../../shared/remote-canvas-board-page';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
@@ -813,10 +814,11 @@ function snapshotAdmissionCurrent(sat: SatelliteConnectionInternal): boolean {
 }
 
 function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection {
+  const alias = annexPeers.peekPeerAlias(s.fingerprint) || s.alias;
   const liveStream = s.stream && s.stream.snapshotAccepted && satelliteStreamCurrent(s, s.stream);
   return {
     id: s.id,
-    alias: s.alias,
+    alias,
     icon: s.icon,
     color: s.color,
     fingerprint: s.fingerprint,
@@ -830,7 +832,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
-    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, { ...s.problem, host: s.host }) }),
+    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, alias, { ...s.problem, host: s.host }) }),
   };
 }
 
@@ -3038,6 +3040,14 @@ export function requestControllerChatPage(machine: string, opts: ControllerChatQ
 
 export function requestControllerChatSessions(machine: string): Promise<ControllerReadResult<ControllerChatSessions>> {
   return controllerChatRead(machine, `${CONTROLLER_CHAT_PATH}/sessions`);
+}
+
+/** Bounded ref/byte-only image operations; the raw transport retains its current pinned lease. */
+export function requestChatMedia(machine: string, agentId: string, mediaRef: string): Promise<{ mimeType: string; data: Uint8Array }> {
+  return readRemoteChatMedia(requestSatelliteRaw, machine, agentId, mediaRef);
+}
+export function requestChatImageUpload(machine: string, agentId: string, data: Uint8Array) {
+  return uploadRemoteChatImage(requestSatelliteRaw, machine, agentId, data);
 }
 
 /** A satellite chat agent's sessions, for its history. */

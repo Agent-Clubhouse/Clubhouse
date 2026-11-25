@@ -23,7 +23,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { DISPATCHER_CLASSIC_MESSAGE, DISPATCHER_PROJECT_ID, type DispatcherState } from '../../../shared/dispatcher-types';
+import { DISPATCHER_CLASSIC_MESSAGE, DISPATCHER_PROJECT_ID, type DispatcherProviderPending, type DispatcherState } from '../../../shared/dispatcher-types';
 import type { Agent, DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from '../../../shared/idle-sleep';
@@ -46,6 +46,7 @@ import { dispatcherName } from '../agents/details/DispatcherCard';
 import { useDispatcherRead } from '../dispatcher/useDispatcherEnabled';
 import { useProviderName } from '../dispatcher/BehaviorChip';
 import { openAutoSettings, openDispatcherSetup } from '../dispatcher/dispatcherNav';
+import { requestClearChat, requestStartFresh } from '../dispatcher/ClearChat';
 import {
   DISPATCHER_NAME_MAX,
   DISPATCHER_PERSONALITY_PRESETS,
@@ -534,6 +535,37 @@ export function ChooseModelsField({ models, chatPath, workPath, cliChoices }: {
   );
 }
 
+/**
+ * A saved provider its running session isn't on yet. A new provider can't
+ * take over a running session, so it applies when that job restarts; this
+ * says so and offers the restart, through the same confirm as its menu.
+ * Saving never restarts it.
+ */
+export function ProviderPendingNote({ pending, name }: { pending: DispatcherProviderPending | undefined; name: string }) {
+  const chatOn = useProviderName(pending?.chat ?? null);
+  const workOn = useProviderName(pending?.work ?? null);
+  if (!pending || (!pending.chat && !pending.work)) return null;
+  const still = pending.chat && pending.work
+    ? (pending.chat === pending.work ? `talking with you and working in the background on ${chatOn}` : `talking with you on ${chatOn} and working in the background on ${workOn}`)
+    : pending.chat ? `talking with you on ${chatOn}` : `working in the background on ${workOn}`;
+  // The chat alone needs only a new chat; anything with background work is a restart, whose confirm offers a new chat too.
+  const chatOnly = !pending.work;
+  return (
+    <SettingsField
+      label="New provider"
+      help={`${name} is still ${still}. The new provider applies when it restarts, with a new conversation. Its memory stays.`}
+      testId="dispatcher-provider-pending"
+    >
+      <Button
+        onClick={() => (chatOnly ? requestClearChat(name) : requestStartFresh(name))}
+        data-testid="dispatcher-provider-pending-restart"
+      >
+        {chatOnly ? 'Start new chat…' : 'Restart…'}
+      </Button>
+    </SettingsField>
+  );
+}
+
 /** Today's usage split (#3040), read when the page opens. */
 function useDispatcherUsage(): { usage: DispatcherUsageSplit | null; failed: boolean } {
   const [usage, setUsage] = useState<DispatcherUsageSplit | null>(null);
@@ -607,6 +639,7 @@ function BehaviorSection({ state, config }: { state: DispatcherState; config: Du
           {cliChoices.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
         </select>
       </SettingsField>}
+      <ProviderPendingNote pending={state.providerPending} name={name} />
       <SettingsField label="Auto-sleep" htmlFor="dispatcher-auto-sleep" help="A message to it wakes it again.">
         <select
           id="dispatcher-auto-sleep"

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { isExperimentalProvider } from '../../shared/providers/descriptors';
 import * as path from 'path';
 import { app } from 'electron';
 import { createSettingsStore } from './settings-store';
@@ -107,9 +108,10 @@ async function detectDefaults(
     return;
   }
 
-  // Fresh install — probe every provider
+  // Fresh install — probe every provider except experimental ones, which a
+  // person only ever turns on themselves.
   const results = await Promise.all(
-    providers.map(async (p) => {
+    providers.filter((p) => !isExperimentalProvider(p.id)).map(async (p) => {
       try {
         const result = await p.checkAvailability();
         return { id: p.id, available: result.available };

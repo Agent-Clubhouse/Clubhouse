@@ -28,6 +28,8 @@ import { appLog } from '../log-service';
 import { pathExists } from '../fs-utils';
 import { injectMcpServerSection, stripMcpServerSection } from '../toml-utils';
 import type { McpServerDef } from '../../../shared/types';
+// Used only inside functions, so the import cycle with this module is safe.
+import { isAntigravityWorkspaceMcpPath, mergeAntigravityWorkspaceMcp, addAntigravityTemplateMcpServers } from '../../orchestrators/antigravity/mcp-config';
 
 /** Commands that should never be allowed as MCP server commands. */
 const DANGEROUS_COMMANDS = new Set([
@@ -226,6 +228,17 @@ async function injectClubhouseMcpImpl(
   // Determine the MCP config file path
   const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
 
+  // Antigravity's workspace file is merged as text, never re-serialized, and
+  // its entry carries no fallback identity (#3793). A refusal throws
+  // AntigravityMcpConfigError and leaves the file untouched.
+  if (isAntigravityWorkspaceMcpPath(mcpConfigPath)) {
+    await mergeAntigravityWorkspaceMcp(cwd);
+    appLog('core:mcp', 'info', 'Injected Clubhouse MCP into Antigravity workspace config', {
+      meta: { agentId, configPath: mcpConfigPath },
+    });
+    return;
+  }
+
   if (conv.settingsFormat === 'toml') {
     await injectTomlMcp(mcpConfigPath, agentId, serverDef);
   } else {
@@ -317,6 +330,16 @@ export function injectTemplateMcpServers(
   return withInjectionLock(async () => {
     const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
     const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
+
+    // Antigravity: added beside the person's entries; a name they already use is refused (#3794).
+    if (isAntigravityWorkspaceMcpPath(mcpConfigPath)) {
+      for (const [name, def] of Object.entries(servers)) validateMcpServerDef(name, def);
+      await addAntigravityTemplateMcpServers(cwd, servers as Record<string, McpServerDef>);
+      appLog('core:mcp', 'info', 'Injected template MCP servers into Antigravity workspace config', {
+        meta: { cwd, serverNames: Object.keys(servers), configPath: mcpConfigPath },
+      });
+      return;
+    }
 
     // Read existing config
     let config: Record<string, unknown> = {};

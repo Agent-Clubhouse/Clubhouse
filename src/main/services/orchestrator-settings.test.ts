@@ -207,6 +207,38 @@ describe('orchestrator-settings', () => {
       expect(written.autoDetected).toBe(true);
     });
 
+    it('never enables or probes an experimental provider, even when it is the only one available', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      const antigravity = makeProvider('antigravity-cli', true);
+
+      await autoDetectDefaults([
+        makeProvider('claude-code', false),
+        makeProvider('copilot-cli', false),
+        makeProvider('codex-cli', false),
+        antigravity,
+      ]);
+
+      const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
+      expect(written.enabled).toEqual(['claude-code']);
+      expect(antigravity.checkAvailability).not.toHaveBeenCalled();
+    });
+
+    it('enables existing providers exactly as before when Antigravity is registered too', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      await autoDetectDefaults([
+        makeProvider('claude-code', true),
+        makeProvider('copilot-cli', true),
+        makeProvider('codex-cli', false),
+        makeProvider('antigravity-cli', true),
+      ]);
+
+      const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
+      expect(written.enabled).toEqual(['claude-code', 'copilot-cli']);
+    });
+
     it('falls back to claude-code when no providers are found', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });

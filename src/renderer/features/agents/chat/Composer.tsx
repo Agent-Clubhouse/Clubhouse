@@ -521,6 +521,8 @@ export interface ComposerProps {
   onTextChange: (text: string) => void;
   /** Agent the attachments are staged for; attaching is off without it. */
   attachmentAgentId?: string;
+  /** Pending uploads must not attach to a replacement host/session. */
+  attachmentSessionId?: string | null;
   /** Unsent attachments, owned by the caller like the text. */
   attachments?: ComposerAttachment[];
   onAttachmentsChange?: (attachments: ComposerAttachment[]) => void;
@@ -596,7 +598,10 @@ export function Composer(props: ComposerProps) {
   // each other, and count adds in flight so the cap holds across them.
   const latest = useRef(attachments);
   latest.current = attachments;
-  const adding = useRef(0);
+  const targetKey = `${agentId ?? ''}\0${props.attachmentSessionId ?? ''}`;
+  const uploadTarget = useRef({ key: targetKey, adding: 0 });
+  if (uploadTarget.current.key !== targetKey) uploadTarget.current = { key: targetKey, adding: 0 };
+  useEffect(() => () => { uploadTarget.current = { key: '', adding: 0 }; }, []);
   const modes = composerModes(capabilities, running);
   const layout = props.layout ?? 'wide';
   const line = layout === 'line';
@@ -623,9 +628,10 @@ export function Composer(props: ComposerProps) {
   const addFiles = async (files: File[]) => {
     if (!canAttach || !agentId || disabled || !files.length) return;
     // Reserve room synchronously, before any await.
-    const room = Math.max(0, CHAT_ATTACHMENTS_MAX - latest.current.length - adding.current);
+    const target = uploadTarget.current;
+    const room = Math.max(0, CHAT_ATTACHMENTS_MAX - latest.current.length - target.adding);
     const accepted = files.slice(0, room);
-    adding.current += accepted.length;
+    target.adding += accepted.length;
     // Cleared now and set only on failure, so a concurrent add can't wipe another's message.
     setAttachError(null);
     const errors: string[] = [];
@@ -633,13 +639,15 @@ export function Composer(props: ComposerProps) {
     const added: ComposerAttachment[] = [];
     try {
       for (const file of accepted) {
+        if (uploadTarget.current !== target) break;
         const result = await attachmentFromFile(agentId, file, capabilities?.images === true);
         if ('error' in result) errors.push(result.error);
         else added.push(result);
       }
     } finally {
-      adding.current -= accepted.length;
+      target.adding -= accepted.length;
     }
+    if (uploadTarget.current !== target) return;
     if (errors.length) setAttachError(errors.join('. '));
     if (added.length) props.onAttachmentsChange?.([...latest.current, ...added]);
   };

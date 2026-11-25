@@ -5,6 +5,7 @@
  * is a "Load image" button until the user clicks it.
  */
 
+import { isRemoteAgentId } from '../../../../stores/remoteProjectStore';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ChatImage } from '../../../../../shared/chat';
 import { Modal } from '../../../../components/Modal';
@@ -187,7 +188,7 @@ export function ImageLightbox({ agentId, target, onClose }: { agentId: string; t
           {note && <span className="mr-auto text-[12px] text-ctp-subtext0" role="status">{note}</span>}
           <Button kind="ghost" onClick={() => setActual((a) => !a)} disabled={!src}>{actual ? 'Fit to window' : 'Actual size'}</Button>
           {canCopy && <Button kind="ghost" onClick={() => void act('copy')}>Copy</Button>}
-          {stored && <Button kind="ghost" onClick={() => void act('reveal')}>{revealLabel()}</Button>}
+          {stored && !isRemoteAgentId(agentId) && <Button kind="ghost" onClick={() => void act('reveal')}>{revealLabel()}</Button>}
           <Button kind="primary" onClick={onClose}>Close</Button>
         </>
       )}
