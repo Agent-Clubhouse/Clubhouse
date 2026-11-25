@@ -27,6 +27,11 @@ export const TERMINAL_USAGE_MAX_SCAN_BYTES = 256 * 1024 * 1024;
 /** Clock slack between Clubhouse's run bounds and the CLI's line stamps. */
 export const TERMINAL_USAGE_SLACK_MS = 5_000;
 const CHUNK = 1024 * 1024;
+/** A line longer than this (no usage line is) is dropped as it's read, so one huge line can't hold the whole scan in memory. */
+const MAX_LINE_BYTES = 16 * 1024 * 1024;
+/** Sessions whose last counted run is remembered, and ids remembered per session. */
+const MAX_REMEMBERED_SESSIONS = 256;
+const MAX_REMEMBERED_IDS = 5_000;
 
 export type TerminalUsageFormat = 'claude' | 'codex';
 
@@ -42,6 +47,19 @@ export interface TerminalRunUsage extends RunUsage {
   records: number;
   /** Reading stopped at the byte limit before the run's start. */
   partial: boolean;
+  /** Where this run stopped counting, so the session's next run starts after it (see SessionMark). */
+  mark: SessionMark;
+}
+
+/**
+ * The last line a session's previous run counted: its time, and the message or
+ * response ids counted. The next run of the same session counts nothing at or
+ * before that time that was already counted, so two runs closer together than
+ * the clock slack can't both count the same lines.
+ */
+export interface SessionMark {
+  lastAt: number;
+  ids: ReadonlySet<string>;
 }
 
 type Rec = Record<string, unknown>;
@@ -69,7 +87,8 @@ async function* linesFromEnd(file: string, maxBytes: number, state: { exhausted:
         end = i;
         if (i === 0) break;
       }
-      rest = Buffer.from(buf.subarray(0, end));
+      // The rest of a line too long to be a usage line: dropped. What's left of it reads as a fragment, which isn't JSON.
+      rest = end > MAX_LINE_BYTES ? Buffer.alloc(0) : Buffer.from(buf.subarray(0, end));
     }
     state.exhausted = floor === 0;
     if (floor === 0 && rest.length > 0) yield rest.toString('utf-8');
@@ -123,11 +142,15 @@ export async function readTerminalRunUsage(
   format: TerminalUsageFormat,
   run: { startedAt: number; endedAt: number },
   maxBytes = TERMINAL_USAGE_MAX_SCAN_BYTES,
+  previous?: SessionMark,
 ): Promise<TerminalRunUsage | undefined> {
-  const from = run.startedAt - TERMINAL_USAGE_SLACK_MS;
+  // Never before what the session's previous run already counted.
+  const from = Math.max(run.startedAt - TERMINAL_USAGE_SLACK_MS, previous?.lastAt ?? -Infinity);
   const to = run.endedAt + TERMINAL_USAGE_SLACK_MS;
   const marker = format === 'claude' ? '"usage"' : '"token_usage_record"';
   const seen = new Set<string>();
+  const counted = new Set<string>();
+  let lastAt = -Infinity;
   let tokens: TokenUsage = {};
   let records = 0;
   let model: string | undefined;
@@ -164,7 +187,10 @@ export async function readTerminalRunUsage(
       if (id) {
         if (seen.has(id)) continue;
         seen.add(id);
+        if (previous?.ids.has(id)) continue;
+        counted.add(id);
       }
+      lastAt = Math.max(lastAt, at);
       model ??= typeof message.model === 'string' ? message.model : undefined;
       effort ??= typeof o.effort === 'string' ? o.effort : undefined;
       tokens = add(tokens, usage);
@@ -185,7 +211,10 @@ export async function readTerminalRunUsage(
     if (id) {
       if (seen.has(id)) continue;
       seen.add(id);
+      if (previous?.ids.has(id)) continue;
+      counted.add(id);
     }
+    lastAt = Math.max(lastAt, at);
     tokens = add(tokens, usage);
     records++;
   }
@@ -195,23 +224,43 @@ export async function readTerminalRunUsage(
   return {
     tokens,
     source: 'summed_calls',
-    dedup: format === 'claude' ? 'message_id' : 'none',
+    dedup: format === 'claude' ? 'message_id' : 'response_id',
     ...(model && { model }),
     ...(effort && { effort }),
     records,
     partial: !reachedStart,
+    mark: { lastAt, ids: new Set([...counted].slice(-MAX_REMEMBERED_IDS)) },
   };
+}
+
+/** Each session's last counted run, by provider and native session id; the oldest is forgotten past the limit. */
+const sessionMarks = new Map<string, SessionMark>();
+
+function remember(key: string, mark: SessionMark): void {
+  sessionMarks.delete(key);
+  sessionMarks.set(key, mark);
+  if (sessionMarks.size > MAX_REMEMBERED_SESSIONS) sessionMarks.delete(sessionMarks.keys().next().value!);
+}
+
+export function _resetTerminalUsageForTesting(): void {
+  sessionMarks.clear();
 }
 
 /**
  * Log the usage of a terminal run that just ended. Never throws and never
  * blocks the exit: the caller doesn't wait on it.
+ *
+ * `captureSource` is how the run's session id was found. An id scraped from
+ * the terminal's output is the weakest capture (it can be text the
+ * conversation printed), so its file isn't read: the line says
+ * `scraped_session_id`.
  */
 export async function recordTerminalRunUsage(run: {
   agentId: string;
   provider: OrchestratorProvider;
   cwd: string;
   nativeSessionId: string | undefined;
+  captureSource?: string;
   startedAt: number;
   endedAt: number;
   exitCode: number;
@@ -229,6 +278,10 @@ export async function recordTerminalRunUsage(run: {
     logTerminalRunUsage({ ...base, usage: undefined, coverage: 'not_supported' });
     return;
   }
+  if (run.nativeSessionId && run.captureSource === 'output_scrape') {
+    logTerminalRunUsage({ ...base, usage: undefined, coverage: 'scraped_session_id' });
+    return;
+  }
   try {
     const file = run.nativeSessionId && isSessionCapable(run.provider) && run.provider.transcriptPath
       ? await run.provider.transcriptPath(run.nativeSessionId, run.cwd)
@@ -237,13 +290,17 @@ export async function recordTerminalRunUsage(run: {
       logTerminalRunUsage({ ...base, usage: undefined, coverage: 'no_session' });
       return;
     }
-    const usage = await readTerminalRunUsage(file, format, run);
+    const key = `${run.provider.id}\u0000${run.nativeSessionId}`;
+    const usage = await readTerminalRunUsage(file, format, run, undefined, sessionMarks.get(key));
+    if (usage) remember(key, usage.mark);
     logTerminalRunUsage({
       ...base,
       ...(usage?.model && { model: usage.model }),
       ...(usage?.effort && { effort: usage.effort }),
       usage: usage && { tokens: usage.tokens, source: usage.source, dedup: usage.dedup },
       ...(usage?.partial && { partial: true }),
+      // The file was read, but the run recorded nothing in it.
+      ...(!usage && { coverage: 'no_usage' }),
     });
   } catch (err) {
     // telemetry-exempt: logged as a warning and as a read_failed usage line

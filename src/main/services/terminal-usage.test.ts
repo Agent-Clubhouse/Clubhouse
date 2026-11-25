@@ -9,7 +9,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import type { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
-import { readTerminalRunUsage, recordTerminalRunUsage } from './terminal-usage';
+import { _resetTerminalUsageForTesting, readTerminalRunUsage, recordTerminalRunUsage } from './terminal-usage';
 
 const T0 = Date.parse('2026-11-24T10:00:00.000Z');
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -18,6 +18,7 @@ let tmp: string;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-usage-'));
   logged.lines = [];
+  _resetTerminalUsageForTesting();
 });
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
@@ -44,7 +45,8 @@ describe('readTerminalRunUsage', () => {
       claude(T0 + 5000, 'm2', { input_tokens: 1, output_tokens: 1 }),
     ]);
     const usage = await readTerminalRunUsage(file, 'claude', { startedAt: T0, endedAt: T0 + 10_000 });
-    expect(usage).toEqual({ tokens: { input: 1001, cachedInput: 900, cacheWrite: 90, output: 8 }, source: 'summed_calls', dedup: 'message_id', model: 'claude-opus-5-5', effort: 'high', records: 2, partial: false });
+    expect(usage).toMatchObject({ tokens: { input: 1001, cachedInput: 900, cacheWrite: 90, output: 8 }, source: 'summed_calls', dedup: 'message_id', model: 'claude-opus-5-5', effort: 'high', records: 2, partial: false });
+    expect(usage?.mark).toEqual({ lastAt: T0 + 5000, ids: new Set(['m2', 'm1']) });
   });
 
   it('Codex: response records once each, model and effort from the run, never the thread total', async () => {
@@ -56,7 +58,7 @@ describe('readTerminalRunUsage', () => {
       codexRecord(T0 + 3000, 'r2', { input_tokens: 0, output_tokens: 0 }),
     ]);
     const usage = await readTerminalRunUsage(file, 'codex', { startedAt: T0, endedAt: T0 + 10_000 });
-    expect(usage).toMatchObject({ tokens: { input: 1000, cachedInput: 800, output: 20, reasoning: 8 }, model: 'gpt-x', effort: 'xhigh', records: 2, partial: false });
+    expect(usage).toMatchObject({ tokens: { input: 1000, cachedInput: 800, output: 20, reasoning: 8 }, model: 'gpt-x', effort: 'xhigh', records: 2, partial: false, dedup: 'response_id' });
   });
 
   it('reads lines split across read chunks and says partial when the run is bigger than the limit', async () => {
@@ -69,6 +71,12 @@ describe('readTerminalRunUsage', () => {
     const cut = await readTerminalRunUsage(file, 'codex', { startedAt: T0, endedAt: T0 + 10_000 }, 100_000);
     expect(cut?.partial).toBe(true);
     expect(cut!.records).toBeLessThan(1500);
+  });
+
+  it('drops a line too long to be a usage line without losing the lines around it', async () => {
+    const huge = `{"type":"assistant","timestamp":"${iso(T0 + 1500)}","message":{"content":"${'y'.repeat(20 * 1024 * 1024)}"}}`;
+    const file = write('huge.jsonl', [codexRecord(T0 + 1000, 'r1', { input_tokens: 1, output_tokens: 1 }), huge, codexRecord(T0 + 2000, 'r2', { input_tokens: 2, output_tokens: 2 })]);
+    expect(await readTerminalRunUsage(file, 'codex', { startedAt: T0, endedAt: T0 + 10_000 })).toMatchObject({ records: 2, tokens: { input: 3, output: 3 } });
   });
 
   it('a run that recorded nothing has no usage, not zeros', async () => {
@@ -98,6 +106,33 @@ describe('recordTerminalRunUsage', () => {
     await recordTerminalRunUsage({ ...run, provider: provider('copilot-cli', '/should/not/read') });
     await recordTerminalRunUsage({ ...run, nativeSessionId: undefined, provider: provider('codex-cli', null) });
     expect(logged.lines.map((l) => [l.provider, l.coverage, l.usage])).toEqual([['copilot-cli', 'not_supported', undefined], ['codex-cli', 'no_session', undefined]]);
+  });
+
+  it('two runs of one session closer together than the clock slack count each line once', async () => {
+    const file = write('c.jsonl', [
+      claude(T0 + 2000, 'm1', { input_tokens: 1, output_tokens: 1 }),
+      claude(T0 + 9900, 'm2', { input_tokens: 2, output_tokens: 2 }),
+      claude(T0 + 16_000, 'm3', { input_tokens: 4, output_tokens: 4 }), // past the first run's slack
+    ]);
+    const p = provider('claude-code', file);
+    await recordTerminalRunUsage({ ...run, provider: p, startedAt: T0, endedAt: T0 + 10_000 });
+    // Resumed a second later: its window, with slack, reaches back over m2.
+    await recordTerminalRunUsage({ ...run, provider: p, startedAt: T0 + 11_000, endedAt: T0 + 20_000 });
+    expect(logged.lines.map((l) => (l.usage as { tokens: unknown } | undefined)?.tokens)).toEqual([{ input: 3, output: 3 }, { input: 4, output: 4 }]);
+  });
+
+  it('says no_usage when the file was read but the run recorded nothing in it', async () => {
+    const file = write('c.jsonl', [claude(T0 - 60_000, 'old', { input_tokens: 5, output_tokens: 5 })]);
+    await recordTerminalRunUsage({ ...run, provider: provider('claude-code', file) });
+    expect(logged.lines).toEqual([expect.objectContaining({ coverage: 'no_usage', usage: undefined })]);
+  });
+
+  it('doesn’t read a session whose id was only scraped from the terminal output', async () => {
+    const transcriptPath = vi.fn(async () => '/should/not/read');
+    const p = { ...(provider('codex-cli', null) as unknown as Record<string, unknown>), transcriptPath } as unknown as OrchestratorProvider;
+    await recordTerminalRunUsage({ ...run, provider: p, captureSource: 'output_scrape' });
+    expect(transcriptPath).not.toHaveBeenCalled();
+    expect(logged.lines).toEqual([expect.objectContaining({ coverage: 'scraped_session_id', usage: undefined })]);
   });
 
   it('a file it cannot read is a read_failed line, not an exception', async () => {

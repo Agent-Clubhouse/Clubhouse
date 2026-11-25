@@ -1536,7 +1536,7 @@ async function captureSession(
   } finally {
     if (resumedId) recordResumeOutcome(provider.id, agentId, resumeResult, 'pty');
     // Not awaited: reading the CLI's session file never holds up the exit.
-    void recordTerminalRunUsage({ agentId, provider, cwd: params.cwd, nativeSessionId: usageSessionId, startedAt: exitedAt - runMs, endedAt: exitedAt, exitCode });
+    void recordTerminalRunUsage({ agentId, provider, cwd: params.cwd, nativeSessionId: usageSessionId, captureSource: source, startedAt: exitedAt - runMs, endedAt: exitedAt, exitCode });
   }
 }
 
