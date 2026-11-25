@@ -1,0 +1,35 @@
+import { rendererLog } from './plugins/renderer-logger';
+
+/**
+ * The classic onboarding modal (experience-level question and slides) was
+ * removed. Its only saved state was this one localStorage key, which nothing
+ * reads any more, so startup deletes it. Exact key only, never a pattern.
+ */
+export const REMOVED_ONBOARDING_STORAGE_KEY = 'clubhouse_onboarding';
+
+/**
+ * Delete the saved onboarding state if it is there. Safe to run on every
+ * startup: once the key is gone it does nothing and logs nothing. Never throws.
+ * Returns true when it deleted the key.
+ */
+export function cleanupRemovedOnboardingState(storage?: Pick<Storage, 'getItem' | 'removeItem'>): boolean {
+  try {
+    // Resolved in here: reading `localStorage` itself can throw.
+    const target = storage ?? localStorage;
+    if (target.getItem(REMOVED_ONBOARDING_STORAGE_KEY) === null) return false;
+    target.removeItem(REMOVED_ONBOARDING_STORAGE_KEY);
+  } catch (err) {
+    try {
+      rendererLog('core:startup', 'warn', 'Could not delete saved onboarding state', {
+        meta: { key: REMOVED_ONBOARDING_STORAGE_KEY, error: err instanceof Error ? err.message : String(err) },
+      });
+    } catch { /* logging must not make startup throw */ }
+    return false;
+  }
+  try {
+    rendererLog('core:startup', 'info', 'Deleted saved onboarding state (the onboarding modal was removed)', {
+      meta: { key: REMOVED_ONBOARDING_STORAGE_KEY },
+    });
+  } catch { /* logging must not make startup throw */ }
+  return true;
+}

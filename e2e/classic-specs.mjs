@@ -6,8 +6,8 @@
  * unless a spec chose a layout itself, and runs CLASSIC_SHARDS, one list per
  * shard: CLASSIC_ONLY_SPECS, and a few journeys that keep classic coverage.
  *
- * CLASSIC_ONLY_SPECS test UI only classic has (its agent list, rail, flyout,
- * onboarding modal). They pin classic themselves and run only in the Classic
+ * CLASSIC_ONLY_SPECS test UI only classic has (its agent list, rail and
+ * flyout). They pin classic themselves and run only in the Classic
  * layout job, while classic still ships. LAYOUT_SWITCH_SPECS seed both
  * layouts on purpose. test/e2e-classic-layout.test.ts fails if any other file
  * pins classic.
@@ -33,7 +33,6 @@ export const CLASSIC_LAYOUT_ENV = 'CLUBHOUSE_E2E_LAYOUT';
 export const CLASSIC_SHARDS = {
   1: [
     'agent-list-ui.spec.ts',
-    'onboarding.spec.ts',
     'rail-hover-flyout.spec.ts',
     'rail-pin.spec.ts',
     'canvas-create.spec.ts',
@@ -51,7 +50,6 @@ export const CLASSIC_SHARD_ENV = 'PLAYWRIGHT_CLASSIC_SHARD';
 /** Classic-only UI: pinned to classic, and run only in the Classic layout job. */
 export const CLASSIC_ONLY_SPECS = [
   'agent-list-ui.spec.ts',
-  'onboarding.spec.ts',
   'rail-hover-flyout.spec.ts',
   'rail-pin.spec.ts',
 ];

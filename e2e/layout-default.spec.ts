@@ -26,6 +26,7 @@ import { BETA_FLAGS, betaFiles } from './stable-state-seeds.mjs';
 const STABLE_BUILD = { CLUBHOUSE_TEST_STABLE_BUILD: '1' };
 const OVERRIDES_KEY = 'clubhouse_keyboard_shortcut_overrides';
 const CHROME_KEY = 'clubhouse_chrome_v2';
+/** Saved by the removed onboarding modal; startup deletes it. */
 const ONBOARDING_KEY = 'clubhouse_onboarding';
 const FLAGS_FILE = 'experimental-settings.json';
 
@@ -83,7 +84,6 @@ async function expectClassicLayout(w: Page): Promise<void> {
 const savedFlagsText = (target: DisposableProfile) => fs.promises.readFile(path.join(target.userDataDir, FLAGS_FILE), 'utf8');
 const savedNewChrome = async (target: DisposableProfile) => JSON.parse(await savedFlagsText(target)).newChrome;
 const readStorage = (w: Page, key: string) => w.evaluate((k) => localStorage.getItem(k), key);
-const onboardingCompleted = async (w: Page) => JSON.parse(await readStorage(w, ONBOARDING_KEY) ?? '{}').completed;
 const projectOrder = (w: Page) => w.evaluate(async () => (await window.clubhouse.project.list() as Array<{ id: string }>).map((p) => p.id));
 const treeOrder = (w: Page) => w.locator('[data-testid^="project-group-"]').evaluateAll(
   (rows) => rows.map((row) => (row as HTMLElement).dataset.testid!.replace('project-group-', '')),
@@ -98,19 +98,17 @@ async function openSettingsPage(w: Page, label: string): Promise<void> {
 const classicToggle = (w: Page) => w.getByRole('switch', { name: 'Classic layout' });
 const restartButton = (w: Page) => w.getByRole('button', { name: 'Restart', exact: true });
 
-test('fresh install: the new layout, its first-run page, and onboarding counted as done', async () => {
+test('fresh install: the new layout and its first-run page', async () => {
   profile = createDisposableProfile({ label: 'layout-fresh' });
-  const w = await launch({ onboarding: 'show' });
+  const w = await launch();
 
   await expectNewLayout(w);
   await expect(w.locator('[data-testid="first-run"]')).toBeVisible({ timeout: 15_000 });
   // On by default here, beside the first-run page, with nothing saved for it.
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   expect(fs.existsSync(path.join(profile.userDataDir, 'dispatcher-settings.json'))).toBe(false);
-  // The classic shell's modal comes up after 500 ms, so give a wrong one time to show.
-  await w.waitForTimeout(1_500);
-  await expect(w.locator('[data-testid="onboarding-backdrop"]')).toHaveCount(0);
-  expect(await onboardingCompleted(w)).toBe(true);
+  // Nothing saves onboarding state any more.
+  expect(await readStorage(w, ONBOARDING_KEY)).toBeNull();
 
   // The default isn't written down, so a later default can still change it.
   if (fs.existsSync(path.join(profile.userDataDir, FLAGS_FILE))) expect(JSON.parse(await savedFlagsText(profile))).not.toHaveProperty('newChrome');
@@ -177,7 +175,7 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
     'go-home': 'Meta+Shift+J',
   };
 
-  // A stable session: the classic layout, two projects in a chosen order, and no finished onboarding.
+  // A stable session: the classic layout, two projects in a chosen order, and old onboarding state.
   let w = await launch({ experimental: { newChrome: false } });
   await expectClassicLayout(w);
   await addProject(app!.electronApp, w, makeProject('layout-alpha'));
@@ -197,7 +195,7 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
 
   // The upgrade: the flag was never saved.
   fs.rmSync(path.join(profile.userDataDir, FLAGS_FILE));
-  w = await launch({ onboarding: 'show' });
+  w = await launch();
   await expectNewLayout(w);
   await expect(w.locator('[data-testid="project-tree"]')).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => treeOrder(w)).toEqual(order);
@@ -205,9 +203,8 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
   await expect(w.locator('[data-testid="idle-projects"]')).toHaveCount(0);
   await expect(w.locator('[data-testid="first-run"]')).toHaveCount(0);
   await expect(w.locator('[data-testid^="project-"][data-active="true"]')).toHaveCount(1);
-  await w.waitForTimeout(1_500);
-  await expect(w.locator('[data-testid="onboarding-backdrop"]')).toHaveCount(0);
-  expect(await onboardingCompleted(w)).toBe(true);
+  // The removed onboarding modal's saved state is deleted at startup.
+  await expect.poll(() => readStorage(w, ONBOARDING_KEY)).toBeNull();
   expect(JSON.parse(await readStorage(w, CHROME_KEY) ?? '{}').shortcuts?.overrides).toEqual({
     'command-palette': 'Meta+Shift+K',
     'switch-agent-1': 'Meta+Shift+1',
@@ -217,12 +214,10 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
   expect(fs.existsSync(path.join(profile.userDataDir, FLAGS_FILE))).toBe(false);
   await quit();
 
-  // Back to classic: everything as it was, and no onboarding over the workspace.
+  // Back to classic: everything as it was.
   seedProfile(profile, { experimental: { newChrome: false } });
-  w = await launch({ onboarding: 'show' });
+  w = await launch();
   await expectClassicLayout(w);
-  await w.waitForTimeout(1_500);
-  await expect(w.locator('[data-testid="onboarding-backdrop"]')).toHaveCount(0);
   expect(JSON.parse(await readStorage(w, OVERRIDES_KEY) ?? '{}')).toEqual(overrides);
   expect(await projectOrder(w)).toEqual(order);
 });
