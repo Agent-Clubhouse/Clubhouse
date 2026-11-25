@@ -1379,3 +1379,68 @@ describe('Details byte budget for wrapping callers (M1)', () => {
     expect(await readRemoteAgentDetails('a1', () => true, query, { maxBytes: size - 1 })).toEqual({ status: 500, body: { error: 'details_read_failed' } });
   });
 });
+
+describe('selected board read (#13 preview, mixed-version safe)', () => {
+  const member = 'a'.repeat(64), selection = 'b'.repeat(64);
+  const boardQuery = { card: 'canvases' as const, source: 'selected-canvas-board' as const, member, selection };
+  const boardPage = (labels = 1) => ({ version: 1 as const, source: 'selected-canvas-board' as const, agentId: 'a1', projectId: project.id, member, selection, observedAt: 1, notes: [],
+    state: 'recorded' as const, scope: 'project' as const, canvasId: 'board-1', viewId: 'view-1', name: 'Board',
+    views: [{ key: member, type: 'agent' as const, label: 'Selected', member: true, x: 0, y: 0, w: 10, h: 10, z: 0 },
+      ...Array.from({ length: labels }, (_, i) => ({ key: i.toString(16).padStart(64, '0'), type: 'anchor' as const, label: 'L'.repeat(240), member: false, x: i, y: i, w: 10, h: 10, z: i }))], total: labels + 1 });
+
+  it('keeps advertised sources identical to be0091d16, so a frozen old client still accepts the overview (ordinary, managed, Dispatcher)', async () => {
+    const old = await import('../../shared/__fixtures__/be00-validators/remote-agent-details');
+    const ordinary = await read();
+    expect(ordinary.inventorySources).toEqual(['selected-action-relationships', 'selected-canvas-memberships']);
+    expect(old.isRemoteAgentDetails(ordinary, 'a1')).toBe(true);
+    m.target.mockResolvedValue({ agent: { ...agent(), managed: { version: 1, blocks: [], skills: [], mcps: [] } }, project });
+    const managed = await read();
+    expect(managed.inventorySources).toEqual(['selected-action-relationships', 'selected-canvas-memberships', 'selected-managed-blocks', 'selected-managed-skills', 'selected-managed-mcps']);
+    expect(old.isRemoteAgentDetails(managed, 'a1')).toBe(true);
+    m.target.mockResolvedValue({ agent: agent(), project }); m.dispatcher.mockReturnValue({ agentId: 'a1' });
+    const dispatcher = await read();
+    expect(dispatcher.inventorySources).toEqual(['selected-action-relationships']);
+    expect(old.isRemoteAgentDetails(dispatcher, 'a1')).toBe(true);
+  });
+
+  it('dispatches the board query to the board reader only, admitted through the advertised membership source', async () => {
+    const boards = await import('./selected-canvas-board-page'), memberships = await import('./selected-canvas-membership-page');
+    const board = vi.spyOn(boards, 'readSelectedCanvasBoardPage').mockResolvedValue(boardPage());
+    const membership = vi.spyOn(memberships, 'readSelectedCanvasMembershipPage');
+    try {
+      const response = await readRemoteAgentDetails('a1', () => true, boardQuery);
+      expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+      const body = response.body as RemoteAgentDetails;
+      expect(body.inventoryPage).toEqual(boardPage()); expect(body.inventorySources).not.toContain('selected-canvas-board');
+      expect(board).toHaveBeenCalledExactlyOnceWith(expect.anything(), boardQuery, expect.objectContaining({ authorized: expect.any(Function) }));
+      expect(membership).not.toHaveBeenCalled();
+      await readRemoteAgentDetails('a1', () => true, { card: 'canvases', source: 'selected-canvas-memberships' });
+      expect(board).toHaveBeenCalledTimes(1);
+    } finally { board.mockRestore(); membership.mockRestore(); }
+  });
+
+  it('refuses the board for a Dispatcher (no membership source) before any board read', async () => {
+    const boards = await import('./selected-canvas-board-page');
+    const board = vi.spyOn(boards, 'readSelectedCanvasBoardPage');
+    m.dispatcher.mockReturnValue({ agentId: 'a1' });
+    try {
+      expect(await readRemoteAgentDetails('a1', () => true, boardQuery)).toEqual({ status: 400, body: { error: 'unsupported_inventory_page' } });
+      expect(board).not.toHaveBeenCalled();
+    } finally { board.mockRestore(); }
+  });
+
+  it('premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read', async () => {
+    const boards = await import('./selected-canvas-board-page');
+    const board = vi.spyOn(boards, 'readSelectedCanvasBoardPage').mockResolvedValue(boardPage(400));
+    try {
+      const whole = await readRemoteAgentDetails('a1', () => true, boardQuery);
+      expect(whole.status).toBe(200); expect((whole.body as RemoteAgentDetails).inventoryPage).toMatchObject({ state: 'recorded', total: 401 });
+      const size = Buffer.byteLength(JSON.stringify(whole.body));
+      const exact = await readRemoteAgentDetails('a1', () => true, boardQuery, { maxBytes: size });
+      expect((exact.body as RemoteAgentDetails).inventoryPage).toMatchObject({ state: 'recorded' });
+      const under = await readRemoteAgentDetails('a1', () => true, boardQuery, { maxBytes: size - 1 });
+      expect(under.status).toBe(200); expect(isRemoteAgentDetails(under.body, 'a1')).toBe(true);
+      expect((under.body as RemoteAgentDetails).inventoryPage).toEqual({ version: 1, source: 'selected-canvas-board', agentId: 'a1', projectId: project.id, member, selection, observedAt: 1, notes: [], state: 'unavailable', reason: 'limit' });
+    } finally { board.mockRestore(); }
+  });
+});

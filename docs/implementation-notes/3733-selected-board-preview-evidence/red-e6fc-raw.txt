@@ -1,0 +1,1437 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 /private<red-worktree>
+
+ ❯ |main| src/main/services/remote-agent-details.test.ts (215 tests | 3 failed) 1142ms
+     × dispatches the board query to the board reader only, admitted through the advertised membership source 6ms
+     × refuses the board for a Dispatcher (no membership source) before any board read 2ms
+     × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 1ms
+ ❯ |main| src/main/services/selected-canvas-board-page.test.ts (0 test)
+ ❯ |main| src/main/services/remote-quick-details.test.ts (43 tests | 1 failed) 1234ms
+     × refuses the selected board query like every inventory page (#13 preview) 8ms
+ ❯ |renderer| src/renderer/features/agents/details/CanvasMembershipList.test.tsx (4 tests | 1 failed) 105ms
+   × renders an optional secondary action per row and is unchanged without it 5ms
+ ❯ |shared| src/shared/remote-canvas-board-page.test.ts (0 test)
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx (6 tests | 6 failed) 224ms
+   × previews an omitted board read-only with the captured row context, generic other agents and member focus, writing nothing 108ms
+   × offers no preview for a navigable row and closes an open preview when its row becomes navigable 38ms
+   × retires a pending read permanently across omitted -> navigable -> omitted with the same fence (ABA), then reads again only on request 27ms
+   × discards a read that settles after its row became navigable 25ms
+   × shows status, not a retained preview, for an older host, refusal or limit, and reports refusal 25ms
+   × renderer adapter binds the captured row context: a page main would accept for another board, row or project is refused 0ms
+ ❯ |main| src/main/services/annex-client.test.ts (349 tests | 3 failed) 4798ms
+         × a late board denial still revokes the receipt it was read under 2ms
+       × sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview) 3ms
+       × captures the board query once before any await: later mutation and getter re-reads change neither URL nor binding 4ms
+ ❯ |main| src/main/services/annex-server.test.ts (645 tests | 1 failed) 79514ms
+       × admits the selected board query (member only for the board source) under the same desktop GET and final revocation gate 64ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |shared| src/shared/remote-canvas-board-page.test.ts [ src/shared/remote-canvas-board-page.test.ts ]
+Error: Cannot find module './remote-canvas-board-page' imported from /private<red-worktree>/src/shared/remote-canvas-board-page.test.ts
+ ❯ src/shared/remote-canvas-board-page.test.ts:2:1
+      1| import { describe, expect, it } from 'vitest';
+      2| import { isRemoteCanvasBoardPage, isRemoteCanvasBoardQuery, type Remot…
+       | ^
+      3| import { isRemoteInventoryPage, isRemoteInventoryQuery, isRemoteRowPag…
+      4| import { isRemoteDetailsQuery } from './remote-details-query';
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/17]⎯
+
+ FAIL  |main| src/main/services/selected-canvas-board-page.test.ts [ src/main/services/selected-canvas-board-page.test.ts ]
+Error: Cannot find module '/src/main/services/selected-canvas-board-page' imported from /private<red-worktree>/src/main/services/selected-canvas-board-page.test.ts
+ ❯ src/main/services/selected-canvas-board-page.test.ts:8:1
+      6| import { app } from 'electron';
+      7| import { readSelectedCanvasMembershipPage } from './selected-canvas-me…
+      8| import { fitSelectedCanvasBoardPage, readSelectedCanvasBoardPage } fro…
+       | ^
+      9| import { captureReadOnlyAgentTargetWitness } from './read-only-agent-t…
+     10| import { isRemoteCanvasBoardPage, type RemoteCanvasBoardQuery } from '…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/17]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 15 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/CanvasMembershipList.test.tsx > renders an optional secondary action per row and is unchanged without it
+TestingLibraryElementError: Unable to find an element by: [data-testid="secondary"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+  [36m<div>[39m
+    [36m<ul[39m
+      [33maria-label[39m=[32m"Canvas memberships"[39m
+      [33mclass[39m=[32m"flex flex-col"[39m
+    [36m>[39m
+      [36m<li>[39m
+        [36m<button[39m
+          [33maria-describedby[39m=[32m"_r_5_-0-unavailable"[39m
+          [33maria-label[39m=[32m"Same board name Home Unavailable"[39m
+          [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+          [33mdata-testid[39m=[32m"details-canvas-row"[39m
+          [33mdisabled[39m=[32m""[39m
+          [33mtitle[39m=[32m"Omitted"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+          [36m>[39m
+            [0mSame board name[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+          [36m>[39m
+            [0mHome[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+          [36m>[39m
+            [0mUnavailable[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+          [33mid[39m=[32m"_r_5_-0-unavailable"[39m
+        [36m>[39m
+          [0mOmitted[0m
+        [36m</p>[39m
+      [36m</li>[39m
+      [36m<li>[39m
+        [36m<button[39m
+          [33maria-describedby[39m=[32m"_r_5_-1-unavailable"[39m
+          [33maria-label[39m=[32m"Same board name Project Unavailable"[39m
+          [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+          [33mdata-testid[39m=[32m"details-canvas-row"[39m
+          [33mdisabled[39m=[32m""[39m
+          [33mtitle[39m=[32m"Omitted"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+          [36m>[39m
+            [0mSame board name[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+          [36m>[39m
+            [0mProject[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+          [36m>[39m
+            [0mUnavailable[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+          [33mid[39m=[32m"_r_5_-1-unavailable"[39m
+        [36m>[39m
+          [0mOmitted[0m
+        [36m</p>[39m
+      [36m</li>[39m
+    [36m</ul>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/renderer/features/agents/details/CanvasMembershipList.test.tsx:51:17
+     49|   plain.unmount();
+     50|   render(<CanvasMembershipList hits={[home, project]} onJump={jump} un…
+     51|   expect(screen.getAllByTestId('secondary').map((n) => n.textContent))…
+       |                 ^
+     52| });
+     53|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/17]⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx > previews an omitted board read-only with the captured row context, generic other agents and member focus, writing nothing
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "Preview board (read-only)"
+
+Here are the accessible roles:
+
+  region:
+
+  Name "Saved Canvas membership pages":
+  [36m<section[39m
+    [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+    [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_0_-0-unavailable"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_0_-1-unavailable"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  list:
+
+  Name "Canvas memberships":
+  [36m<ul[39m
+    [33maria-label[39m=[32m"Canvas memberships"[39m
+    [33mclass[39m=[32m"flex flex-col"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  listitem:
+
+  Name "":
+  [36m<li />[39m
+
+  Name "":
+  [36m<li />[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Saved board 0 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_0_-0-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Saved board 1 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_0_-1-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Restart saved membership pages":
+  [36m<button[39m
+    [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+      [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0mSaved membership pages are separate from the existing membership summary. They do not include board contents or permit opening an omitted board.[0m
+      [36m</p>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0m2[0m
+        [0m saved membership rows · [0m
+        [0m1[0m
+        [0m–[0m
+        [0m2[0m
+        [0m shown.[0m
+      [36m</p>[39m
+      [36m<ul[39m
+        [33maria-label[39m=[32m"Canvas memberships"[39m
+        [33mclass[39m=[32m"flex flex-col"[39m
+      [36m>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_0_-0-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 0[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_0_-0-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_0_-1-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 1[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_0_-1-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+      [36m</ul>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [0mRestart saved membership pages[0m
+      [36m</button>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx:39:26
+     37|   const remoteSet = vi.spyOn(useRemoteProjectStore, 'setState');
+     38|   await rows();
+     39|   const buttons = screen.getAllByRole('button', { name: 'Preview board…
+       |                          ^
+     40|   expect(buttons).toHaveLength(2); expect(readBoard).not.toHaveBeenCal…
+     41|   fireEvent.click(buttons[1]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/17]⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx > offers no preview for a navigable row and closes an open preview when its row becomes navigable
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "Preview board (read-only)"
+
+Here are the accessible roles:
+
+  region:
+
+  Name "Saved Canvas membership pages":
+  [36m<section[39m
+    [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+    [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_1_-0-unavailable"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_1_-1-unavailable"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  list:
+
+  Name "Canvas memberships":
+  [36m<ul[39m
+    [33maria-label[39m=[32m"Canvas memberships"[39m
+    [33mclass[39m=[32m"flex flex-col"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  listitem:
+
+  Name "":
+  [36m<li />[39m
+
+  Name "":
+  [36m<li />[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Saved board 0 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_1_-0-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Saved board 1 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_1_-1-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Restart saved membership pages":
+  [36m<button[39m
+    [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+      [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0mSaved membership pages are separate from the existing membership summary. They do not include board contents or permit opening an omitted board.[0m
+      [36m</p>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0m2[0m
+        [0m saved membership rows · [0m
+        [0m1[0m
+        [0m–[0m
+        [0m2[0m
+        [0m shown.[0m
+      [36m</p>[39m
+      [36m<ul[39m
+        [33maria-label[39m=[32m"Canvas memberships"[39m
+        [33mclass[39m=[32m"flex flex-col"[39m
+      [36m>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_1_-0-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 0[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_1_-0-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_1_-1-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 1[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_1_-1-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+      [36m</ul>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [0mRestart saved membership pages[0m
+      [36m</button>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx:54:26
+     52| it('offers no preview for a navigable row and closes an open preview w…
+     53|   await rows();
+     54|   fireEvent.click(screen.getAllByRole('button', { name: 'Preview board…
+       |                          ^
+     55|   await screen.findByTestId('remote-canvas-board-preview');
+     56|   const state = useAnnexClientStore.getState().satellites[0] as unknow…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/17]⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx > retires a pending read permanently across omitted -> navigable -> omitted with the same fence (ABA), then reads again only on request
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "Preview board (read-only)"
+
+Here are the accessible roles:
+
+  region:
+
+  Name "Saved Canvas membership pages":
+  [36m<section[39m
+    [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+    [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_2_-0-unavailable"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_2_-1-unavailable"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  list:
+
+  Name "Canvas memberships":
+  [36m<ul[39m
+    [33maria-label[39m=[32m"Canvas memberships"[39m
+    [33mclass[39m=[32m"flex flex-col"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  listitem:
+
+  Name "":
+  [36m<li />[39m
+
+  Name "":
+  [36m<li />[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Saved board 0 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_2_-0-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Saved board 1 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_2_-1-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Restart saved membership pages":
+  [36m<button[39m
+    [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+      [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0mSaved membership pages are separate from the existing membership summary. They do not include board contents or permit opening an omitted board.[0m
+      [36m</p>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0m2[0m
+        [0m saved membership rows · [0m
+        [0m1[0m
+        [0m–[0m
+        [0m2[0m
+        [0m shown.[0m
+      [36m</p>[39m
+      [36m<ul[39m
+        [33maria-label[39m=[32m"Canvas memberships"[39m
+        [33mclass[39m=[32m"flex flex-col"[39m
+      [36m>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_2_-0-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 0[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_2_-0-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_2_-1-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 1[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_2_-1-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+      [36m</ul>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [0mRestart saved membership pages[0m
+      [36m</button>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx:67:26
+     65|   readBoard.mockImplementationOnce(() => new Promise((resolve) => { fi…
+     66|   await rows();
+     67|   fireEvent.click(screen.getAllByRole('button', { name: 'Preview board…
+       |                          ^
+     68|   await screen.findByText('Reading this saved board from the host…');
+     69|   const sat = useAnnexClientStore.getState().satellites[0] as unknown …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/17]⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx > discards a read that settles after its row became navigable
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "Preview board (read-only)"
+
+Here are the accessible roles:
+
+  region:
+
+  Name "Saved Canvas membership pages":
+  [36m<section[39m
+    [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+    [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_3_-0-unavailable"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_3_-1-unavailable"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  list:
+
+  Name "Canvas memberships":
+  [36m<ul[39m
+    [33maria-label[39m=[32m"Canvas memberships"[39m
+    [33mclass[39m=[32m"flex flex-col"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  listitem:
+
+  Name "":
+  [36m<li />[39m
+
+  Name "":
+  [36m<li />[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Saved board 0 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_3_-0-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Saved board 1 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_3_-1-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Restart saved membership pages":
+  [36m<button[39m
+    [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+      [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0mSaved membership pages are separate from the existing membership summary. They do not include board contents or permit opening an omitted board.[0m
+      [36m</p>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0m2[0m
+        [0m saved membership rows · [0m
+        [0m1[0m
+        [0m–[0m
+        [0m2[0m
+        [0m shown.[0m
+      [36m</p>[39m
+      [36m<ul[39m
+        [33maria-label[39m=[32m"Canvas memberships"[39m
+        [33mclass[39m=[32m"flex flex-col"[39m
+      [36m>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_3_-0-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 0[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_3_-0-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_3_-1-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 1[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_3_-1-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+      [36m</ul>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [0mRestart saved membership pages[0m
+      [36m</button>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx:89:26
+     87|   readBoard.mockImplementationOnce(() => new Promise((resolve) => { fi…
+     88|   await rows();
+     89|   fireEvent.click(screen.getAllByRole('button', { name: 'Preview board…
+       |                          ^
+     90|   const sat = useAnnexClientStore.getState().satellites[0] as unknown …
+     91|   act(() => { delete sat.snapshot.snapshotTruncated; Object.assign(sat…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/17]⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx > shows status, not a retained preview, for an older host, refusal or limit, and reports refusal
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "Preview board (read-only)"
+
+Here are the accessible roles:
+
+  region:
+
+  Name "Saved Canvas membership pages":
+  [36m<section[39m
+    [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+    [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_4_-0-unavailable"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+    [33mid[39m=[32m"_r_4_-1-unavailable"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  list:
+
+  Name "Canvas memberships":
+  [36m<ul[39m
+    [33maria-label[39m=[32m"Canvas memberships"[39m
+    [33mclass[39m=[32m"flex flex-col"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  listitem:
+
+  Name "":
+  [36m<li />[39m
+
+  Name "":
+  [36m<li />[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Saved board 0 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_4_-0-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Saved board 1 Project Unavailable":
+  [36m<button[39m
+    [33maria-describedby[39m=[32m"_r_4_-1-unavailable"[39m
+    [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+    [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+    [33mdata-testid[39m=[32m"details-canvas-row"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Restart saved membership pages":
+  [36m<button[39m
+    [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Saved Canvas membership pages"[39m
+      [33mdata-testid[39m=[32m"selected-canvas-membership-page"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0mSaved membership pages are separate from the existing membership summary. They do not include board contents or permit opening an omitted board.[0m
+      [36m</p>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1"[39m
+      [36m>[39m
+        [0m2[0m
+        [0m saved membership rows · [0m
+        [0m1[0m
+        [0m–[0m
+        [0m2[0m
+        [0m shown.[0m
+      [36m</p>[39m
+      [36m<ul[39m
+        [33maria-label[39m=[32m"Canvas memberships"[39m
+        [33mclass[39m=[32m"flex flex-col"[39m
+      [36m>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_4_-0-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 0 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 0[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_4_-0-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+        [36m<li>[39m
+          [36m<button[39m
+            [33maria-describedby[39m=[32m"_r_4_-1-unavailable"[39m
+            [33maria-label[39m=[32m"Saved board 1 Project Unavailable"[39m
+            [33mclass[39m=[32m"w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0 disabled:opacity-60"[39m
+            [33mdata-testid[39m=[32m"details-canvas-row"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtitle[39m=[32m"The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host."[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[12.5px] text-ctp-text truncate"[39m
+            [36m>[39m
+              [0mSaved board 1[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-xs text-ctp-overlay1 whitespace-nowrap"[39m
+            [36m>[39m
+              [0mProject[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"ml-auto text-xs text-ctp-accent"[39m
+            [36m>[39m
+              [0mUnavailable[0m
+            [36m</span>[39m
+          [36m</button>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"pl-[33px] pr-3.5 text-xs text-ctp-overlay1"[39m
+            [33mid[39m=[32m"_r_4_-1-unavailable"[39m
+          [36m>[39m
+            [0mThe host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.[0m
+          [36m</p>[39m
+        [36m</li>[39m
+      [36m</ul>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"pl-[33px] text-xs"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [0mRestart saved membership pages[0m
+      [36m</button>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../..<home>/.clubhouse/orch/dependencies/bd9cc80304b81d317f2ffb295d9af5abbc484bf8efb64fc8d7f118e1288c212d/node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx:99:26
+     97|   await rows();
+     98|   readBoard.mockResolvedValueOnce({ status: 'unavailable' });
+     99|   fireEvent.click(screen.getAllByRole('button', { name: 'Preview board…
+       |                          ^
+    100|   await screen.findByText('This host does not share board previews.');
+    101|   readBoard.mockResolvedValueOnce({ status: 'forbidden' });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/17]⎯
+
+ FAIL  |renderer| src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx > renderer adapter binds the captured row context: a page main would accept for another board, row or project is refused
+TypeError: readCanvasBoardPage is not a function
+ ❯ src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx:117:16
+    115|   const query = { card: 'canvases' as const, source: 'selected-canvas-…
+    116|   window.clubhouse.annexClient.agentDetails = vi.fn().mockResolvedValu…
+    117|   expect(await readCanvasBoardPage('sat', 'a1', query, context)).toEqu…
+       |                ^
+    118|   for (const wrong of [board(0, { canvasId: 'board-9' }), board(0, { v…
+    119|     window.clubhouse.annexClient.agentDetails = vi.fn().mockResolvedVa…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/17]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > pinned satellite connections > local positive snapshot receipts > a late board denial still revokes the receipt it was read under
+TypeError: finish is not a function
+ ❯ src/main/services/annex-client.test.ts:2818:22
+    2816|           } }); return req;
+    2817|         }) as never);
+    2818|         return () => finish();
+       |                      ^
+    2819|       }
+    2820|
+ ❯ src/main/services/annex-client.test.ts:2875:37
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/17]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > chat across desktops (#2390) > sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/annex-client.test.ts:4593:49
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/17]⎯
+
+ FAIL  |main| src/main/services/annex-client.test.ts > annex-client > chat across desktops (#2390) > captures the board query once before any await: later mutation and getter re-reads change neither URL nor binding
+AssertionError: expected { status: 'error' } to deeply equal { status: 'ok', value: { …(16) } }
+
+- Expected
++ Received
+
+  {
+-   "status": "ok",
+-   "value": {
+-     "agentId": "a1",
+-     "cards": [
+-       {
+-         "id": "settings",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "settings",
+-       },
+-       {
+-         "id": "dispatcher",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "dispatcher",
+-       },
+-       {
+-         "id": "orchestrate",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "orchestrate",
+-       },
+-       {
+-         "id": "connections",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "connections",
+-       },
+-       {
+-         "id": "actions",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "actions",
+-       },
+-       {
+-         "id": "skills-mcp",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "skills-mcp",
+-       },
+-       {
+-         "id": "session",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "session",
+-       },
+-       {
+-         "id": "canvases",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "canvases",
+-       },
+-       {
+-         "id": "changes",
+-         "notes": [],
+-         "observedAt": 1,
+-         "omitted": 0,
+-         "requested": false,
+-         "rows": [],
+-         "state": "ok",
+-         "summary": "",
+-         "title": "changes",
+-       },
+-     ],
+-     "inventoryPage": {
+-       "agentId": "a1",
+-       "member": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+-       "notes": [],
+-       "observedAt": 1,
+-       "projectId": "p1",
+-       "reason": "limit",
+-       "selection": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+-       "source": "selected-canvas-board",
+-       "state": "unavailable",
+-       "version": 1,
+-     },
+-     "inventoryPageOnly": true,
+-     "inventoryPages": 1,
+-     "inventorySources": [
+-       "selected-canvas-memberships",
+-     ],
+-     "nativeSessionId": null,
+-     "providerId": "unknown",
+-     "readAt": 1,
+-     "readOnly": true,
+-     "running": false,
+-     "sessionId": null,
+-     "settings": null,
+-     "spawnedAt": null,
+-     "status": "sleeping",
+-     "version": 1,
+-   },
++   "status": "error",
+  }
+
+ ❯ src/main/services/annex-client.test.ts:4623:29
+    4621|       const pending = annexClient.requestAgentDetails(FP, 'a1', query …
+    4622|       Object.assign(query, { member: 'c'.repeat(64), selection: 'd'.re…
+    4623|       expect(await pending).toEqual({ status: 'ok', value }); expect(r…
+       |                             ^
+    4624|       let reads = 0; const getter = { card: 'canvases', source: 'selec…
+    4625|       answers.push({ status: 200, body: value });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/17]⎯
+
+ FAIL  |main| src/main/services/annex-server.test.ts > annex-server > remote full Details authority (#3733) > admits the selected board query (member only for the board source) under the same desktop GET and final revocation gate
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ src/main/services/annex-server.test.ts:1057:102
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/17]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected board read (#13 preview, mixed-version safe) > dispatches the board query to the board reader only, admitted through the advertised membership source
+Error: Cannot find module '/src/main/services/selected-canvas-board-page' imported from /private<red-worktree>/src/main/services/remote-agent-details.test.ts
+ ❯ src/main/services/remote-agent-details.test.ts:1407:20
+    1405|
+    1406|   it('dispatches the board query to the board reader only, admitted th…
+    1407|     const boards = await import('./selected-canvas-board-page'), membe…
+       |                    ^
+    1408|     const board = vi.spyOn(boards, 'readSelectedCanvasBoardPage').mock…
+    1409|     const membership = vi.spyOn(memberships, 'readSelectedCanvasMember…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/17]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected board read (#13 preview, mixed-version safe) > refuses the board for a Dispatcher (no membership source) before any board read
+Error: Cannot find module '/src/main/services/selected-canvas-board-page' imported from /private<red-worktree>/src/main/services/remote-agent-details.test.ts
+ ❯ src/main/services/remote-agent-details.test.ts:1423:20
+    1421|
+    1422|   it('refuses the board for a Dispatcher (no membership source) before…
+    1423|     const boards = await import('./selected-canvas-board-page');
+       |                    ^
+    1424|     const board = vi.spyOn(boards, 'readSelectedCanvasBoardPage');
+    1425|     m.dispatcher.mockReturnValue({ agentId: 'a1' });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/17]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected board read (#13 preview, mixed-version safe) > premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read
+Error: Cannot find module '/src/main/services/selected-canvas-board-page' imported from /private<red-worktree>/src/main/services/remote-agent-details.test.ts
+ ❯ src/main/services/remote-agent-details.test.ts:1433:20
+    1431|
+    1432|   it('premeasures the board against the remaining budget: oversize is …
+    1433|     const boards = await import('./selected-canvas-board-page');
+       |                    ^
+    1434|     const board = vi.spyOn(boards, 'readSelectedCanvasBoardPage').mock…
+    1435|     try {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/17]⎯
+
+ FAIL  |main| src/main/services/remote-quick-details.test.ts > read-only quick Details target and cards > refuses the selected board query like every inventory page (#13 preview)
+AssertionError: expected { status: 400, …(1) } to deeply equal { status: 400, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "unsupported_inventory_page",
++     "error": "invalid_details_query",
+    },
+    "status": 400,
+  }
+
+ ❯ src/main/services/remote-quick-details.test.ts:83:169
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/17]⎯
+
+
+ Test Files  8 failed (8)
+      Tests  15 failed | 1247 passed (1262)
+   Start at  10:20:09
+   Duration  81.37s (transform 5.29s, setup 237ms, import 6.02s, tests 87.02s, environment 848ms)
+

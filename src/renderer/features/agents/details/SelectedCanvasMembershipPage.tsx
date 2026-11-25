@@ -10,12 +10,13 @@ import { remoteDetailsAddress } from './remote-details-address';
 import { CanvasMembershipList } from './CanvasMembershipList';
 import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
 import { CardNote } from './DetailsCard';
+import { RemoteCanvasBoardPreview, type ReadCanvasBoardPage } from './RemoteCanvasBoardPreview';
 
 /** Adapter must preserve the enclosing Details agent identity and status before
  * extracting this page. It calls the existing authorized Details GET, never Open. */
 export type ReadCanvasMembershipPage = (satelliteId: string, agentId: string, query: RemoteCanvasMembershipQuery) => Promise<ControllerReadResult<RemoteCanvasMembershipPage>>;
-export function SelectedCanvasMembershipPage({ agent, supported, readable, freshnessKey, open, readPage, onRefused }: {
-  agent: Agent; supported: boolean; readable: boolean; freshnessKey: string; open: boolean; readPage: ReadCanvasMembershipPage; onRefused?(): void;
+export function SelectedCanvasMembershipPage({ agent, supported, readable, freshnessKey, open, readPage, readBoard, onRefused }: {
+  agent: Agent; supported: boolean; readable: boolean; freshnessKey: string; open: boolean; readPage: ReadCanvasMembershipPage; readBoard?: ReadCanvasBoardPage; onRefused?(): void;
 }) {
   const address = remoteDetailsAddress(agent.id), project = parseNamespacedId(agent.projectId);
   const host = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === address?.satelliteId));
@@ -58,7 +59,14 @@ export function SelectedCanvasMembershipPage({ agent, supported, readable, fresh
       {page?.state === 'unavailable' && <CardNote>Saved membership counts are unknown ({page.reason}). Existing summary evidence is separate; no empty inventory is inferred.</CardNote>}
       {page?.state === 'recorded' && <>
         <CardNote>{page.total} saved membership rows · {page.offset + (page.rows.length ? 1 : 0)}–{page.offset + page.rows.length} shown.</CardNote>
-        <CanvasMembershipList hits={page.rows.map(({ scope, canvasId, viewId, name }) => ({ scope, canvasId, viewId, name }))} onJump={(hit) => jumpToCanvas(agent, hit)} unavailable={(hit) => remoteCanvasJumpUnavailable(agent, hit)} />
+        <CanvasMembershipList hits={page.rows.map(({ scope, canvasId, viewId, name }) => ({ scope, canvasId, viewId, name }))} onJump={(hit) => jumpToCanvas(agent, hit)} unavailable={(hit) => remoteCanvasJumpUnavailable(agent, hit)}
+          secondary={readBoard && address && project ? (hit, index) => {
+            // Context captured from this page's own row before any request; never from a response or the snapshot.
+            const row = page.rows[index];
+            return row && row.scope === hit.scope && row.canvasId === hit.canvasId && row.viewId === hit.viewId ? <RemoteCanvasBoardPreview key={`${row.key}:${page.selection}`} agent={agent} satelliteId={address.satelliteId} hostAgentId={address.agentId}
+              context={{ agentId: address.agentId, projectId: project.agentId, member: row.key, selection: page.selection, scope: row.scope, canvasId: row.canvasId, viewId: row.viewId }}
+              hit={hit} fence={selected} readBoard={readBoard} onRefused={onRefused} /> : null;
+          } : undefined} />
         {!page.total && <CardNote>No membership is recorded in these saved Home and selected-project inventories. This does not inspect live unsaved membership.</CardNote>}
         {(page.offset > 0 || page.next !== null) && <div className="pl-[33px] flex gap-3 text-xs"><button type="button" disabled={!page.offset} onClick={() => void load(Math.max(0, page.offset - REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE), page.selection)}>Previous memberships</button><button type="button" disabled={page.next === null} onClick={() => void load(page.next!, page.selection)}>Next memberships</button></div>}
       </>}

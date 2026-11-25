@@ -1,0 +1,3 @@
+vitest exit=0
+tsc exit=0
+eslint exit=0

@@ -1,0 +1,40 @@
+import subprocess, hashlib, os, tempfile
+SH='src/shared/remote-canvas-board-page.test.ts'; HO='src/main/services/selected-canvas-board-page.test.ts'; PR='src/main/services/remote-agent-details.test.ts'
+RT='src/main/services/annex-server.test.ts'; CL='src/main/services/annex-client.test.ts'; RN='src/renderer/features/agents/details/RemoteCanvasBoardPreview.test.tsx'
+M=[
+ ("M1 shared: member view key need not equal member (wrong focus)","src/shared/remote-canvas-board-page.ts","members.length === 1 && members[0].key === value.member && members[0].type === 'agent'","members.length === 1 && members[0].type === 'agent'",[SH,RN]),
+ ("M2 shared: board context canvasId not bound (wrong board)","src/shared/remote-canvas-board-page.ts","|| context.canvasId !== undefined && value.canvasId !== context.canvasId","",[SH,RN]),
+ ("M3 renderer adapter: page validated without captured context","src/renderer/features/agents/details/RemoteCanvasesCard.tsx","|| !isRemoteCanvasBoardPage(page, context)) return { status: 'error' };","|| !isRemoteCanvasBoardPage(page)) return { status: 'error' };",[RN]),
+ ("M4 main client: member binding dropped","src/main/services/annex-client.ts","&& response.agentId === agentId && response.member === board.member","&& response.agentId === agentId",[CL]),
+ ("M5 main client: selection binding dropped","src/main/services/annex-client.ts","\n          && response.selection === board.selection ? { status: 'ok', value: res.body }","\n          ? { status: 'ok', value: res.body }",[CL]),
+ ("M6 main client: agent binding dropped","src/main/services/annex-client.ts","isRemoteCanvasBoardPage(response) && response.agentId === agentId && response.member","isRemoteCanvasBoardPage(response) && response.member",[CL]),
+ ("M7 producer: board advertised in inventorySources","src/main/services/remote-agent-details.ts","result.inventorySources = [REMOTE_ACTION_PAGE_SOURCE, ...(!dispatcher ? [REMOTE_CANVAS_MEMBERSHIP_SOURCE] : [])","result.inventorySources = [REMOTE_ACTION_PAGE_SOURCE, ...(!dispatcher ? [REMOTE_CANVAS_MEMBERSHIP_SOURCE, 'selected-canvas-board' as never] : [])",[PR]),
+ ("M8 producer: board admitted by its own (unadvertised) source","src/main/services/remote-agent-details.ts","if (board ? !boardSourceAdmitted(result.inventorySources) :","if (board ? !(result.inventorySources as string[]).includes(query.source) :",[PR]),
+ ("M9 producer: no premeasure","src/main/services/remote-agent-details.ts","result.inventoryPage = fitSelectedCanvasBoardPage(page, budget - envelope);","result.inventoryPage = page; void envelope;",[PR]),
+ ("M10 producer: board dispatched to membership reader","src/main/services/remote-agent-details.ts","(query.source === REMOTE_CANVAS_BOARD_SOURCE ? await readSelectedCanvasBoardPage(target, query,","(query.source === REMOTE_CANVAS_BOARD_SOURCE ? await readSelectedCanvasMembershipPage(target, query as never,",[PR]),
+ ("M11 route: member key accepted for every source","src/main/services/annex-server.ts","!(boardQuery ? ['card', 'source', 'member', 'selection'] : ['card', 'source', 'offset', 'projectOffset', 'selection']).includes(key)","!(boardQuery ? ['card', 'source', 'member', 'selection'] : ['card', 'source', 'offset', 'projectOffset', 'selection', 'member']).includes(key)",[RT]),
+ ("M12 renderer: settlement ignores the transition generation (ABA)","src/renderer/features/agents/details/RemoteCanvasBoardPreview.tsx","const settled = () => generation.current.value === started.generation && fenceRef.current === started.fence && previewable();","const settled = () => fenceRef.current === started.fence && previewable();",[RN]),
+ ("M13 host: other agents labelled by their names","src/main/services/selected-canvas-board-page.ts","const text = isMember ? label(target.agent.name, 'Agent') : type === 'agent' ? 'Agent'","const text = isMember ? label(target.agent.name, 'Agent') : type === 'agent' ? label(v.displayName, 'Agent')",[HO]),
+ ("M14 host: member view keyed by a fresh hash, not the row key","src/main/services/selected-canvas-board-page.ts","key: isMember ? member : hash([member, v.id])","key: hash([member, v.id])",[HO]),
+ ("M15 host: board over 500 views not limited","src/main/services/selected-canvas-board-page.ts","if (shown.length > REMOTE_CANVAS_BOARD_MAX_VIEWS) return unavailable('limit');","",[HO]),
+ ("M16 shared: isRemoteInventoryPage loses the board branch","src/shared/remote-inventory-page.ts","  if (record(value) && value.source === REMOTE_CANVAS_BOARD_SOURCE) return isRemoteCanvasBoardPage(value);\n","",[SH,PR,CL]),
+ ("M17 shared Details: board page bound to its own source, not membership","src/shared/remote-agent-details.ts","&& (v.inventoryPage.source === 'selected-canvas-board' ? !!v.inventorySources?.includes('selected-canvas-memberships') : !!v.inventorySources?.includes(v.inventoryPage.source))","&& !!v.inventorySources?.includes(v.inventoryPage.source)",[SH,PR,CL]),
+ ("M18 shared: isRemoteDetailsQuery loses the board branch","src/shared/remote-details-query.ts","  if ((value as { source?: unknown }).source === REMOTE_CANVAS_BOARD_SOURCE) return isRemoteCanvasBoardQuery(value);\n","",[SH,RT,CL]),
+ ("M19 hook: row pager uses the general inventory guard","src/renderer/features/agents/details/useSelectedInventoryPage.ts","isRemoteRowPagedInventoryPage(result.value.inventoryPage)","isRemoteInventoryPage(result.value.inventoryPage)",['src/renderer/features/agents/details']),
+]
+out=[]
+for name,f,a,b,tests in M:
+    src=open(f,'rb').read(); h=hashlib.sha256(src).hexdigest(); t=src.decode('utf-8')
+    if t.count(a)!=1: out.append(f"{name}: SKIPPED anchor count {t.count(a)}"); continue
+    nt=t.replace(a,b)
+    if name.startswith('M19'): nt=nt.replace("import { isRemoteRowPagedInventoryPage,","import { isRemoteInventoryPage, isRemoteRowPagedInventoryPage,")
+    open(f,'w',encoding='utf-8').write(nt)
+    try:
+        d=tempfile.mkdtemp(prefix='dlc-fresh.', dir=os.environ.get('TMPDIR','/tmp'))
+        r=subprocess.run(['npx','vitest','run','--no-cache','--maxWorkers=4',*tests],capture_output=True,text=True,env={**os.environ,'TMPDIR':d})
+        lines=[l.strip() for l in r.stdout.splitlines() if l.strip().startswith('×') or l.strip().startswith('Tests ')]
+    finally:
+        open(f,'wb').write(src)
+    ok=hashlib.sha256(open(f,'rb').read()).hexdigest()==h
+    out.append(f"{name} [{f}] exit={r.returncode} restore={'byte-identical' if ok else 'MISMATCH'} sha256={h}\n  "+"\n  ".join(lines[:6]))
+print("\n".join(out))

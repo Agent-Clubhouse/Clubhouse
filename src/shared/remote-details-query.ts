@@ -1,9 +1,11 @@
 /** Selected Connections and helper pages over the existing paired-desktop Details GET. */
 import { isRemoteInventoryQuery, type RemoteInventoryQuery } from './remote-inventory-page';
+import { isRemoteCanvasBoardQuery, REMOTE_CANVAS_BOARD_SOURCE, type RemoteCanvasBoardQuery } from './remote-canvas-board-page';
 export const REMOTE_CONNECTION_PAGE_SOURCES = ['outgoing', 'incoming', 'directions', 'sources', 'manual-dispatcher', 'helpers', 'dispatcher-auto', 'tool-records', 'canvas-records', 'zone-records', 'helper-parent', 'group-records'] as const;
 export type RemoteConnectionPageSource = typeof REMOTE_CONNECTION_PAGE_SOURCES[number];
 export interface RemoteConnectionDetailsQuery { card: 'connections' | 'orchestrate'; source: RemoteConnectionPageSource; offset?: number; projectOffset?: number }
-export type RemoteDetailsQuery = RemoteConnectionDetailsQuery | RemoteInventoryQuery;
+/** Transport union only. Row pagers take RemoteRowPagedInventoryQuery, which never includes the board. */
+export type RemoteDetailsQuery = RemoteConnectionDetailsQuery | RemoteInventoryQuery | RemoteCanvasBoardQuery;
 export interface RemoteConnectionPage {
   source: RemoteConnectionPageSource;
   offset: number;
@@ -16,6 +18,7 @@ export interface RemoteConnectionPage {
 const offset = (v: unknown) => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= 4096;
 export function isRemoteDetailsQuery(value: unknown): value is RemoteDetailsQuery {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if ((value as { source?: unknown }).source === REMOTE_CANVAS_BOARD_SOURCE) return isRemoteCanvasBoardQuery(value);
   if (['skills-mcp', 'actions', 'canvases'].includes((value as { card?: string }).card)) return isRemoteInventoryQuery(value);
   const v = value as RemoteConnectionDetailsQuery;
   return Object.keys(v).every((key) => ['card', 'source', 'offset', 'projectOffset'].includes(key)) && (v.card === 'connections' || v.card === 'orchestrate' && v.source === 'helpers' && !v.projectOffset && (v.offset ?? 0) % 8 === 0)
