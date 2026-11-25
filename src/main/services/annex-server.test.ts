@@ -2593,6 +2593,453 @@ describe('annex-server', () => {
       const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
       expect(body.terminal).toEqual({ version: 1, projectShell: true, agentShell: true, agentAttach: true, maxShellsPerConnection: 8, maxInputLength: 65536 });
     });
+
+    describe('shell reattach after a dropped connection (#3843)', () => {
+      const PHONE = TEST_CONTROLLER;
+      const OTHER_PHONE = { ...TEST_CONTROLLER, fingerprint: 'f0:f0:f0:f0', alias: 'Other Phone', tlsCertificateFingerprint: '99:88:77:66' };
+      const AUTH_PROMPT = '$ cloud-cli login\r\nOpen https://login.example.test/device?code=FAKE-1234 in a browser\r\nPaste the code here: ';
+      let peers: Map<string, typeof TEST_CONTROLLER>;
+
+      /**
+       * The PTY leaf as annex-server sees it, with real process identity: each spawn is a new
+       * process with a new pid, printing a synthetic login prompt and then waiting for input.
+       */
+      function fakeShells() {
+        const procs = new Map<string, { pid: number; screen: string; seq: number; inputs: string[]; cwd: string }>();
+        let nextPid = 4100;
+        let holdSnapshot: Promise<void> | null = null;
+        const onData = () => vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+        const onExit = () => vi.mocked(annexEventBus.onPtyExit).mock.calls.at(-1)![0];
+        const print = (id: string, text: string) => {
+          const p = procs.get(id)!;
+          p.screen += text;
+          p.seq += text.length;
+          onData()(id, text, p.seq);
+        };
+        vi.mocked(ptyManagerModule.spawnShell).mockImplementation((async (id: string, cwd: string, opts?: { beforeSpawn?: () => void }) => {
+          opts?.beforeSpawn?.();
+          procs.set(id, { pid: nextPid++, screen: '', seq: 0, inputs: [], cwd });
+          print(id, AUTH_PROMPT);
+        }) as never);
+        vi.mocked(ptyManagerModule.isRunning).mockImplementation((id) => procs.has(id));
+        vi.mocked(ptyManagerModule.killShell).mockImplementation((id) => procs.delete(id));
+        vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => procs.get(id)?.cwd);
+        vi.mocked(ptyManagerModule.write).mockImplementation((id, data) => { procs.get(id)?.inputs.push(data); });
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockImplementation(async (id) => {
+          if (holdSnapshot) await holdSnapshot;
+          const p = procs.get(id);
+          return { data: p?.screen ?? '', seq: p?.seq ?? 0, cols: 120, rows: 30 };
+        });
+        return {
+          procs,
+          print,
+          exit: (id: string, code: number) => { procs.delete(id); onExit()(id, code); },
+          /** Holds every snapshot read until the returned release is called. */
+          hold() { let release!: () => void; holdSnapshot = new Promise<void>((r) => { release = r; }); return () => { holdSnapshot = null; release(); }; },
+        };
+      }
+
+      async function connectAs(peer: { fingerprint: string; tlsCertificateFingerprint: string }) {
+        const { EventEmitter } = await import('events');
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
+        annexServer._testing.registerPeerSocket(ws as never, peer.fingerprint, peer.tlsCertificateFingerprint);
+        annexServer._testing.wss!.emit('connection', ws);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        ws.send.mockClear();
+        return ws;
+      }
+
+      type Sock = Awaited<ReturnType<typeof connectAs>>;
+      const drop = (ws: Sock, code = 1006) => { ws.readyState = 3; ws.emit('close', code, Buffer.from('')); };
+      const frame = (type: string, payload: object) => JSON.stringify({ type, payload });
+
+      async function reattach(ws: Sock, payload: object) {
+        ws.send.mockClear();
+        ws.emit('message', frame('pty:reattach-shell', payload));
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        const reply = sent(ws).at(-1);
+        ws.send.mockClear();
+        return reply;
+      }
+      const refusal = (code: string, sessionId: string, extra: object = {}) =>
+        ({ type: 'error', payload: { message: code, code, op: 'pty:reattach-shell', sessionId, ...extra } });
+
+      // Tolerant of a build without reattach, so the fail-before run fails on behaviour, not setup.
+      const reattachState = () => annexServer._testing as Partial<typeof annexServer._testing>;
+      beforeEach(() => {
+        reattachState().detachedShells?.clear();
+        reattachState().shellTombstones?.clear();
+        peers = new Map([[PHONE.fingerprint, { ...PHONE }], [OTHER_PHONE.fingerprint, { ...OTHER_PHONE }]]);
+        vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => peers.get(fp) as never);
+        vi.mocked(annexPeers.removePeer).mockImplementation((fp: string) => peers.delete(fp));
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+        for (const d of reattachState().detachedShells?.values() ?? []) clearTimeout(d.timer);
+        reattachState().detachedShells?.clear();
+      });
+
+      it('advertises shellReattach version 1 with its grace, top level, terminal unchanged', async () => {
+        const { port, token } = await startAndPair();
+        const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+        expect(body.shellReattach).toEqual({ version: 1, graceSeconds: 300 });
+        expect(body.terminal).toEqual({ version: 1, projectShell: true, agentShell: true, agentAttach: true, maxShellsPerConnection: 8, maxInputLength: 65536 });
+      });
+
+      it('PROOF: a login prompt survives the phone leaving for the browser; the same PID takes the pasted code', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const before = await connectAs(PHONE);
+        expect(await spawn(before, { sessionId: 'login', projectId: 'p' })).toEqual({ type: 'pty:spawn-shell:ack', payload: { sessionId: 'login', cwd: '/project' } });
+        const pid = shells.procs.get('login')!.pid;
+        // The phone backgrounds to open the URL: its connection drops.
+        drop(before);
+        expect(ptyManagerModule.killShell).not.toHaveBeenCalled();
+        expect(annexServer._testing.detachedShells.has('login')).toBe(true);
+        // Output while it's away goes nowhere live: not to any socket, not to replay.
+        const bystander = await connectAs(OTHER_PHONE);
+        const replaySeq = _eventReplay.getLastSeq();
+        shells.print('login', '\r\n(waiting...)');
+        expect(bystander.send).not.toHaveBeenCalled();
+        expect(_eventReplay.getLastSeq()).toBe(replaySeq);
+
+        const after = await connectAs(PHONE);
+        const ack = await reattach(after, { sessionId: 'login', cols: 80, rows: 40 });
+        expect(ack).toEqual({ type: 'pty:reattach-shell:ack', payload: {
+          sessionId: 'login', cwd: '/project', buffer: AUTH_PROMPT + '\r\n(waiting...)', outputSeq: shells.procs.get('login')!.seq, cols: 120, rows: 30,
+        } });
+        // The same process, still waiting for input, never respawned.
+        expect(shells.procs.get('login')).toMatchObject({ pid, inputs: [] });
+        expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1);
+        expect(ptyManagerModule.resize).toHaveBeenCalledWith('login', 80, 40);
+        // The synthetic paste reaches that process, and its output comes back to the new socket only.
+        after.emit('message', frame('pty:input', { agentId: 'login', data: 'FAKE-1234\r' }));
+        expect(shells.procs.get('login')).toMatchObject({ pid, inputs: ['FAKE-1234\r'] });
+        shells.print('login', '\r\nLogged in.');
+        expect(sent(after)).toEqual([{ type: 'pty:data', payload: { agentId: 'login', data: '\r\nLogged in.', outputSeq: shells.procs.get('login')!.seq } }]);
+        expect(bystander.send).not.toHaveBeenCalled();
+        expect(annexServer._testing.shellOwners.get('login')).toBe(after);
+      });
+
+      it('answers every non-owner with one indistinguishable session_not_found', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const owner = await connectAs(PHONE);
+        await spawn(owner, { sessionId: 'live', projectId: 'p' });
+        await spawn(owner, { sessionId: 'parked', projectId: 'p' });
+        const second = await connectAs(PHONE);
+        await spawn(second, { sessionId: 'kept', projectId: 'p' });
+        drop(owner);
+        // A desktop terminal and an agent PTY: running, nobody's shell over Annex.
+        shells.procs.set('desk-term', { pid: 1, screen: 'desk', seq: 4, inputs: [], cwd: '/project' });
+        shells.procs.set('agent-pty', { pid: 2, screen: 'agent', seq: 5, inputs: [], cwd: '/project' });
+        shells.procs.set('expired', { pid: 3, screen: '', seq: 0, inputs: [], cwd: '/project' });
+        annexServer._testing.shellTombstones.set(`${PHONE.fingerprint}\nexpired`, { device: { fingerprint: PHONE.fingerprint, pin: PHONE.tlsCertificateFingerprint }, code: 'session_expired', at: Date.now() });
+        shells.procs.delete('expired');
+
+        const other = await connectAs(OTHER_PHONE);
+        // The same device re-paired with a new certificate is not the same device.
+        peers.set(PHONE.fingerprint, { ...PHONE, tlsCertificateFingerprint: 'NE:W0:CE:RT' });
+        const repaired = await connectAs({ fingerprint: PHONE.fingerprint, tlsCertificateFingerprint: 'NE:W0:CE:RT' });
+        for (const ws of [other, repaired]) {
+          for (const id of ['parked', 'kept', 'desk-term', 'agent-pty', 'expired', 'never-existed']) {
+            expect(await reattach(ws, { sessionId: id })).toEqual(refusal('session_not_found', id));
+          }
+        }
+        expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(3);
+        expect(annexServer._testing.detachedShells.has('parked')).toBe(true);
+        expect(annexServer._testing.shellOwners.get('kept')).toBe(second);
+        expect(shells.procs.get('desk-term')!.inputs).toEqual([]);
+      });
+
+      it('never spawns: an unknown id, a lost spawn ack, an expiry and an exit are each told honestly', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const ws = await connectAs(PHONE);
+        // A spawn whose ack never went out (the socket closed as it started) is not the phone's to reattach.
+        let finish!: () => void;
+        const realSpawn = vi.mocked(ptyManagerModule.spawnShell).getMockImplementation()!;
+        vi.mocked(ptyManagerModule.spawnShell).mockImplementationOnce(async (...args) => { await new Promise<void>((r) => { finish = r; }); return realSpawn(...args); });
+        ws.emit('message', frame('pty:spawn-shell', { sessionId: 'lost-ack', projectId: 'p' }));
+        await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalled());
+        const a = await connectAs(PHONE);
+        await spawn(a, { sessionId: 'ttl', projectId: 'p' });
+        await spawn(a, { sessionId: 'exits', projectId: 'p' });
+        drop(ws);
+        finish();
+        await vi.waitFor(() => expect(vi.mocked(ptyManagerModule.spawnShell).mock.settledResults[0]?.type).toBe('rejected'));
+        expect(shells.procs.has('lost-ack')).toBe(false);
+        expect(annexServer._testing.detachedShells.has('lost-ack')).toBe(false);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        drop(a);
+        shells.exit('exits', 130);
+        expect(annexServer._testing.detachedShells.has('exits')).toBe(false);
+        vi.advanceTimersByTime(annexServer._testing.SHELL_REATTACH_GRACE_MS - 1);
+        expect(shells.procs.has('ttl')).toBe(true);
+        vi.advanceTimersByTime(1);
+        expect(shells.procs.has('ttl')).toBe(false);
+        vi.useRealTimers();
+
+        const b = await connectAs(PHONE);
+        const spawned = vi.mocked(ptyManagerModule.spawnShell).mock.calls.length;
+        expect(await reattach(b, { sessionId: 'never-existed' })).toEqual(refusal('session_not_found', 'never-existed'));
+        expect(await reattach(b, { sessionId: 'lost-ack' })).toEqual(refusal('session_not_found', 'lost-ack'));
+        expect(await reattach(b, { sessionId: 'ttl' })).toEqual(refusal('session_expired', 'ttl'));
+        expect(await reattach(b, { sessionId: 'exits' })).toEqual(refusal('session_exited', 'exits', { exitCode: 130 }));
+        expect(vi.mocked(ptyManagerModule.spawnShell).mock.calls.length).toBe(spawned);
+        expect(shells.procs.size).toBe(0);
+      });
+
+      it('two reattaches race: the later claim wins and the earlier is never acked', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const a = await connectAs(PHONE);
+        await spawn(a, { sessionId: 's', projectId: 'p' });
+        drop(a);
+        const b = await connectAs(PHONE);
+        const c = await connectAs(PHONE);
+        const release = shells.hold();
+        b.emit('message', frame('pty:reattach-shell', { sessionId: 's' }));
+        c.emit('message', frame('pty:reattach-shell', { sessionId: 's' }));
+        await vi.waitFor(() => expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledTimes(2));
+        release();
+        await vi.waitFor(() => expect(b.send).toHaveBeenCalled());
+        await vi.waitFor(() => expect(c.send).toHaveBeenCalled());
+        expect(sent(b)).toEqual([refusal('session_in_use', 's')]);
+        expect(sent(c)).toEqual([expect.objectContaining({ type: 'pty:reattach-shell:ack' })]);
+        expect(annexServer._testing.shellOwners.get('s')).toBe(c);
+        b.send.mockClear(); c.send.mockClear();
+        shells.print('s', 'more');
+        expect(b.send).not.toHaveBeenCalled();
+        expect(sent(c)).toHaveLength(1);
+      });
+
+      it('a superseded socket is told, gets no output, cannot type, resize or close, and its late close kills nothing', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const stale = await connectAs(PHONE);
+        await spawn(stale, { sessionId: 's', projectId: 'p' });
+        const pid = shells.procs.get('s')!.pid;
+        // The desktop hasn't seen the old connection drop yet (half-open) when the phone comes back.
+        const fresh = await connectAs(PHONE);
+        stale.send.mockClear();
+        expect(await reattach(fresh, { sessionId: 's' })).toMatchObject({ type: 'pty:reattach-shell:ack' });
+        expect(sent(stale)).toEqual([refusal('session_in_use', 's')]);
+        stale.send.mockClear();
+        shells.print('s', 'x');
+        expect(stale.send).not.toHaveBeenCalled();
+        stale.emit('message', frame('pty:input', { agentId: 's', data: 'evil\r' }));
+        stale.emit('message', frame('pty:resize', { agentId: 's', cols: 1, rows: 1 }));
+        stale.emit('message', frame('pty:close', { sessionId: 's' }));
+        expect(sent(stale).map((f) => f.payload.message)).toEqual(['session_not_found', 'session_not_found', 'session_not_found']);
+        expect(shells.procs.get('s')!.inputs).toEqual([]);
+        expect(ptyManagerModule.resize).not.toHaveBeenCalledWith('s', 1, 1);
+        // The stale socket finally closes: the reattached shell lives on.
+        drop(stale);
+        expect(shells.procs.get('s')!.pid).toBe(pid);
+        expect(annexServer._testing.shellOwners.get('s')).toBe(fresh);
+        expect(annexServer._testing.detachedShells.has('s')).toBe(false);
+      });
+
+      it('revocation after the claim but before the ack kills the shell and sends no ack', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const a = await connectAs(PHONE);
+        await spawn(a, { sessionId: 's', projectId: 'p' });
+        drop(a);
+        const b = await connectAs(PHONE);
+        const release = shells.hold();
+        b.emit('message', frame('pty:reattach-shell', { sessionId: 's' }));
+        await vi.waitFor(() => expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalled());
+        annexServer.revokePeer(PHONE.fingerprint);
+        release();
+        await vi.waitFor(() => expect(sent(b).some((f) => f.type === 'error')).toBe(true));
+        expect(sent(b).filter((f) => f.type === 'pty:reattach-shell:ack' || f.payload?.op === 'pty:reattach-shell')).toEqual([refusal('authorization_revoked', 's')]);
+        expect(shells.procs.has('s')).toBe(false);
+        expect(annexServer._testing.shellOwners.has('s')).toBe(false);
+        expect(annexServer._testing.detachedShells.has('s')).toBe(false);
+      });
+
+      it('a snapshot that cannot be sent rolls back to detached, alive, and a retry succeeds', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const a = await connectAs(PHONE);
+        await spawn(a, { sessionId: 's', projectId: 'p' });
+        drop(a);
+        const deadline = annexServer._testing.detachedShells.get('s')!.deadline;
+        const b = await connectAs(PHONE);
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValueOnce({ data: 'x'.repeat(9 * 1024 * 1024), seq: 1 });
+        expect(await reattach(b, { sessionId: 's' })).toEqual(refusal('terminal_unavailable', 's'));
+        expect(annexServer._testing.detachedShells.get('s')!.deadline).toBe(deadline);
+        expect(annexServer._testing.shellOwners.has('s')).toBe(false);
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockRejectedValueOnce(new Error('mirror gone'));
+        expect(await reattach(b, { sessionId: 's' })).toEqual(refusal('internal_error', 's'));
+        expect(annexServer._testing.detachedShells.has('s')).toBe(true);
+        expect(shells.procs.has('s')).toBe(true);
+        expect(await reattach(b, { sessionId: 's' })).toMatchObject({ type: 'pty:reattach-shell:ack', payload: { buffer: AUTH_PROMPT } });
+      });
+
+      it('ends detached shells at once on revoke, forget, desktop disconnect, revoked close, phone close and stop', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const park = async (id: string) => { const ws = await connectAs(PHONE); await spawn(ws, { sessionId: id, projectId: 'p' }); drop(ws); expect(annexServer._testing.detachedShells.has(id)).toBe(true); };
+
+        await park('by-phone-close');
+        const ws = await connectAs(PHONE);
+        ws.emit('message', frame('pty:close', { sessionId: 'by-phone-close' }));
+        expect(sent(ws)).toEqual([{ type: 'pty:close:ack', payload: { sessionId: 'by-phone-close' } }]);
+        expect(shells.procs.has('by-phone-close')).toBe(false);
+        // Another device can't close it.
+        await park('not-yours');
+        const other = await connectAs(OTHER_PHONE);
+        other.emit('message', frame('pty:close', { sessionId: 'not-yours' }));
+        expect(sent(other).at(-1)!.payload.message).toBe('session_not_found');
+        expect(shells.procs.has('not-yours')).toBe(true);
+
+        annexServer.disconnectPeer(PHONE.fingerprint);
+        expect(shells.procs.has('not-yours')).toBe(false);
+
+        await park('by-forget');
+        peers.delete(PHONE.fingerprint);
+        annexServer.closeSocketsUnlessController(PHONE.fingerprint);
+        expect(shells.procs.has('by-forget')).toBe(false);
+        peers.set(PHONE.fingerprint, { ...PHONE });
+
+        await park('by-revoke');
+        const live = await connectAs(PHONE);
+        await spawn(live, { sessionId: 'live-at-revoke', projectId: 'p' });
+        annexServer.revokePeer(PHONE.fingerprint);
+        expect(shells.procs.has('by-revoke')).toBe(false);
+        expect(shells.procs.has('live-at-revoke')).toBe(false);
+        peers.set(PHONE.fingerprint, { ...PHONE });
+
+        const closedRevoked = await connectAs(PHONE);
+        await spawn(closedRevoked, { sessionId: 'closed-4401', projectId: 'p' });
+        drop(closedRevoked, annexServer.PEER_REVOKED_CLOSE_CODE);
+        expect(shells.procs.has('closed-4401')).toBe(false);
+        expect(annexServer._testing.detachedShells.has('closed-4401')).toBe(false);
+
+        await park('by-stop');
+        annexServer.stop();
+        expect(shells.procs.has('by-stop')).toBe(false);
+        expect(annexServer._testing.detachedShells.size).toBe(0);
+      });
+
+      it('counts detached shells in the cap, and a same-device spawn replaces a detached one', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const a = await connectAs(PHONE);
+        for (let i = 0; i < 8; i++) await spawn(a, { sessionId: `s${i}`, projectId: 'p' });
+        drop(a);
+        expect(annexServer._testing.detachedShells.size).toBe(8);
+        const b = await connectAs(PHONE);
+        expect(await spawn(b, { sessionId: 'extra', projectId: 'p' })).toMatchObject({ payload: { message: 'too_many_shells', sessionId: 'extra' } });
+        // An old phone respawns its id after reconnecting: it gets a new shell in place of the detached one.
+        const oldPid = shells.procs.get('s0')!.pid;
+        expect(await spawn(b, { sessionId: 's0', projectId: 'p' })).toMatchObject({ type: 'pty:spawn-shell:ack' });
+        expect(shells.procs.get('s0')!.pid).not.toBe(oldPid);
+        expect(annexServer._testing.detachedShells.has('s0')).toBe(false);
+        // Another device's spawn over a detached id is refused, as over any shell of another controller.
+        const other = await connectAs(OTHER_PHONE);
+        expect(await spawn(other, { sessionId: 's1', projectId: 'p' })).toMatchObject({ payload: { message: 'session_in_use', sessionId: 's1' } });
+        expect(annexServer._testing.detachedShells.has('s1')).toBe(true);
+        // Input and attach can't reach a detached shell from anyone.
+        b.send.mockClear();
+        b.emit('message', frame('pty:input', { agentId: 's1', data: 'x' }));
+        expect(sent(b)).toEqual([{ type: 'error', payload: { message: 'session_not_found', op: 'pty:input', agentId: 's1' } }]);
+        expect(shells.procs.get('s1')!.inputs).toEqual([]);
+      });
+
+      it('evicts the oldest detached shell past the device cap, telling its reattach session_expired', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const a = await connectAs(PHONE);
+        for (let i = 0; i < 8; i++) await spawn(a, { sessionId: `a${i}`, projectId: 'p' });
+        const b = await connectAs(PHONE);
+        // b's own count is 0 live + 0 detached while a is still connected.
+        await spawn(b, { sessionId: 'b0', projectId: 'p' });
+        drop(a);
+        drop(b);
+        expect(annexServer._testing.detachedShells.size).toBe(8);
+        expect(shells.procs.has('a0')).toBe(false);
+        const c = await connectAs(PHONE);
+        expect(await reattach(c, { sessionId: 'a0' })).toEqual(refusal('session_expired', 'a0'));
+        expect(await reattach(c, { sessionId: 'b0' })).toMatchObject({ type: 'pty:reattach-shell:ack' });
+      });
+
+      it('a busy refusal carries the code and sessionId too', async () => {
+        fakeShells();
+        await startAndPair();
+        const ws = await connectAs(PHONE);
+        const waiting: Array<() => void> = [];
+        vi.mocked(projectStore.list).mockImplementation(() => new Promise((res) => { waiting.push(() => res([project] as never)); }) as never);
+        const release = () => { for (const r of waiting) r(); };
+        for (let i = 0; i < 16; i++) ws.emit('message', frame('pty:spawn-shell', { sessionId: `hold-${i}`, projectId: 'p' }));
+        ws.send.mockClear();
+        ws.emit('message', frame('pty:reattach-shell', { sessionId: 'r' }));
+        expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'busy', code: 'busy', op: 'pty:reattach-shell', sessionId: 'r' } }]);
+        release();
+      });
+
+      it('every reattach error has message === code, a stable code and the sessionId', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const errors: Array<{ type: string; payload: Record<string, unknown> }> = [];
+        const a = await connectAs(PHONE);
+        for (let i = 0; i < 4; i++) await spawn(a, { sessionId: `s${i}`, projectId: 'p' });
+        drop(a);
+        const b = await connectAs(PHONE);
+        errors.push(await reattach(b, { sessionId: 'x'.repeat(129) }));
+        errors.push(await reattach(b, { sessionId: 'nope' }));
+        annexServer._testing.shellTombstones.set(`${PHONE.fingerprint}\ngone`, { device: { fingerprint: PHONE.fingerprint, pin: PHONE.tlsCertificateFingerprint }, code: 'session_expired', at: Date.now() });
+        annexServer._testing.shellTombstones.set(`${PHONE.fingerprint}\nended`, { device: { fingerprint: PHONE.fingerprint, pin: PHONE.tlsCertificateFingerprint }, code: 'session_exited', exitCode: 1, at: Date.now() });
+        errors.push(await reattach(b, { sessionId: 'gone' }));
+        errors.push(await reattach(b, { sessionId: 'ended' }));
+        // P holds 4 live beside 4 detached; then Q's 4 detach too, and P is over the device's cap.
+        const p = await connectAs(PHONE);
+        for (let i = 0; i < 4; i++) expect(await spawn(p, { sessionId: `p${i}`, projectId: 'p' })).toMatchObject({ type: 'pty:spawn-shell:ack' });
+        const q = await connectAs(PHONE);
+        for (let i = 0; i < 4; i++) expect(await spawn(q, { sessionId: `q${i}`, projectId: 'p' })).toMatchObject({ type: 'pty:spawn-shell:ack' });
+        drop(q);
+        errors.push(await reattach(p, { sessionId: 's0' }));
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValueOnce({ data: 'x'.repeat(9 * 1024 * 1024), seq: 1 });
+        errors.push(await reattach(b, { sessionId: 's1' }));
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockRejectedValueOnce(new Error('boom'));
+        errors.push(await reattach(b, { sessionId: 's1' }));
+        const c = await connectAs(PHONE);
+        const release = shells.hold();
+        b.emit('message', frame('pty:reattach-shell', { sessionId: 's2' }));
+        c.emit('message', frame('pty:reattach-shell', { sessionId: 's2' }));
+        await vi.waitFor(() => expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledTimes(4));
+        b.send.mockClear();
+        release();
+        await vi.waitFor(() => expect(b.send).toHaveBeenCalled());
+        errors.push(sent(b).at(-1));
+        // Revoked after its claim (an unpaired socket's frames are refused before any handler runs).
+        const releaseAgain = shells.hold();
+        c.send.mockClear();
+        c.emit('message', frame('pty:reattach-shell', { sessionId: 's3' }));
+        await vi.waitFor(() => expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledTimes(5));
+        peers.delete(PHONE.fingerprint);
+        releaseAgain();
+        await vi.waitFor(() => expect(sent(c).some((f) => f.payload?.op === 'pty:reattach-shell')).toBe(true));
+        errors.push(sent(c).find((f) => f.payload?.op === 'pty:reattach-shell'));
+
+        expect(errors.map((e) => e.payload.code)).toEqual([
+          'invalid_session_id', 'session_not_found', 'session_expired', 'session_exited', 'too_many_shells',
+          'terminal_unavailable', 'internal_error', 'session_in_use', 'authorization_revoked',
+        ]);
+        for (const e of errors) {
+          expect(e.type).toBe('error');
+          expect(e.payload.op).toBe('pty:reattach-shell');
+          expect(e.payload.message).toBe(e.payload.code);
+          expect(e.payload.code).toMatch(/^[a-z_]+$/);
+          expect(typeof e.payload.sessionId).toBe('string');
+        }
+        expect(shells.procs.has('nope')).toBe(false);
+      });
+    });
   });
 
   describe('legacy remote stop safety (#2394)', () => {

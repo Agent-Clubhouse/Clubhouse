@@ -1497,8 +1497,47 @@ Capabilities: `terminal: {version:1, projectShell:true, agentShell:true, agentAt
 - `pty:input {agentId: sessionId, data}` and `pty:resize {agentId: sessionId, cols, rows}`. These are the existing messages, keyed by `agentId`. `data` is at most `maxInputLength` UTF-16 code units.
 - `pty:data {agentId: sessionId, data, outputSeq}` and `pty:exit {agentId: sessionId, exitCode}` go **only to the connection that spawned the shell**. They carry no top-level `seq` and are never kept for replay, so `replay` and `mobile:replay` never return shell output.
 - `pty:close {sessionId}` → `pty:close:ack {sessionId}`. The shell is killed, and no `pty:exit` follows.
-- Lifetime: a shell lives until it exits (`pty:exit`), the phone closes it, or **its connection drops**. Shells are not carried across reconnects; after one, spawn again. They also end when Annex stops.
-- At most `maxShellsPerConnection` shells per connection.
+- Lifetime: a shell lives until it exits (`pty:exit`), the phone closes it, or its connection drops. On a desktop with `shellReattach`, a dropped connection detaches its shells instead (see [Reattaching a shell](#reattaching-a-shell)). An older desktop ends them, so after a reconnect you spawn again. They also end when Annex stops.
+- At most `maxShellsPerConnection` shells per connection. On a desktop with `shellReattach`, the device's detached shells count too.
+
+### Reattaching a shell
+
+When a phone's connection drops, for example while it is in the background to open a login page, its shells keep running for a short grace, still waiting for input. The phone can take each one back: the same PTY and the same process, with its screen.
+
+**Capability:** top-level `shellReattach: {version:1, graceSeconds:300}`. `version` 1 is exactly this contract. Use reattach only when `version` is exactly 1 and `graceSeconds > 0`. A missing or malformed block, or any other version, means legacy behaviour: shells end with their connection. A future incompatible change gets a new version number. An older desktop has no `shellReattach` and silently ignores `pty:reattach-shell`, so never send it there.
+
+**While detached** (from the drop until a reattach, at most `graceSeconds`):
+- The shell is private. Its output goes to no connection and never into replay; the desktop keeps it in the PTY's own bounded buffer (2 MB) for the reattach snapshot.
+- `pty:input`, `pty:resize`, `clipboard:image` and `pty:attach` for it are refused, from any connection.
+- `pty:close {sessionId}` from the same device ends it without reattaching (`pty:close:ack`).
+- It ends right away when the device's pairing is removed or forgotten, when the desktop disconnects the device, when the connection was closed for a removed pairing (4401), when the process exits, when the grace runs out, and when Annex stops or the app quits.
+- A device keeps at most `maxShellsPerConnection` detached shells; past that, the oldest ends, and its reattach gets `session_expired`.
+
+**Reattach:** `pty:reattach-shell {sessionId, cols?, rows?}` → `pty:reattach-shell:ack {sessionId, cwd, buffer, outputSeq, cols?, rows?, scrollbackLines?}`.
+- Only the same paired device can reattach: the same pairing and the same certificate, still allowed, as for every control frame. A session id alone is never enough.
+- `cols`/`rows`, when given as positive integers, resize the PTY before the snapshot is taken.
+- `buffer`, `outputSeq`, `cols`, `rows` and `scrollbackLines` mean what they do in `pty:attach:ack`, with the same 8 MiB limit. Live output follows as `pty:data {agentId: sessionId, data, outputSeq}` to this connection only. Drop frames with `outputSeq <= ack.outputSeq`, and buffer frames that arrive before the ack.
+- A reattach never starts a shell. "New shell" after a refusal is a `pty:spawn-shell` with a **new** `sessionId`, sent only when the user asks. Never answer a refusal, including a code you don't know, by spawning.
+- The same device may also reattach a shell that another of its connections still holds (a connection the desktop hasn't seen drop yet). The later claim wins. The earlier connection gets `error {code:"session_in_use", op:"pty:reattach-shell", sessionId}`, then no more of the shell's output, and its input, resize and close for it are refused. Two reattaches racing for the same shell end with exactly one ack; the other gets `session_in_use`.
+- A spawn is never a reattach. `pty:spawn-shell` from the same device over its own detached shell replaces it with a new shell, as over its own attached one, so a phone that doesn't reattach still gets a working shell.
+- A spawn ack that never went out (the connection closed while the shell started) ends that shell, so a reattach for it gets `session_not_found`. An ack that went out but was lost in transit leaves the shell detached, and a reattach returns it.
+
+**Refusals:** `error {message, code, op:"pty:reattach-shell", sessionId}`. `message` and `code` are the same stable string. An older phone reads `message`, a newer one `code`. `sessionId` is the one sent; it is left out only when the request had no string id. Nothing changes on the desktop for a refusal, except as noted.
+
+| `code` | Meaning |
+| --- | --- |
+| `session_not_found` | No shell of this device has this id. That covers an id that was never created, one that was closed, a desktop restart, and every id that isn't this device's: another device's shell, a desktop terminal, an agent PTY. They all look the same. |
+| `session_expired` | This device's shell ended because the grace ran out. |
+| `session_exited` | This device's shell's process ended while detached. `exitCode` is included when known. |
+| `session_in_use` | This device's shell, claimed by a later reattach from the same device (also sent to a connection that held it when it is taken). |
+| `authorization_revoked` | The device was no longer allowed, before or during the reattach. If it had claimed the shell, the shell ends. |
+| `invalid_session_id` | `sessionId` missing, not a string, empty, or longer than 128 characters. |
+| `too_many_shells` | Taking it would put this connection over `maxShellsPerConnection`, counting the device's detached shells. |
+| `terminal_unavailable` | The screen can't fit in one frame. The shell stays detached, with the grace it had left; try again. |
+| `internal_error` | An unexpected desktop failure. The shell stays detached. |
+| `busy` | The connection has too many lifecycle requests in flight. Nothing was claimed; try again. |
+
+`session_expired` and `session_exited` are remembered for an hour (at most 256), and only for the device that owned the shell. After that, or after a desktop restart, the answer is `session_not_found`.
 
 ### Attaching to an agent's PTY
 
@@ -1528,6 +1567,8 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 | `agent_not_running` | `pty:attach` | No running PTY by that id, or the id is a shell rather than an agent. |
 | `terminal_unavailable` | `pty:attach` | The terminal's state is too large to send, even the screen alone. The agent keeps running. Don't retry automatically. |
 
+`pty:reattach-shell` refusals are listed under [Reattaching a shell](#reattaching-a-shell).
+
 ## Contract fixtures
 
 `test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, [chat links](#chat-links) in `chat-links.json`, frames over the limit, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, `grantRequests`, theme), the grant request events, the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
@@ -1546,6 +1587,8 @@ A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; 
 Grant requests (#3205) are in `snapshot-grant-requests.json` (a held Remove device call from the Dispatcher and a `request_grant` ask), `grant-request-events.json` (opened, and resolved with each outcome) and `commands/grant.answer.json`.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder), `dispatcher-group-chat.json` (one conversation as the Dispatcher's group chat and as an ordinary agent's, history and live), and `dispatcher-settings.json` ([Dispatcher settings](#dispatcher-settings)).
+
+`pty-reattach.json` is for [Reattaching a shell](#reattaching-a-shell): a reattach, a same-device takeover with the notice the earlier connection gets, and the `session_not_found`, `invalid_session_id`, `session_exited` and `session_expired` refusals.
 
 `commands/<type>.json` lists `cases` of `{name, request, response:{status, body}}`; `name` is `accepted…` or the error code. `commands/_common.json` has the refusals any command can get (`invalid_command`, `unsupported_version`, `epoch_mismatch`, `command_conflict`, `client_certificate_required`, `command_capacity`) and an identical retry. Not covered: `authorization_revoked`, `start_cancelled` and the upload `quota_exceeded` / `authorization_revoked`, which need races or a day of uploads; `/content` previews and git routes.
 
