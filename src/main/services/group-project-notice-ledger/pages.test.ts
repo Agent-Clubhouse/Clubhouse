@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -10,7 +10,37 @@ import { NOTICE_INDEX_PAGE_BYTES, NoticePageIndex, type NoticePageRoot, type Not
 
 const homes: string[] = [];
 async function home() { const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'q5-pages-')); homes.push(directory); return directory; }
-afterEach(async () => { await Promise.all(homes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true }))); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(homes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
+});
+/**
+ * Budget for the two bulk tests below, which write ~2000 immutable pages. The
+ * page writes are real (create, write, rename, read back); only the per-page
+ * fsync is skipped by `withoutPageFsync`, because on a hosted Windows runner an
+ * fsync costs several milliseconds and made these tests take 25-45s. Without
+ * the fsync the work is 1.5s locally, so this is headroom for slow file creation,
+ * not a blanket raise: it is the same 30s/15s these tests already had.
+ */
+const BULK_PAGE_WRITES_BUDGET_MS = 30000;
+const BULK_PAGE_UPDATES_BUDGET_MS = 15000;
+/**
+ * Make page-file fsync a counted no-op for one test. These tests are about page
+ * bounds, cache bounds and root immutability, not durability; durability (a
+ * failing or unsupported sync, file and directory barriers, simulated Windows
+ * descriptors) is covered by the other tests in this file, which keep the real
+ * fsync. Returns the number of syncs the fixture skipped so a test can prove the
+ * stub was actually on the write path rather than silently unused.
+ */
+async function withoutPageFsync(directory: string) {
+  const probe = await fs.open(path.join(directory, '.fsync-probe'), 'w');
+  const handlePrototype = Object.getPrototypeOf(probe) as { sync: () => Promise<void> };
+  await probe.close();
+  await fs.rm(path.join(directory, '.fsync-probe'));
+  let skipped = 0;
+  const spy = vi.spyOn(handlePrototype, 'sync').mockImplementation(async () => { skipped++; });
+  return { get skipped() { return skipped; }, restore: () => spy.mockRestore() };
+}
 const key = (index: number) => `synthetic-${String(index).padStart(8, '0')}`;
 async function temps(directory: string) {
   const result: string[] = [];
@@ -38,7 +68,10 @@ describe('lazy immutable notice index', () => {
     const directory = await home();
     let index = await NoticePageIndex.open(directory);
     let root: NoticePageRoot | undefined;
+    const fsync = await withoutPageFsync(directory);
     for (let n = 0; n < 1024; n++) root = await index.set(root, key(n), { postId: `${key(n)}-${'x'.repeat(180)}`, status: 'uncertain' });
+    fsync.restore(); // the barrier below keeps its real directory sync
+    expect(fsync.skipped).toBeGreaterThanOrEqual(1024);
     expect(index.cacheStats.pendingDirectoryCount).toBeLessThanOrEqual(258);
     await index.flush();
     expect(root?.count).toBe(1024);
@@ -60,11 +93,13 @@ describe('lazy immutable notice index', () => {
     for (const prefix of await fs.readdir(directory)) for (const name of await fs.readdir(path.join(directory, prefix))) {
       if (name.endsWith('.json')) expect((await fs.stat(path.join(directory, prefix, name))).size).toBeLessThanOrEqual(NOTICE_INDEX_PAGE_BYTES);
     }
-  }, 30000);
+  }, BULK_PAGE_WRITES_BUDGET_MS);
 
   it('preserves old roots through update/delete and returns no mutable cached details', async () => {
-    const index = await NoticePageIndex.open(await home());
+    const directory = await home();
+    const index = await NoticePageIndex.open(directory);
     let root: NoticePageRoot | undefined;
+    const fsync = await withoutPageFsync(directory);
     for (let n = 0; n < 100; n++) root = await index.set(root, key(n), { value: n });
     const original = root!;
     const changed = await index.set(root, key(50), { value: 5000 });
@@ -80,7 +115,9 @@ describe('lazy immutable notice index', () => {
     for (let n = 0; n < 100; n++) root = await index.delete(root, key(n));
     expect(root).toBeUndefined();
     expect(await index.get(original, key(0))).toEqual({ value: 0 });
-  }, 15000);
+    fsync.restore();
+    expect(fsync.skipped).toBeGreaterThan(0);
+  }, BULK_PAGE_UPDATES_BUDGET_MS);
 
   it('splits by bytes for adjacent large values rather than rejecting valid later work', async () => {
     const index = await NoticePageIndex.open(await home());
