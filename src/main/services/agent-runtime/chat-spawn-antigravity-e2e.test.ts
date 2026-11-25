@@ -7,7 +7,9 @@ import { ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
 
 vi.mock('../../util/shell', async (importActual) => ({
   ...await importActual<typeof import('../../util/shell')>(),
-  getShellEnvironment: vi.fn(() => ({ PATH: '/bin', HOME: '/home' })),
+  // The real environment: this test spawns a real child (the fake agy), which on
+  // Windows is a .cmd shim that needs PATH, ComSpec and SystemRoot.
+  getShellEnvironment: vi.fn(() => ({ ...process.env } as Record<string, string>)),
 }));
 // The registered default path: Chat on, no saved driver preference.
 vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: vi.fn(() => ({ mode: 'chat' })) }));
