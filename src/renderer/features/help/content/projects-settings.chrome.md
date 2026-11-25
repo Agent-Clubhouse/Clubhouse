@@ -4,7 +4,7 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 
 | Page | What's there |
 |------|--------------|
-| **General** | Name, icon, color, launch wrapper, blueprint bundle, and closing or resetting the project |
+| **General** | Name, icon, color, launch wrapper, and closing or resetting the project |
 | **Agents & providers** | The project's default agent provider, its agent environment and its legacy defaults |
 | **Notifications & alerts** | Badge and sound overrides for this project |
 | **Plugins** | Which plugins are on in this project |
@@ -17,7 +17,6 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 | **Icon** | Upload a PNG, JPG or SVG and crop it. Clear it to go back to the letter icon. |
 | **Color** | The project's color in the sidebar and title bar. |
 | **Launch wrapper** | Runs agents through a wrapper command, when your setup needs one. |
-| **Blueprint bundle** | **Export canvases** saves every canvas in the project as one bundle, for sharing or backup. |
 
 ## Agents & providers
 

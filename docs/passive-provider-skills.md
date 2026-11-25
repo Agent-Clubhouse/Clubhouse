@@ -4,7 +4,7 @@ Agent Details → Reported skills displays a snapshot of names that Claude repor
 
 ## Source and coverage
 
-The pinned `@anthropic-ai/claude-agent-sdk` 0.3.316 `SDKSystemMessage` defines `skills: string[]` on `system/init` (`sdk.d.ts`, around line 6266). The existing SDK stream drain and stream-json transport already receive this frame. `ClaudeNormalizer.mapSystem` retains its skill names; `ClaudeChatDriverSession.map` forwards root init metadata through the existing `session_info` event. No additional provider method is called. Normally this frame first arrives during an ordinary user-driven turn; an idle session can therefore remain unknown.
+The pinned `@anthropic-ai/claude-agent-sdk` 0.3.332 `SDKSystemMessage` defines `skills: string[]` on `system/init` (`sdk.d.ts`, around line 6773). The existing SDK stream drain and stream-json transport already receive this frame. `ClaudeNormalizer.mapSystem` retains its skill names; `ClaudeChatDriverSession.map` forwards root init metadata through the existing `session_info` event. No additional provider method is called. Normally this frame first arrives during an ordinary user-driven turn; an idle session can therefore remain unknown.
 
 Names alone do not identify filesystem scope, path, origin, version, or whether a skill was used/executed. This display is separate from configured/imported Clubhouse skills and the command menu. Commands, tools, MCP connections and plugin lists are not converted into skill identities. Mid-session command-list changes do not refresh this snapshot; a later root init can replace it. The card shows the report timestamp and shared/native session IDs. After the session ends it is labelled a last-session snapshot, not current readiness.
 

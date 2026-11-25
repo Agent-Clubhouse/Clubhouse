@@ -18,6 +18,7 @@ import { WireDragOverlay } from './WireDragOverlay';
 import { WireConfigPopover } from './WireConfigPopover';
 import { CanvasMinimap } from './CanvasMinimap';
 import { useWiring, type ZoneWireCallback } from './useWiring';
+import { useFileDropGuard } from './useFileDropGuard';
 import type { ZoneWireDefinition } from './zone-wire-store';
 import { expandZoneWires, diffZoneBindings, classifyZoneAdds, type ExpandedBinding } from './zone-wire-expansion';
 import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
@@ -26,10 +27,6 @@ import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import type { PluginAPI } from '../../../../shared/plugin-types';
-import { useBlueprintDrop } from './useBlueprintDrop';
-import { getProjectCanvasStore, useAppCanvasStore } from './main';
-import { applyParsedBlueprint, type ParseResult } from '../../../features/blueprints/parse-blueprint';
-import { blueprintParseContext } from '../../../features/blueprints/blueprint-parse-context';
 import { useViewportControls } from './useViewportControls';
 import { useBatchedViewportChange } from './canvas-viewport-batching';
 import { useSelectionManager } from './useSelectionManager';
@@ -270,6 +267,8 @@ export function CanvasWorkspace({
 }: CanvasWorkspaceProps) {
   const [deleteGroup, setDeleteGroup] = useState<{ id: string; name: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // No file drop target here: keep a dropped file from opening in the window.
+  useFileDropGuard(containerRef);
   const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange, viewport);
   const [isPanning, setIsPanning] = useState(false);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
@@ -371,39 +370,6 @@ export function CanvasWorkspace({
   const zoneContainment = useZoneContainment(views);
   const zones = useMemo(() => views.filter((v): v is ZoneCanvasView => v.type === 'zone'), [views]);
   const nonZoneViews = useMemo(() => views.filter((v) => v.type !== 'zone'), [views]);
-
-  // ── Blueprint drag-drop ──────────────────────────────────────────
-  const [blueprintError, setBlueprintError] = useState<string | null>(null);
-  const projectId = api.context.projectId ?? null;
-
-  const handleBlueprintImport = useCallback((result: ParseResult) => {
-    const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
-    // Same parse and wire plan as the gallery; only the store method differs.
-    // Returned so useBlueprintDrop reports a failure through onError.
-    return applyParsedBlueprint(result, {
-      insertCanvas: (canvas) => store.getState().insertCanvas(canvas),
-      addWireDefinition: (wire) => store.getState().addWireDefinition(wire),
-    });
-  }, [projectId]);
-
-  const handleBlueprintError = useCallback((message: string) => {
-    setBlueprintError(message);
-  }, []);
-
-  const getBlueprintParseContext = useCallback(() => blueprintParseContext(projectId ?? undefined), [projectId]);
-
-  const { isDragOver: isBlueprintDragOver } = useBlueprintDrop({
-    containerRef,
-    onImport: handleBlueprintImport,
-    onError: handleBlueprintError,
-    getParseContext: getBlueprintParseContext,
-  });
-
-  useEffect(() => {
-    if (!blueprintError) return;
-    const timer = setTimeout(() => setBlueprintError(null), 4000);
-    return () => clearTimeout(timer);
-  }, [blueprintError]);
 
   // ── Sleeping agent tracking (for wire dimming) ─────────────────
   const [sleepingLocalIds, setSleepingLocalIds] = useState<ReadonlySet<string>>(() => {
@@ -853,36 +819,6 @@ export function CanvasWorkspace({
             <p className="text-sm text-ctp-subtext0 font-medium">Session paused</p>
             <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
           </div>
-        </div>
-      )}
-
-      {/* Blueprint drag-drop overlay */}
-      {isBlueprintDragOver && (
-        <div
-          className="absolute inset-0 flex items-center justify-center bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/50 pointer-events-none"
-          style={{ zIndex: CANVAS_Z.blueprintDrop }}
-          data-testid="canvas-blueprint-drop-overlay"
-        >
-          <div className="text-center">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-ctp-accent/20 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-accent">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-            </div>
-            <p className="text-sm text-ctp-accent font-medium">Drop blueprint to import</p>
-          </div>
-        </div>
-      )}
-
-      {/* Blueprint error toast */}
-      {blueprintError && (
-        <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-canvas-overlay px-4 py-2 bg-ctp-error text-ctp-text text-sm rounded-lg shadow-lg"
-          data-testid="canvas-blueprint-error-toast"
-        >
-          {blueprintError}
         </div>
       )}
 

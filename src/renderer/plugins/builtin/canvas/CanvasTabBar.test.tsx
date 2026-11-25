@@ -37,50 +37,16 @@ describe('CanvasTabBar', () => {
     expect(screen.getByText('Canvas 2')).toBeDefined();
   });
 
-  it('renders + button that opens dropdown when onAddFromBlueprint is provided', () => {
-    const onAddFromBlueprint = vi.fn();
-    render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={onAddFromBlueprint} />);
-
-    const addBtn = screen.getByTestId('canvas-add-button');
-    fireEvent.click(addBtn);
-
-    expect(screen.getByTestId('canvas-add')).toBeDefined();
-    expect(screen.getByTestId('canvas-add-new')).toBeDefined();
-    expect(screen.getByTestId('canvas-add-from-blueprint')).toBeDefined();
-  });
-
-  it('"New canvas" menu item calls onAddCanvas', () => {
-    const onAddFromBlueprint = vi.fn();
-    render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={onAddFromBlueprint} />);
-
-    fireEvent.click(screen.getByTestId('canvas-add-button'));
-    fireEvent.click(screen.getByTestId('canvas-add-new'));
-
-    expect(defaultProps.onAddCanvas).toHaveBeenCalled();
-  });
-
-  it('"From blueprint" menu item calls onAddFromBlueprint', () => {
-    const onAddFromBlueprint = vi.fn();
-    render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={onAddFromBlueprint} />);
-
-    fireEvent.click(screen.getByTestId('canvas-add-button'));
-    fireEvent.click(screen.getByTestId('canvas-add-from-blueprint'));
-
-    expect(onAddFromBlueprint).toHaveBeenCalled();
-  });
-
-  it('+ button calls onAddCanvas directly when no onAddFromBlueprint', () => {
+  it('+ button calls onAddCanvas directly', () => {
     render(<CanvasTabBar {...defaultProps} />);
     fireEvent.click(screen.getByTestId('canvas-add-button'));
     expect(defaultProps.onAddCanvas).toHaveBeenCalled();
   });
 
   it('+ button is NOT inside the scrollable tabs container (overflow-x-auto regression guard)', () => {
-    // When overflow-x is set to auto, CSS computes overflow-y as auto too,
-    // clipping any absolutely-positioned dropdown that extends below the
-    // container. This test enforces that the + button lives in a sibling
-    // container so its dropdown is never clipped in real browsers.
-    render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={vi.fn()} />);
+    // When overflow-x is set to auto, the button would scroll away with the
+    // tabs. This test enforces that the + button lives in a sibling container.
+    render(<CanvasTabBar {...defaultProps} />);
     const addButton = screen.getByTestId('canvas-add-button');
     const tab = screen.getByTestId('canvas-tab-c1');
 
@@ -99,28 +65,6 @@ describe('CanvasTabBar', () => {
     expect(inactiveClose.getAttribute('tabindex')).toBe('-1');
     expect(inactiveClose.className).toContain('pointer-events-none');
     expect(inactiveClose.className).toContain('group-hover:pointer-events-auto');
-  });
-
-  it('right-click on tab shows context menu with Export as Blueprint', () => {
-    const onExportBlueprint = vi.fn();
-    render(<CanvasTabBar {...defaultProps} onExportBlueprint={onExportBlueprint} />);
-
-    const tab = screen.getByTestId('canvas-tab-c1');
-    fireEvent.contextMenu(tab);
-
-    expect(screen.getByTestId('canvas-tab-menu')).toBeDefined();
-    expect(screen.getByTestId('canvas-tab-menu-export-blueprint')).toBeDefined();
-  });
-
-  it('Export as Blueprint context menu item calls onExportBlueprint', () => {
-    const onExportBlueprint = vi.fn();
-    render(<CanvasTabBar {...defaultProps} onExportBlueprint={onExportBlueprint} />);
-
-    const tab = screen.getByTestId('canvas-tab-c1');
-    fireEvent.contextMenu(tab);
-    fireEvent.click(screen.getByTestId('canvas-tab-menu-export-blueprint'));
-
-    expect(onExportBlueprint).toHaveBeenCalledWith('c1');
   });
 });
 
@@ -146,49 +90,7 @@ describe('CanvasTabBar — + button integration with real store', () => {
     return container.querySelectorAll('[data-testid^="canvas-tab-canvas_"]');
   }
 
-  it('clicking + → New Canvas adds a canvas via the real store action', () => {
-    // Hoist the store outside React so re-renders don't recreate it and
-    // strict-mode double-effects can't influence the count we're asserting.
-    const store = createCanvasStore();
-    expect(store.getState().canvases).toHaveLength(1);
-
-    function Host() {
-      const [, force] = useState(0);
-      // Subscribe ONCE; strict-mode-safe via cleanup.
-      React.useEffect(() => store.subscribe(() => force((n) => n + 1)), []);
-      const state = store.getState();
-      return (
-        <CanvasTabBar
-          canvases={state.canvases}
-          activeCanvasId={state.activeCanvasId}
-          onSelectCanvas={() => undefined}
-          onAddCanvas={() => store.getState().addCanvas()}
-          onAddFromBlueprint={() => undefined}
-          onRemoveCanvas={() => undefined}
-          onRenameCanvas={() => undefined}
-        />
-      );
-    }
-
-    const { container } = render(<Host />);
-    expect(getRenderedTabs(container).length).toBe(1);
-
-    // Click + to open the dropdown (matches production: main.ts always
-    // wires both onAddCanvas and onAddFromBlueprint, so users always see
-    // the dropdown variant of the + button).
-    fireEvent.click(screen.getByTestId('canvas-add-button'));
-    expect(screen.getByTestId('canvas-add')).toBeDefined();
-
-    // Click "New Canvas" — this is what real users click
-    fireEvent.click(screen.getByTestId('canvas-add-new'));
-
-    // The store action must have fired exactly once and added one canvas
-    expect(store.getState().canvases).toHaveLength(2);
-    // And the DOM must reflect the new canvas tab
-    expect(getRenderedTabs(container).length).toBe(2);
-  });
-
-  it('clicking + (no dropdown variant) adds a canvas via the real store action', () => {
+  it('clicking + adds a canvas via the real store action', () => {
     const store = createCanvasStore();
     expect(store.getState().canvases).toHaveLength(1);
 

@@ -268,6 +268,24 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     expect(await collector.waitFor('session_started')).toMatchObject({ sessionId: 'resumed-session-9' });
   });
 
+  it('gives the Clubhouse MCP bridge to the session at the top level, on the command line', async () => {
+    const warnings: string[] = [];
+    const onWarning = (w: Error & { code?: string }) => { warnings.push(w.code ?? w.message); };
+    process.on('warning', onWarning);
+    try {
+      const clubhouse = { type: 'stdio', command: 'node', args: ['clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'agent-1' } };
+      await start({ mcpServers: { other: { type: 'stdio', command: 'other-mcp' }, clubhouse } });
+      const configs = argv().flatMap((x, i, a) => (x === '--mcp-config' ? [JSON.parse(a[i + 1])] : []));
+      expect(configs).toEqual([{ mcpServers: { other: { type: 'stdio', command: 'other-mcp' }, clubhouse } }]);
+      // Not inside an agent definition, where SDK 0.3.327+ would drop it.
+      expect(argv().some((x) => x === '--agents' || x.startsWith('--agents='))).toBe(false);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(warnings).not.toContain('CLAUDE_SDK_MCP_SERVERS_ARGV_DEPRECATED');
+    } finally {
+      process.off('warning', onWarning);
+    }
+  });
+
   it('close() ends the session and finishes the event stream', async () => {
     const t = await start();
     t.send({ text: 'hello' });

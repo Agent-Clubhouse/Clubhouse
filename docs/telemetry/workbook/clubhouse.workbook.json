@@ -776,7 +776,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.theme.changed\", \"clubhouse.popout.opened\", \"clubhouse.blueprint.exported\", \"clubhouse.blueprint.imported\")\n| extend detail = coalesce(tostring(customDimensions[\"clubhouse.theme.builtin_id\"]), tostring(customDimensions[\"clubhouse.popout.type\"]), tostring(customDimensions[\"clubhouse.outcome\"]))\n| summarize count = sum(itemCount), installs = dcount(user_Id) by name, detail\n| order by count desc",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.theme.changed\", \"clubhouse.popout.opened\")\n| extend detail = coalesce(tostring(customDimensions[\"clubhouse.theme.builtin_id\"]), tostring(customDimensions[\"clubhouse.popout.type\"]), tostring(customDimensions[\"clubhouse.outcome\"]))\n| summarize count = sum(itemCount), installs = dcount(user_Id) by name, detail\n| order by count desc",
               "size": 0,
               "title": "Feature use",
               "queryType": 0,

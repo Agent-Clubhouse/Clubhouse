@@ -98,9 +98,6 @@ test.describe('Canvas golden path', () => {
     const addBtn = window.locator('[data-testid="canvas-add-button"]');
     await expect(addBtn).toBeVisible({ timeout: 5_000 });
     await addBtn.click();
-    const addNew = window.locator('[data-testid="canvas-add-new"]');
-    await expect(addNew).toBeVisible({ timeout: 3_000 });
-    await addNew.click();
     await waitForEmptyCanvas(window);
   });
 

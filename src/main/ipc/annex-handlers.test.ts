@@ -1,7 +1,7 @@
 import { settingsChanged } from '../telemetry/feature-events';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), blueprintTransfer: vi.fn(), recordToolsList: vi.fn() }));
+vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), recordToolsList: vi.fn() }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },

@@ -28,6 +28,7 @@ import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
+import { installBrowserSessionGuard } from './browser-session-guard';
 import { installClientCertificatePolicy } from './client-certificate-policy';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { createBeforeQuitHandler } from './shutdown-guard';
@@ -38,6 +39,7 @@ import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
+import { cleanupRemovedBlueprintData } from './services/removed-blueprints-cleanup';
 import { removeSavedChatCliDenylist } from './services/retired-chat-cli-denylist';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
@@ -388,6 +390,9 @@ app.on('ready', async () => {
     return net.fetch(request as unknown as Request, { bypassCustomProtocolHandlers: true });
   });
 
+  // The Browser's webview session gets its own file:// gate (#3869).
+  installBrowserSessionGuard();
+
   // Serve plugin modules over the custom same-origin `clubhouse-plugin:` scheme
   // (Part B). The path is resolved + validated symlink-safely against the
   // plugins root; relative imports inside a module resolve back through this
@@ -465,6 +470,17 @@ app.on('ready', async () => {
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+  // Blueprints were removed: delete each project's saved `.clubhouse/blueprints/`
+  // once. Never throws; logs what it removed.
+  projectStore.list()
+    .then((projects) => cleanupRemovedBlueprintData({
+      projects,
+      markerFile: path.join(app.getPath('home'), '.clubhouse', 'removed-feature-cleanup', 'blueprints.json'),
+    }))
+    .catch((err) => {
+      appLog('core:startup', 'warn', `Blueprint data cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
   // The remote chat CLI kill switch is gone (#3515): drop the list older builds saved.

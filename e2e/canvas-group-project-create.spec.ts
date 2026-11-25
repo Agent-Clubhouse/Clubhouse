@@ -102,7 +102,6 @@ test('creating a group project advances from naming form to initialized card', a
   const firstId = await firstTab.getAttribute('data-testid');
   expect(firstId).toBeTruthy();
   await window.getByTestId('canvas-add-button').click();
-  await window.getByTestId('canvas-add-new').click();
   await expect(tabs).toHaveCount(2);
 
   await workspace.click({ button: 'right', position: { x: 220, y: 180 } });

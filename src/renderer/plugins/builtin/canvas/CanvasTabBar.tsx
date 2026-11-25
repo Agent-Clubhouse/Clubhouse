@@ -10,11 +10,9 @@ interface CanvasTabBarProps {
   activeCanvasId: string;
   onSelectCanvas: (canvasId: string) => void;
   onAddCanvas: () => void;
-  onAddFromBlueprint?: () => void;
   onRemoveCanvas: (canvasId: string) => void;
   onRenameCanvas: (canvasId: string, name: string) => void;
   onPopOutCanvas?: (canvasId: string, canvasName: string) => void;
-  onExportBlueprint?: (canvasId: string) => void;
 }
 
 const PlusIcon = (
@@ -33,19 +31,11 @@ export function CanvasTabBar({
   activeCanvasId,
   onSelectCanvas,
   onAddCanvas,
-  onAddFromBlueprint,
   onRemoveCanvas,
   onRenameCanvas,
   onPopOutCanvas,
-  onExportBlueprint,
 }: CanvasTabBarProps) {
-  const [addMenuAt, setAddMenuAt] = useState<{ x: number; y: number } | null>(null);
   const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
-
-  const addItems: MenuEntry[] = [
-    { id: 'new', label: 'New canvas', onSelect: onAddCanvas },
-    { id: 'from-blueprint', label: 'From blueprint', onSelect: () => onAddFromBlueprint?.() },
-  ];
 
   return (
     <div
@@ -64,31 +54,18 @@ export function CanvasTabBar({
             onRemove={() => onRemoveCanvas(canvas.id)}
             onRename={(name) => onRenameCanvas(canvas.id, name)}
             onPopOut={onPopOutCanvas ? () => onPopOutCanvas(canvas.id, canvas.name) : undefined}
-            onExportBlueprint={onExportBlueprint ? () => onExportBlueprint(canvas.id) : undefined}
           />
         ))}
       </div>
       <Button
         kind="ghost"
         icon={PlusIcon}
-        // Keep the menu's outside-click handler from closing it before this click toggles it.
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          if (!onAddFromBlueprint) { onAddCanvas(); return; }
-          if (addMenuAt) { setAddMenuAt(null); return; }
-          const rect = e.currentTarget.getBoundingClientRect();
-          setAddMenuAt({ x: rect.left, y: rect.bottom + 4 });
-        }}
-        aria-haspopup={onAddFromBlueprint ? 'menu' : undefined}
-        aria-expanded={onAddFromBlueprint ? !!addMenuAt : undefined}
+        onClick={onAddCanvas}
         className="ml-1.5"
         data-testid="canvas-add-button"
       >
         New canvas
       </Button>
-      {addMenuAt && (
-        <PopupMenu items={addItems} position={addMenuAt} label="New canvas" testId="canvas-add" onClose={() => setAddMenuAt(null)} />
-      )}
       <span className="flex-1" />
       {onPopOutCanvas && activeCanvas && (
         <Tooltip content="Pop out canvas">
@@ -115,10 +92,9 @@ interface CanvasTabProps {
   onRemove: () => void;
   onRename: (name: string) => void;
   onPopOut?: () => void;
-  onExportBlueprint?: () => void;
 }
 
-function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onPopOut, onExportBlueprint }: CanvasTabProps) {
+function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onPopOut }: CanvasTabProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(canvas.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -163,7 +139,6 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
   const menuItems: MenuEntry[] = [
     { id: 'rename', label: 'Rename', onSelect: startRename },
     ...(onPopOut ? [{ id: 'popout', label: 'Pop out', onSelect: onPopOut }] : []),
-    ...(onExportBlueprint ? [{ id: 'export-blueprint', label: 'Export as blueprint', onSelect: onExportBlueprint }] : []),
     ...(canClose ? [{ id: 'close', label: 'Close canvas', danger: true, onSelect: onRemove }] : []),
   ];
 
