@@ -72,6 +72,9 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   codex_app_server: { testedMax: '0.166.0' },
   // @microsoft/copilot-sdk 2.0.0 requires protocol 4; its paired runtime is
   // CLI 1.0.113. Deterministic boundary fixtures cover this pair and reject v3.
+  // SDK 2.0.2 (2026-11-25) is still protocol 4 and bundles runtime 1.0.115; it
+  // passed the same fixture replays, but no installed 1.0.115 handshake has run
+  // in the sandboxed QA boundary, so testedMax stays 1.0.113.
   // Older protocol-3 feature-probe evidence is historical, not v2 coverage.
   copilot_sdk: { minVersion: '1.0.113', testedMax: '1.0.113' },
   // Antigravity CLI (#3800). Floor 1.5.10 from the CLI changelog, verbatim entries in

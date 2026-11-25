@@ -697,7 +697,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
         expect(sdk.sessions).toHaveLength(0);
         const message = toasts()[0].message;
         expect(message).toContain(failureAt === 'probe' ? 'handshake failed' : 'failed to start');
-        expect(message).toContain('@microsoft/copilot-sdk 2.0.0 (protocol 4)');
+        expect(message).toContain('@microsoft/copilot-sdk 2.0.2 (protocol 4)');
         expect(message).toContain('Copilot CLI 1.0.113');
         expect(message).toContain('Update your installed Copilot CLI');
         expect(message).toContain('Protocol-3 CLIs require a Clubhouse build with @github/copilot-sdk 1.x');

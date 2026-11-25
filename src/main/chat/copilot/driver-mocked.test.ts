@@ -51,7 +51,7 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     process.env.COPILOT_SDK_DEFAULT_CONNECTION = 'inprocess';
     try {
       const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'installed-copilot', level: 'ask' });
-      expect(fake.clients).toEqual([{ runtime: { kind: 'tcp', host: '127.0.0.1', port: 12345 }, mode: 'coding-agent', observability: { logLevel: 'error' } }]);
+      expect(fake.clients).toEqual([{ runtime: { kind: 'tcp', host: '127.0.0.1', port: 12345 }, mode: 'coding-agent' }]);
       await session.close();
     } finally {
       if (prior === undefined) delete process.env.COPILOT_SDK_DEFAULT_CONNECTION;
