@@ -190,9 +190,6 @@ export const IPC = {
     LIST_GRANT_REQUESTS: 'agent:list-grant-requests',
     ANSWER_GRANT_REQUEST: 'agent:answer-grant-request',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
-    LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
-    CREATE_SKILL: 'agent:create-skill',
-    CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
     AGENT_WAKING: 'agent:agent-waking',
@@ -221,10 +218,6 @@ export const IPC = {
     READ_SKILL_CONTENT: 'agent:read-skill-content',
     WRITE_SKILL_CONTENT: 'agent:write-skill-content',
     DELETE_SKILL: 'agent:delete-skill',
-    READ_AGENT_TEMPLATE_CONTENT: 'agent:read-agent-template-content',
-    WRITE_AGENT_TEMPLATE_CONTENT: 'agent:write-agent-template-content',
-    DELETE_AGENT_TEMPLATE: 'agent:delete-agent-template',
-    LIST_AGENT_TEMPLATE_FILES: 'agent:list-agent-template-files',
     READ_MCP_RAW_JSON: 'agent:read-mcp-raw-json',
     GET_MCP_SHADOW_WARNING: 'agent:get-mcp-shadow-warning',
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
@@ -234,7 +227,6 @@ export const IPC = {
     /** A plugin's instructions and MCP servers as Managed Agent parts (#3245). */
     SET_PLUGIN_MANAGED_PARTS: 'agent:set-plugin-managed-parts',
     READ_PLUGIN_MANAGED_PARTS: 'agent:read-plugin-managed-parts',
-    GET_CONVENTIONS: 'agent:get-conventions',
     // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
     DELETE_SOURCE_SKILL: 'agent:delete-source-skill',
