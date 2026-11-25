@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, vi, type MockInstance } from 'vitest';
+import { afterEach, beforeEach, vi, type MockInstance } from 'vitest';
 
 /**
  * Make `FileHandle.sync` (the fsync behind every atomic write) a counted no-op.
@@ -24,9 +24,14 @@ export async function skipFsync(): Promise<{ readonly skipped: number; restore()
   return { get skipped() { return skipped; }, restore: () => spy.mockRestore() };
 }
 
-/** `skipFsync` for every test in the calling file (registers its own beforeAll/afterAll). */
+/**
+ * `skipFsync` for every test in the calling file. The stub is installed per test
+ * (`beforeEach`) and removed after it (`afterEach`), because the vitest config's
+ * `restoreMocks` undoes spies before each test, so a stub installed once in
+ * `beforeAll` would silently not apply.
+ */
 export function skipFsyncInThisFile(): void {
   let active: Awaited<ReturnType<typeof skipFsync>> | undefined;
-  beforeAll(async () => { active = await skipFsync(); });
-  afterAll(() => { active?.restore(); active = undefined; });
+  beforeEach(async () => { active = await skipFsync(); });
+  afterEach(() => { active?.restore(); active = undefined; });
 }
