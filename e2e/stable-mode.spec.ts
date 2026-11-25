@@ -1,4 +1,4 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -50,7 +50,8 @@ let fakes: FakeClis | undefined;
 const tempDirs: string[] = [];
 
 /** Close the app; if the quit is slow, attach the process tree and the app's log tails (#3850). */
-async function closeApp(target: LaunchedApp, testInfo: TestInfo): Promise<void> {
+async function closeApp(target: LaunchedApp): Promise<void> {
+  const testInfo = test.info();
   await closeWithDiagnostics(target.electronApp, {
     userDataDir: target.userDataDir,
     report: async (text) => {
@@ -60,8 +61,8 @@ async function closeApp(target: LaunchedApp, testInfo: TestInfo): Promise<void> 
   });
 }
 
-test.afterEach(async (_fixtures, testInfo) => {
-  if (app) await closeApp(app, testInfo).catch(() => {});
+test.afterEach(async () => {
+  if (app) await closeApp(app).catch(() => {});
   app = undefined;
   profile?.dispose();
   profile = undefined;
@@ -231,7 +232,7 @@ test('Preview off, fresh install: the new layout, and turning Preview on is the 
   await expectSavedPreview(profile, false);
 });
 
-test('Preview off, saved beta state with Chat off: the new layout, a terminal, and nothing saved changes', async (_fixtures, testInfo) => {
+test('Preview off, saved beta state with Chat off: the new layout, a terminal, and nothing saved changes', async () => {
   const cli = installIdleCli();
   const projectDir = makeProject();
   profile = createDisposableProfile({ label: 'stable-beta-state' });
@@ -263,7 +264,7 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   expect(argv).toContain(LAST_SESSION);
   expect(argv).not.toContain('stream-json');
 
-  await closeApp(app, testInfo);
+  await closeApp(app);
   app = undefined;
 
   expect(await readUntouched(profile)).toEqual(seeded);
@@ -384,7 +385,7 @@ test('Preview off: the Dispatcher wakes in chat', async () => {
   await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 20_000 });
 });
 
-test('saved beta state survives Preview on, then off, then on', async (_fixtures, testInfo) => {
+test('saved beta state survives Preview on, then off, then on', async () => {
   const cli = installIdleCli();
   const projectDir = makeProject();
   profile = createDisposableProfile({ label: 'stable-roundtrip' });
@@ -409,7 +410,7 @@ test('saved beta state survives Preview on, then off, then on', async (_fixtures
     const saved = JSON.parse(localStorage.getItem(key) ?? '{}');
     localStorage.setItem(key, JSON.stringify({ ...saved, sidebarWidth: width }));
   }, { key: CHROME_STORAGE_KEY, width: SAVED_SIDEBAR_WIDTH });
-  await closeApp(app, testInfo);
+  await closeApp(app);
   const savedFiles = [
     path.join(profile.userDataDir, 'experimental-settings.json'),
     path.join(profile.userDataDir, 'dispatcher-settings.json'),
@@ -430,7 +431,7 @@ test('saved beta state survives Preview on, then off, then on', async (_fixtures
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   expect(await wakesInChat(w, projectDir)).toBe(true);
   expect(await savedLayoutWidth(w)).toBe(SAVED_SIDEBAR_WIDTH);
-  await closeApp(app, testInfo);
+  await closeApp(app);
   expect(await Promise.all(savedFiles.map(readText))).toEqual(saved);
 
   // Preview on again: everything comes back.
