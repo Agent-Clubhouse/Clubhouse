@@ -3,6 +3,8 @@
  * preference (`clubhouse_view_prefs`, only ever `showHome`) and a saved
  * binding for the removed Go to Home shortcut. Both are dead; this removes them.
  */
+import { rendererLog } from '../plugins/renderer-logger';
+
 export const VIEW_PREFS_KEY = 'clubhouse_view_prefs';
 export const SHORTCUT_OVERRIDES_KEY = 'clubhouse_keyboard_shortcut_overrides';
 export const REMOVED_SHORTCUT_IDS: readonly string[] = ['go-home'];
@@ -34,5 +36,8 @@ export function removeHomeViewData(storage: Storage = localStorage): string[] {
       }
     }
   } catch { /* corrupt or unavailable: the shortcuts store ignores unknown ids anyway */ }
+  if (changed.length > 0) {
+    rendererLog('core:startup', 'info', 'Removed data left by the Home view', { meta: { keys: changed } });
+  }
   return changed;
 }

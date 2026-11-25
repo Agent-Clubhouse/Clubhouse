@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+const logs = vi.hoisted(() => [] as Array<{ level: string; msg: string; meta?: Record<string, unknown> }>);
+vi.mock('./log-service', () => ({
+  appLog: (_ns: string, level: string, msg: string, opts?: { meta?: Record<string, unknown> }) => { logs.push({ level, msg, meta: opts?.meta }); },
+}));
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
@@ -174,6 +179,7 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
     projectPath = path.join(root, 'project');
     kvDir = path.join(globalDir, '_system', 'kv');
     fs.mkdirSync(projectPath, { recursive: true });
+    logs.length = 0;
   });
 
   afterEach(async () => {
@@ -184,23 +190,27 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
     expect([...RETIRED_WORKSHOP_PLUGIN_IDS].sort()).toEqual(['bug-report', 'kanboss', 'lounge']);
   });
 
-  it('removes the installed plugin, its storage, its settings and per-project local data, keeping other plugins', async () => {
-    touch(path.join(communityDir, 'lounge', 'manifest.json'));
+  const manifest = (id: string) => JSON.stringify({ id, name: id, version: '1.0.0' });
+  const keptLogs = () => logs.filter((l) => l.msg.startsWith('Kept '));
+
+  it('removes installed copies, their storage, settings and per-project local data, keeping other plugins', async () => {
+    touch(path.join(communityDir, 'lounge', 'manifest.json'), manifest('lounge'));
     touch(path.join(globalDir, 'lounge', 'kv', 'lounge-state.json'), JSON.stringify({ customCircles: [{ id: 'c1' }] }));
     touch(path.join(kvDir, 'settings-app-lounge.json'));
-    touch(path.join(communityDir, 'bug-report', 'manifest.json'));
+    touch(path.join(communityDir, 'bug-report', 'manifest.json'), manifest('bug-report'));
     touch(path.join(kvDir, 'settings-proj_1-bug-report.json.bak'));
-    touch(path.join(communityDir, 'kanboss', 'manifest.json'));
+    // Found by its manifest id, whatever the folder is called.
+    touch(path.join(communityDir, 'kanboss-2.1.0', 'manifest.json'), manifest('kanboss'));
     touch(path.join(projectPath, '.clubhouse', 'plugin-data-local', 'kanboss', 'kv', 'boards.json'));
     touch(path.join(globalDir, '_system', 'retired-plugins-noted.json'), '["lounge"]');
     // Must survive
-    touch(path.join(communityDir, 'pomodoro', 'manifest.json'));
-    touch(path.join(communityDir, 'my-lounge', 'manifest.json'));
+    touch(path.join(communityDir, 'pomodoro', 'manifest.json'), manifest('pomodoro'));
+    touch(path.join(communityDir, 'my-lounge', 'manifest.json'), manifest('my-lounge'));
     touch(path.join(kvDir, 'settings-app-my-lounge.json'));
     touch(path.join(globalDir, 'pomodoro', 'kv', 'x.json'));
     touch(path.join(projectPath, '.clubhouse', 'plugin-data-local', 'github-issues', 'kv', 'x.json'));
 
-    const { removed, keptTracked } = await run();
+    const { removed, kept } = await run();
 
     const gone = [
       path.join(communityDir, 'lounge'),
@@ -208,12 +218,12 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
       path.join(kvDir, 'settings-app-lounge.json'),
       path.join(communityDir, 'bug-report'),
       path.join(kvDir, 'settings-proj_1-bug-report.json.bak'),
-      path.join(communityDir, 'kanboss'),
+      path.join(communityDir, 'kanboss-2.1.0'),
       path.join(projectPath, '.clubhouse', 'plugin-data-local', 'kanboss'),
       path.join(globalDir, '_system', 'retired-plugins-noted.json'),
     ];
     expect([...removed].sort()).toEqual([...gone].sort());
-    expect(keptTracked).toEqual([]);
+    expect(kept).toEqual([]);
     for (const p of gone) expect(fs.existsSync(p)).toBe(false);
     for (const p of [
       path.join(communityDir, 'pomodoro'),
@@ -222,27 +232,88 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
       path.join(globalDir, 'pomodoro'),
       path.join(projectPath, '.clubhouse', 'plugin-data-local', 'github-issues'),
     ]) expect(fs.existsSync(p)).toBe(true);
-    expect((await run()).removed).toEqual([]);
+  });
+
+  it('changes nothing on a re-run', async () => {
+    touch(path.join(communityDir, 'lounge', 'manifest.json'), manifest('lounge'));
+    touch(path.join(globalDir, 'lounge', 'kv', 'x.json'));
+    touch(path.join(boardDir(), 'kv', 'board.json'));
+    expect((await run()).removed).toHaveLength(3);
+
+    logs.length = 0;
+    expect(await run()).toEqual({ removed: [], kept: [] });
+    expect(logs).toEqual([]);
+  });
+
+  it('keeps a folder named for a retired plugin whose manifest declares another plugin, with its git checkout', async () => {
+    const fork = path.join(communityDir, 'kanboss');
+    touch(path.join(fork, 'manifest.json'), manifest('kanboss-next'));
+    touch(path.join(fork, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    touch(path.join(fork, 'src', 'uncommitted.ts'), 'work');
+
+    const { removed, kept } = await run();
+
+    expect(removed).toEqual([]);
+    expect(kept).toEqual([{ path: fork, reason: 'not-retired-plugin' }]);
+    expect(fs.existsSync(path.join(fork, 'src', 'uncommitted.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(fork, '.git', 'HEAD'))).toBe(true);
+  });
+
+  it('keeps an install of a retired plugin that holds a git checkout', async () => {
+    const clone = path.join(communityDir, 'kanboss');
+    touch(path.join(clone, 'manifest.json'), manifest('kanboss'));
+    touch(path.join(clone, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+
+    expect(await run()).toEqual({ removed: [], kept: [{ path: clone, reason: 'git-checkout' }] });
+    expect(fs.existsSync(path.join(clone, 'manifest.json'))).toBe(true);
+  });
+
+  it('without a readable manifest, removes a marketplace install named for a retired plugin and keeps any other folder', async () => {
+    touch(path.join(communityDir, 'lounge', '.marketplace'), '');
+    touch(path.join(communityDir, 'lounge', 'dist', 'main.js'), '');
+    touch(path.join(communityDir, 'bug-report', 'notes.txt'), 'mine');
+
+    const { removed, kept } = await run();
+
+    expect(removed).toEqual([path.join(communityDir, 'lounge')]);
+    expect(kept).toEqual([{ path: path.join(communityDir, 'bug-report'), reason: 'not-retired-plugin' }]);
+    expect(fs.existsSync(path.join(communityDir, 'bug-report', 'notes.txt'))).toBe(true);
   });
 
   it('removes a symlinked install without touching what it points at', async () => {
     const source = path.join(root, 'dev', 'kanboss');
-    touch(path.join(source, 'manifest.json'));
+    touch(path.join(source, 'manifest.json'), manifest('kanboss'));
+    touch(path.join(source, '.git', 'HEAD'), 'ref: refs/heads/main\n');
     fs.mkdirSync(communityDir, { recursive: true });
     fs.symlinkSync(source, path.join(communityDir, 'kanboss'), process.platform === 'win32' ? 'junction' : 'dir');
 
     expect((await run()).removed).toEqual([path.join(communityDir, 'kanboss')]);
     expect(fs.existsSync(path.join(communityDir, 'kanboss'))).toBe(false);
     expect(fs.existsSync(path.join(source, 'manifest.json'))).toBe(true);
+    expect(fs.existsSync(path.join(source, '.git', 'HEAD'))).toBe(true);
+  });
+
+  it('removes symlinked data folders as links, leaving their targets', async () => {
+    const elsewhere = path.join(root, 'elsewhere');
+    touch(path.join(elsewhere, 'global', 'keep.json'));
+    touch(path.join(elsewhere, 'boards', 'keep.json'));
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.mkdirSync(globalDir, { recursive: true });
+    fs.symlinkSync(path.join(elsewhere, 'global'), path.join(globalDir, 'lounge'), linkType);
+    fs.mkdirSync(path.dirname(boardDir()), { recursive: true });
+    fs.symlinkSync(path.join(elsewhere, 'boards'), boardDir(), linkType);
+
+    const { removed } = await run();
+
+    expect([...removed].sort()).toEqual([path.join(globalDir, 'lounge'), boardDir()].sort());
+    expect(fs.existsSync(path.join(elsewhere, 'global', 'keep.json'))).toBe(true);
+    expect(fs.existsSync(path.join(elsewhere, 'boards', 'keep.json'))).toBe(true);
   });
 
   it('deletes KanBoss project storage in a folder that is not a git repository', async () => {
     touch(path.join(boardDir(), 'kv', 'board.json'));
 
-    const { removed, keptTracked } = await run();
-
-    expect(removed).toEqual([boardDir()]);
-    expect(keptTracked).toEqual([]);
+    expect(await run()).toEqual({ removed: [boardDir()], kept: [] });
     expect(fs.existsSync(boardDir())).toBe(false);
   });
 
@@ -267,20 +338,50 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
     expect(fs.existsSync(boardDir())).toBe(false);
   });
 
-  it('leaves the whole KanBoss folder in place when the repository tracks any file in it', async () => {
+  it('keeps project folders the repository tracks, project and local storage alike, and logs each once', async () => {
     git(projectPath, 'init', '-q');
+    const localDir = path.join(projectPath, '.clubhouse', 'plugin-data-local', 'kanboss');
     touch(path.join(boardDir(), 'boards', 'b1.json'));
-    git(projectPath, 'add', '.');
+    touch(path.join(localDir, 'kv', 'state.json'));
+    git(projectPath, 'add', '-f', '.');
     git(projectPath, 'commit', '-q', '-m', 'boards');
     touch(path.join(boardDir(), 'kv', 'untracked.json'));
 
-    const { removed, keptTracked } = await run();
+    const first = await run();
 
-    expect(removed).toEqual([]);
-    expect(keptTracked).toEqual([boardDir()]);
+    expect(first.removed).toEqual([]);
+    expect(first.kept).toEqual(expect.arrayContaining([{ path: boardDir(), reason: 'tracked' }, { path: localDir, reason: 'tracked' }]));
+    expect(first.kept).toHaveLength(2);
     expect(fs.existsSync(path.join(boardDir(), 'boards', 'b1.json'))).toBe(true);
     expect(fs.existsSync(path.join(boardDir(), 'kv', 'untracked.json'))).toBe(true);
     expect(git(projectPath, 'status', '--porcelain', '--untracked-files=no').toString()).toBe('');
+    expect(keptLogs()).toHaveLength(2);
+
+    // A second launch keeps them again, quietly.
+    logs.length = 0;
+    expect((await run()).kept).toHaveLength(2);
+    expect(keptLogs()).toEqual([]);
+  });
+
+  it('keeps project storage when git can\'t say whether it is tracked', async () => {
+    // A worktree pointer to a repository that is gone: git fails, but not with "outside every repository".
+    touch(path.join(projectPath, '.git'), `gitdir: ${path.join(root, 'gone-repo')}\n`);
+    touch(path.join(boardDir(), 'kv', 'board.json'));
+
+    expect(await gitTrackedState(projectPath, '.clubhouse/plugin-data/kanboss')).toBe('unknown');
+    expect(await run()).toEqual({ removed: [], kept: [{ path: boardDir(), reason: 'unknown' }] });
+    expect(fs.existsSync(path.join(boardDir(), 'kv', 'board.json'))).toBe(true);
+  });
+
+  it('skips a project whose folder is gone', async () => {
+    touch(path.join(globalDir, 'kanboss', 'kv', 'x.json'));
+    const result = await cleanupRetiredPluginData({
+      globalPluginDataDir: globalDir,
+      communityPluginsDir: communityDir,
+      projects: [{ id: 'gone', path: path.join(root, 'no-such-project') }],
+    });
+    expect(result).toEqual({ removed: [path.join(globalDir, 'kanboss')], kept: [] });
+    expect(logs.filter((l) => l.level === 'warn')).toEqual([]);
   });
 
   it('reports a project folder outside a repository as untracked, and a tracked path as tracked', async () => {
