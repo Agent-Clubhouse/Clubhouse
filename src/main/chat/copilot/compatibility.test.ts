@@ -5,7 +5,7 @@ describe('Copilot protocol recovery', () => {
   it('tells older Clubhouse builds to update their embedded SDK for a protocol-4 CLI', () => {
     const message = copilotProtocolRecovery('SDK protocol version mismatch: SDK supports versions 3-3, but server reports version 4');
     expect(message).toContain('Update Clubhouse');
-    expect(message).toContain('@microsoft/copilot-sdk 2.0.0 (protocol 4)');
+    expect(message).toContain('@microsoft/copilot-sdk 2.0.2 (protocol 4)');
     expect(message).toContain('Installing an SDK globally does not change');
     expect(message).not.toMatch(/restart|login/i);
   });

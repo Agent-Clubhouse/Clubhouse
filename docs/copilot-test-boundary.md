@@ -6,7 +6,7 @@ The former `driver.test.ts` real-runtime describe and all of its assertions are 
 
 ## Protocol-v4 migration coverage (#3685)
 
-The application embeds exact-pinned `@microsoft/copilot-sdk` 2.0.0 and attaches explicitly over TCP to the installed CLI; the supported paired CLI is 1.0.113. A devDependency alias, `copilot-sdk-v3-fixture` (exact `@github/copilot-sdk` 1.0.29), is used only in replay tests to reproduce the original old-SDK/protocol-4 error. Neither that alias, the optional runtime packages nor FFI can enter production chunks or the packaged node_modules tree: the static production check and Forge afterCopy enforce those exclusions.
+The application embeds exact-pinned `@microsoft/copilot-sdk` 2.0.2 (2.0.0 when this section was written) and attaches explicitly over TCP to the installed CLI; the supported paired CLI is 1.0.113. A devDependency alias, `copilot-sdk-v3-fixture` (exact `@github/copilot-sdk` 1.0.29), is used only in replay tests to reproduce the original old-SDK/protocol-4 error. Neither that alias, the optional runtime packages nor FFI can enter production chunks or the packaged node_modules tree: the static production check and Forge afterCopy enforce those exclusions.
 
 `handshake` exercises v4 success with no session or prompt. `protocol-v4` makes the real old SDK reject `3-3` versus `4`; `protocol-v3` makes v2 reject `4-4` versus `3`. Replay covers failed probes and an executable changing from v4 at probe to v3 at start, verifies no child remains, and checks zero inherited credentials. Chat-spawn tests also prepopulate the actual probe cache and verify protocol-specific CLI fallback plus restored prepared config. The synthetic protocol-99 fixture remains.
 
