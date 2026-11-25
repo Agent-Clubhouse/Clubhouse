@@ -93,7 +93,7 @@ export const REPEATED_TURN_FAILURES = 3;
  * outage or no network, a model that isn't offered, or an empty response), so they
  * never count toward quarantine.
  */
-const NOT_THE_SESSION: ReadonlySet<string> = new Set(['auth_required', 'account_issue', 'rate_limited', 'rpc_timeout', 'service_unavailable', 'model_not_found', 'empty_response']);
+const NOT_THE_SESSION: ReadonlySet<string> = new Set(['auth_required', 'account_issue', 'hook_denied', 'rate_limited', 'rpc_timeout', 'service_unavailable', 'model_not_found', 'empty_response']);
 
 /** True when a turn error counts toward quarantining its session. */
 export function countsTowardQuarantine(code: string | undefined, willRetry?: boolean): boolean {

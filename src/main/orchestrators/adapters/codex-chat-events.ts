@@ -82,6 +82,19 @@ function decisionOutcome(decision: CommandExecutionApprovalDecision | FileChange
 }
 
 export class CodexChatEventMapper {
+  /**
+   * @param onUnhandled told once per name about a notification or item type with no chat mapping,
+   *   so schema drift after a Codex bump is visible in debug logs rather than silent.
+   */
+  constructor(private readonly onUnhandled?: (kind: 'notification' | 'item', name: string) => void) {}
+  private readonly unhandledSeen = new Set<string>();
+  private unhandled(kind: 'notification' | 'item', name: string): void {
+    const key = `${kind}:${name}`;
+    if (this.unhandledSeen.has(key)) return;
+    this.unhandledSeen.add(key);
+    this.onUnhandled?.(kind, name);
+  }
+
   private readonly planText = new Map<string, string>();
   private readonly openPermissions = new Map<string, OpenPermission>();
   private readonly openQuestions = new Map<string, RequestId>();
@@ -244,6 +257,7 @@ export class CodexChatEventMapper {
         return threadName ? [{ type: 'session_info', data: { title: threadName } }] : [];
       }
       default:
+        this.unhandled('notification', notification.method);
         return [];
     }
   }
@@ -540,6 +554,7 @@ export class CodexChatEventMapper {
       case 'contextCompaction':
         return [{ type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } }];
       default:
+        this.unhandled('item', item.type);
         return [];
     }
   }
@@ -646,6 +661,7 @@ export class CodexChatEventMapper {
       case 'exitedReviewMode':
         return item.review ? [{ type: 'agent_message', data: { messageId: item.id, text: item.review } }] : [];
       default:
+        this.unhandled('item', item.type);
         return [];
     }
   }
@@ -716,7 +732,7 @@ function stopReason(status: TurnStatus, error: TurnError | null): TurnStopReason
     default: {
       const native = codexErrorName(error?.codexErrorInfo ?? null);
       if (native === 'contextWindowExceeded') return 'max_tokens';
-      if (native === 'cyberPolicy' || native === 'misalignmentPolicyViolation') return 'refusal';
+      if (native === 'cyberPolicy' || native === 'bioPolicy' || native === 'misalignmentPolicyViolation') return 'refusal';
       return 'error';
     }
   }
@@ -739,9 +755,18 @@ export function codexErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
       return 'rate_limited';
     case 'unauthorized':
       return 'auth_required';
+    // A spend cap on the API key, project or organization (0.172): billing, not a login.
+    case 'apiKeySpendLimitExceeded':
+    case 'projectSpendLimitExceeded':
+    case 'organizationSpendLimitExceeded':
+      return 'account_issue';
     case 'cyberPolicy':
+    case 'bioPolicy':
     case 'misalignmentPolicyViolation':
       return 'refusal';
+    // A configured inference hook (the user's or their organization's) declined the request (0.172).
+    case 'inferenceHookDenied':
+      return 'hook_denied';
     case 'badRequest':
     case 'activeTurnNotSteerable':
       return 'protocol_error';
@@ -780,10 +805,10 @@ function connectionErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
 }
 
 function errorData(error: TurnError): { code: ChatErrorCode; message: string } {
-  return {
-    code: codexErrorCode(error.codexErrorInfo),
-    message: error.additionalDetails ? `${error.message} (${error.additionalDetails})` : error.message,
-  };
+  const code = codexErrorCode(error.codexErrorInfo);
+  const detail = error.additionalDetails ? `${error.message} (${error.additionalDetails})` : error.message;
+  // Codex's own text names the hook; say what kind of refusal it is in front of it.
+  return { code, message: code === 'hook_denied' ? `A configured Codex inference hook declined this request: ${detail}` : detail };
 }
 
 function rateLimitWindows(snapshot: RateLimitSnapshot): UsageLimit[] {

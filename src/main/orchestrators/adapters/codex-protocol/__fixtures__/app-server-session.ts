@@ -149,6 +149,7 @@ const userMessage: Item<'userMessage'> = {
 
 const agentMessage: Item<'agentMessage'> = {
   type: 'agentMessage',
+  moderation: null,
   id: 'item-agent-1',
   text: 'Running the tests.',
   phase: null,

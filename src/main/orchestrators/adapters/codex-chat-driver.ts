@@ -265,7 +265,8 @@ export class CodexChatDriver implements ChatDriver {
 class CodexChatSession implements ChatDriverSession {
   readonly capabilities = CODEX_CHAT_CAPABILITIES;
   private readonly queue = new AsyncQueue<ChatEventDraft>();
-  private readonly mapper = new CodexChatEventMapper();
+  // Read lazily: `log` is assigned in the constructor, after field initializers run.
+  private readonly mapper = new CodexChatEventMapper((kind, name) => this.log?.('debug', `[codex-chat] no chat mapping for ${kind} ${name}`, { kind, name }));
   private readonly client: CodexAppServerClient;
   private threadId: string | undefined;
   /** Events that arrive before session_started is emitted. */
