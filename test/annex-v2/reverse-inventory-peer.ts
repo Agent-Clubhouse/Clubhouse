@@ -324,6 +324,20 @@ export async function createInventoryPeer(alias: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return server.revokePeer(remote.fingerprint);
     },
+    /** Refusal matrix: this target marks the other desktop a pending member, then restores it. */
+    setRemotePending(pending: boolean) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const saved = peers.getPeer(remote.fingerprint);
+      if (!saved) throw new Error('The remote peer is not saved');
+      peers.addPeer({ ...saved, networkPending: pending || undefined });
+    },
+    /** Mixed versions: answer control hellos as a desktop without the control capability would. */
+    acceptOnlyFeatures(features: string[] | null) { control._setAcceptedFeaturesForTesting(features ?? undefined); },
+    async evictImageConfig() {
+      if (!imageFixture) throw new Error('The image fixture is not initialized');
+      agentConfig.clearAgentConfigCache(imageFixture.root);
+      return this.imageState();
+    },
     holdProviderSend() {
       if (heldProviderSend) throw new Error('An in-memory provider send is already held');
       let release!: () => void;

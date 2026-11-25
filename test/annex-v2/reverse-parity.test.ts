@@ -791,6 +791,12 @@ describe('full-server audit inventory over one A to B forward', () => {
       const received = who === 'A' ? await b.call('receivedImage') : await a.receivedImage();
       expect(received).toEqual({ bytes: size, digest: createHash('sha256').update(sizedPng(size)).digest('hex'), mimeType: 'image/png' });
     }, 15_000);
+    it('uploads with a cold durable config cache (#3750)', async () => {
+      expect(who === 'A' ? await b.call('evictImageConfig') : await a.evictImageConfig()).toMatchObject({ cached: false, configUnchanged: true });
+      const answer = await upload(64 * 1024);
+      expect(answer.status, Buffer.from(answer.body, 'base64').toString('utf8')).toBe(200);
+      expect(JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'))).toMatchObject({ version: 1, bytes: 64 * 1024, mimeType: 'image/png' });
+    });
     it('refuses one byte over the image cap without retiring the link or executing a send', async () => {
       const before = (await state()).sent;
       const answer = await upload(CHAT_IMAGE_MAX_BYTES + 1);
@@ -1009,6 +1015,58 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect((await status('B')).readiness?.acceptedHere).toBe(true);
     } finally { resume(); sent.mockRestore(); }
   }, 20_000);
+
+  const linkRestored = () => vi.waitFor(async () => {
+    expect((await status('A')).readiness.openedHere).toBe(true);
+    expect((await status('B')).readiness.acceptedHere).toBe(true);
+    expect((await status('A')).connected).toBe(true);
+    expect((await status('B')).connected).toBe(true);
+  }, { timeout: 15_000 });
+
+  // R16 B above is the matrix's grant refusal: the target's connection switches refuse the reverse caller's tool.
+  it('refusal matrix: a member the target marks pending gets no reverse request through, nothing runs and nothing is dialed', async () => {
+    const before = (await driverOnTarget('B')).sent.length;
+    const dials = (await status('B')).attempts.length;
+    const accepts = guard.accepts();
+    a.setRemotePending(true);
+    try {
+      await vi.waitFor(async () => { expect((await status('B')).connected).toBe(false); }, { timeout: 10_000 });
+      await expect(chat('B', { type: 'chat.send', text: 'a pending member must not run this', delivery: 'prompt' })).rejects.toThrow();
+      expect((await driverOnTarget('B')).sent).toHaveLength(before);
+      expect((await status('B')).attempts).toHaveLength(dials);
+      expect(guard.accepts()).toBe(accepts);
+    } finally {
+      a.setRemotePending(false);
+      a.retryControl();
+    }
+    await linkRestored();
+  }, 30_000);
+
+  it('mixed versions: a peer without the control capability falls back to direct, with no reverse attempt and no dial', async () => {
+    const dials = (await status('B')).attempts.length;
+    const accepts = guard.accepts();
+    await b.call('acceptOnlyFeatures', []);
+    try {
+      a.retryControl();
+      await vi.waitFor(async () => {
+        expect((await status('A')).readiness.openedHere).toBe(false);
+        expect((await status('B')).readiness.acceptedHere).toBe(false);
+        expect((await status('B')).connected).toBe(false);
+      }, { timeout: 10_000 });
+      // The older peer still serves the opener's direct /ws through the forward.
+      expect((await status('A')).direct).toBe(true);
+      expect(await page('A')).toMatchObject({ agentId: target('A').agentId });
+      // And it gets no reverse route: a read reports offline instead of trying one.
+      const read: Awaited<ReturnType<InventoryPeer['agentCall']>> = await b.call('agentCall', { tool: 'get_status', args: {} });
+      expect(JSON.parse(read.content[0].text ?? '{}')).toMatchObject({ status: 'offline' });
+      expect((await status('B')).attempts).toHaveLength(dials);
+      expect(guard.accepts()).toBe(accepts);
+    } finally {
+      await b.call('acceptOnlyFeatures', null);
+      a.retryControl();
+    }
+    await linkRestored();
+  }, 30_000);
 
   it('B/revocation: losing accepted authority stops the reverse consumer and its private shell independently of #3711', async () => {
     const sessionId = 'revoke-B';

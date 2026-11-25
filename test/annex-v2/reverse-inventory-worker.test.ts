@@ -17,6 +17,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'configure': return peer.configure(params as Parameters<typeof peer.configure>[0]);
         case 'status': return peer.status();
         case 'revokeRemote': return peer.revokeRemote();
+        case 'setRemotePending': return peer.setRemotePending(params as boolean);
+        case 'acceptOnlyFeatures': return peer.acceptOnlyFeatures(params as string[] | null);
         case 'holdProviderSend': return peer.holdProviderSend();
         case 'releaseProviderSend': return peer.releaseProviderSend();
         case 'wire': return peer.wire(params as Parameters<typeof peer.wire>[0]);
@@ -65,6 +67,7 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'handoffCancel': return peer.handoffCancel(params as string);
         case 'prepareImages': return peer.prepareImages();
         case 'imageState': return peer.imageState();
+        case 'evictImageConfig': return peer.evictImageConfig();
         case 'imageUpload': return peer.imageUpload(params as Parameters<typeof peer.imageUpload>[0]);
         case 'receivedImage': return peer.receivedImage();
         case 'prepareLifecycle': return peer.prepareLifecycle();
