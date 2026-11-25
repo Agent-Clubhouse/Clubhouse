@@ -223,8 +223,8 @@ describe('Antigravity ACP version policy (#3800)', () => {
   });
 
   it('leaves the other drivers\' ranges as they were', () => {
-    expect(TESTED_CLI_VERSIONS.claude_agent_sdk).toEqual({ testedMax: '2.1.332' });
-    expect(TESTED_CLI_VERSIONS.claude_stream_json).toEqual({ testedMax: '2.1.332' });
+    expect(TESTED_CLI_VERSIONS.claude_agent_sdk).toEqual({ testedMax: '2.1.316' });
+    expect(TESTED_CLI_VERSIONS.claude_stream_json).toEqual({ testedMax: '2.1.316' });
     expect(TESTED_CLI_VERSIONS.codex_app_server).toEqual({ testedMax: '0.166.0' });
     expect(TESTED_CLI_VERSIONS.copilot_sdk).toEqual({ minVersion: '1.0.113', testedMax: '1.0.113' });
   });
