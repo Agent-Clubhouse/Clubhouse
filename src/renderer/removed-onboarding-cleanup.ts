@@ -12,18 +12,24 @@ export const REMOVED_ONBOARDING_STORAGE_KEY = 'clubhouse_onboarding';
  * startup: once the key is gone it does nothing and logs nothing. Never throws.
  * Returns true when it deleted the key.
  */
-export function cleanupRemovedOnboardingState(storage: Pick<Storage, 'getItem' | 'removeItem'> = localStorage): boolean {
+export function cleanupRemovedOnboardingState(storage?: Pick<Storage, 'getItem' | 'removeItem'>): boolean {
   try {
-    if (storage.getItem(REMOVED_ONBOARDING_STORAGE_KEY) === null) return false;
-    storage.removeItem(REMOVED_ONBOARDING_STORAGE_KEY);
+    // Resolved in here: reading `localStorage` itself can throw.
+    const target = storage ?? localStorage;
+    if (target.getItem(REMOVED_ONBOARDING_STORAGE_KEY) === null) return false;
+    target.removeItem(REMOVED_ONBOARDING_STORAGE_KEY);
+  } catch (err) {
+    try {
+      rendererLog('core:startup', 'warn', 'Could not delete saved onboarding state', {
+        meta: { key: REMOVED_ONBOARDING_STORAGE_KEY, error: err instanceof Error ? err.message : String(err) },
+      });
+    } catch { /* logging must not make startup throw */ }
+    return false;
+  }
+  try {
     rendererLog('core:startup', 'info', 'Deleted saved onboarding state (the onboarding modal was removed)', {
       meta: { key: REMOVED_ONBOARDING_STORAGE_KEY },
     });
-    return true;
-  } catch (err) {
-    rendererLog('core:startup', 'warn', 'Could not delete saved onboarding state', {
-      meta: { key: REMOVED_ONBOARDING_STORAGE_KEY, error: err instanceof Error ? err.message : String(err) },
-    });
-    return false;
-  }
+  } catch { /* logging must not make startup throw */ }
+  return true;
 }

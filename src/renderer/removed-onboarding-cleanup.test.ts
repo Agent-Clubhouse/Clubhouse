@@ -58,4 +58,16 @@ describe('cleanupRemovedOnboardingState', () => {
     expect(storage.removeItem).toHaveBeenCalledWith('clubhouse_onboarding');
     expect(rendererLog).toHaveBeenCalledWith('core:startup', 'warn', expect.any(String), expect.anything());
   });
+
+  it('never throws even when logging itself fails', () => {
+    vi.mocked(rendererLog).mockImplementation(() => { throw new Error('logger down'); });
+    const storage = {
+      getItem: vi.fn(() => '{}'),
+      removeItem: vi.fn(() => { throw new Error('SecurityError'); }),
+    };
+    expect(() => cleanupRemovedOnboardingState(storage)).not.toThrow();
+    localStorage.setItem('clubhouse_onboarding', '{}');
+    expect(cleanupRemovedOnboardingState()).toBe(true);
+    expect(localStorage.getItem('clubhouse_onboarding')).toBeNull();
+  });
 });

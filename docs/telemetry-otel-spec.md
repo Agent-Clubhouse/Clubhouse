@@ -145,7 +145,7 @@ These are fine on local disk (the user's own machine) but they confirm the decis
 | A long-lived lifecycle that must not keep a span open for hours | **Short spans at the edges plus a duration metric**, linked by `agent.run.id_hash` | `agent.run` start/end events plus `clubhouse.agent.run.duration` |
 | High-frequency activity | **Counter or histogram** only | tool calls, PTY bytes, hook events, git status polls |
 | A discrete failure | **Exception record** (span event or log record with `exception.*`) with an `error.type` from a closed set | `update.download` integrity mismatch |
-| A discrete product event without duration | **Event log record**: a log record with `event.name`, which lands in App Insights `customEvents` | `settings.telemetry.enabled`, `onboarding.completed` |
+| A discrete product event without duration | **Event log record**: a log record with `event.name`, which lands in App Insights `customEvents` | `settings.telemetry.enabled`, `popout.opened` |
 | State at a moment in time | **Snapshot event** at startup and at most daily | `app.config_snapshot` with theme kind, project count, enabled built-ins |
 
 ### 3.2 Conventions
@@ -606,7 +606,7 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
 
-**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
+**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette and help topics are renderer call sites, owned by the refresh (§9.1).
 
 ### 4.16 Feedback (`framebriar/feedback-service.ts`, [#2309](https://github.com/Agent-Clubhouse/Clubhouse/issues/2309))
 
@@ -807,7 +807,7 @@ Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `
 | Plugins | `c.plugins.builtin_enabled` (CSV of built-in IDs), `c.plugins.community.count`, `c.marketplace.custom.count`, `c.plugins.external_enabled` |
 | Logging | `c.logging.enabled`, `c.logging.min_level` |
 | Notifications | notification booleans |
-| Other | `c.editor.bucket`, `c.onboarding.cohort` |
+| Other | `c.editor.bucket` |
 
 ### 5.5 Never sent (explicit list, enforced by §5.1 tests)
 
