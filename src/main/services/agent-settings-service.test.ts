@@ -40,7 +40,7 @@ import {
   readLaunchWrapper, readDefaultMcps,
   readProjectAgentDefaults, writeProjectAgentDefaults, projectSettingsMutationState, applyAgentDefaults,
   readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot,
-  readMcpConfigs, writeMcpConfigs,
+  readMcpConfigs,
   readSourceMissionContent,
   SettingsConventions,
 } from './agent-settings-service';
@@ -1071,57 +1071,5 @@ describe('readMcpConfigs', () => {
 
     const result = await readMcpConfigs(PROJECT);
     expect(result).toEqual(configs);
-  });
-});
-
-describe('writeMcpConfigs', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('persists configs and readMcpConfigs retrieves them', async () => {
-    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
-      defaults: {},
-      quickOverrides: {},
-    }));
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-
-    const configs = { 'mcp-x': { '--endpoint': 'https://example.com' } };
-    await writeMcpConfigs(PROJECT, configs);
-
-    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-    expect(written.mcpConfigs).toEqual(configs);
-  });
-
-  it('overwrites previous configs', async () => {
-    const oldConfigs = { 'mcp-x': { '--endpoint': 'https://old.example.com' } };
-    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
-      defaults: {},
-      quickOverrides: {},
-      mcpConfigs: oldConfigs,
-    }));
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-
-    const newConfigs = { 'mcp-y': { '--database': 'new-db' } };
-    await writeMcpConfigs(PROJECT, newConfigs);
-
-    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-    expect(written.mcpConfigs).toEqual(newConfigs);
-  });
-
-  it('removes mcpConfigs key when empty object is passed', async () => {
-    const existing = { 'mcp-x': { '--endpoint': 'https://example.com' } };
-    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
-      defaults: {},
-      quickOverrides: {},
-      mcpConfigs: existing,
-    }));
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-
-    await writeMcpConfigs(PROJECT, {});
-
-    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-    expect(written.mcpConfigs).toBeUndefined();
   });
 });

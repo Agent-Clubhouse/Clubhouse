@@ -20,7 +20,7 @@ import {
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import {
-  AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, forgetConnectionAgent, makeTwoWay,
+  AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, applyConnectionTools, connectAcrossMachines, forgetConnectionAgent, makeTwoWay,
   migrateAutomaticConnectionTools, readLocalDirectionTools, removeSourceAcrossMachines, removeUserLink, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
   _resetConnectionFileWarningForTesting,
 } from './connection-grants';
@@ -278,9 +278,9 @@ describe('connections with agents on other machines (#3064)', () => {
     await vi.waitFor(() => expect(toolsOf('a', `z@${FAR}`)).toEqual(['send_file']));
   });
 
-  it('removes both links, and the binding goes', async () => {
+  it('removes the user link in both directions, and the binding goes', async () => {
     await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
-    await disconnectAcrossMachines('a', `z@${FAR}`);
+    await removeSourceAcrossMachines('a', `z@${FAR}`, 'user_link');
     expect(getConnectionDirection(A, far)?.link).toBeFalsy();
     expect(getConnectionDirection(far, A)?.link).toBeFalsy();
     await vi.waitFor(() => expect(bindingManager.getBindingsForAgent('a').some((b) => b.targetId === `z@${FAR}`)).toBe(false));
@@ -316,7 +316,7 @@ describe('connections with agents on other machines (#3064)', () => {
     expect(deniedConnectionTools(far, A)).toEqual(['wake_agent']);
     await setToolsAcrossMachines('a', `z@${FAR}`, true, []);
     expect(deniedConnectionTools(A, far)).toEqual([]);
-    await disconnectAcrossMachines('a', `z@${FAR}`);
+    await removeSourceAcrossMachines('a', `z@${FAR}`, 'user_link');
     await expect(setToolsAcrossMachines('a', `z@${FAR}`, true, [])).rejects.toThrow('not connected');
   });
 

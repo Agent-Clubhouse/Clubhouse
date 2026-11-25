@@ -279,7 +279,6 @@ vi.mock('../services/git-service', () => ({
   push: vi.fn(),
   pull: vi.fn(),
   diff: vi.fn(() => ''),
-  createBranch: vi.fn(),
   stash: vi.fn(),
   stashPop: vi.fn(),
 }));

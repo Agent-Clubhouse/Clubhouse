@@ -14,7 +14,7 @@ import { backupUnreadableFile, createSettingsStore, replaceFile } from './settin
 import {
   projectSettingsMutationState,
   updateProjectAgentDefaults, writeDefaultMcps, writeLaunchWrapper, writeMcpCatalog,
-  writeMcpConfigs, writeProjectAgentDefaults, writeWrapperCatalogSnapshot,
+  writeProjectAgentDefaults, writeWrapperCatalogSnapshot,
 } from './agent-settings-service';
 
 beforeEach(() => {
@@ -110,13 +110,13 @@ describe('project settings persistence on disk', () => {
     fs.writeFileSync(`${projectFile()}.bak`, good);
     fs.writeFileSync(projectFile(), broken);
     vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('crash before commit'));
-    await expect(writeMcpConfigs(state.dir, { server: { url: 'local' } })).rejects.toThrow('crash before commit');
+    await expect(writeDefaultMcps(state.dir, ['recovered'])).rejects.toThrow('crash before commit');
     expect(fs.readFileSync(projectFile(), 'utf-8')).toBe(broken);
     expect(fs.readFileSync(`${projectFile()}.bak`, 'utf-8')).toBe(good);
     expect(fs.readFileSync(`${projectFile()}.unreadable`, 'utf-8')).toBe(broken);
-    await writeMcpConfigs(state.dir, { server: { url: 'local' } });
+    await writeDefaultMcps(state.dir, ['recovered']);
     expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({
-      defaultMcps: ['keep'], legacy: true, mcpConfigs: { server: { url: 'local' } },
+      defaultMcps: ['recovered'], legacy: true,
     });
     expect(fs.readFileSync(`${projectFile()}.bak`, 'utf-8')).toBe(good);
     expect(fs.readdirSync(path.dirname(projectFile()))).toEqual(['settings.json', 'settings.json.bak', 'settings.json.unreadable']);
@@ -128,8 +128,8 @@ describe('project settings persistence on disk', () => {
     const first = writeDefaultMcps(state.dir, ['server']);
     expect(projectSettingsMutationState(alias)).toEqual(projectSettingsMutationState(state.dir));
     expect(projectSettingsMutationState(alias).pending).toBe(true);
-    await Promise.all([first, writeMcpConfigs(alias, { server: { url: 'local' } })]);
-    expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({ defaultMcps: ['server'], mcpConfigs: { server: { url: 'local' } } });
+    await Promise.all([first, writeMcpCatalog(alias, [{ id: 'server', name: 'Server', description: 'A server' }])]);
+    expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({ defaultMcps: ['server'], mcpCatalog: [{ id: 'server' }] });
     expect(projectSettingsMutationState(alias)).toEqual(projectSettingsMutationState(state.dir));
     expect(projectSettingsMutationState(alias).pending).toBe(false);
   });
@@ -142,8 +142,8 @@ describe('project settings persistence on disk', () => {
     const first = writeDefaultMcps(project, ['server']);
     expect(projectSettingsMutationState(alias)).toEqual(projectSettingsMutationState(project));
     expect(projectSettingsMutationState(alias).pending).toBe(true);
-    await Promise.all([first, writeMcpConfigs(alias, { server: { url: 'local' } })]);
-    expect(JSON.parse(fs.readFileSync(path.join(project, '.clubhouse', 'settings.json'), 'utf-8'))).toMatchObject({ defaultMcps: ['server'], mcpConfigs: { server: { url: 'local' } } });
+    await Promise.all([first, writeMcpCatalog(alias, [{ id: 'server', name: 'Server', description: 'A server' }])]);
+    expect(JSON.parse(fs.readFileSync(path.join(project, '.clubhouse', 'settings.json'), 'utf-8'))).toMatchObject({ defaultMcps: ['server'], mcpCatalog: [{ id: 'server' }] });
   });
 
   it('does not combine distinct directories on case-sensitive volumes', async ({ skip }) => {
@@ -173,7 +173,6 @@ describe('project settings persistence on disk', () => {
       writeMcpCatalog(state.dir, catalog),
       writeDefaultMcps(state.dir, ['server']),
       writeWrapperCatalogSnapshot(state.dir, snapshot),
-      writeMcpConfigs(state.dir, { server: { url: 'local' } }),
     ];
     expect(projectSettingsMutationState(state.dir).pending).toBe(true);
     await Promise.all(writes);
@@ -182,7 +181,7 @@ describe('project settings persistence on disk', () => {
     expect(saved).toEqual({
       ...legacy, agentDefaults: { instructions: 'saved instructions', buildCommand: 'build' },
       launchWrapper: wrapper, mcpCatalog: catalog, defaultMcps: ['server'],
-      wrapperCatalogSnapshot: snapshot, mcpConfigs: { server: { url: 'local' } },
+      wrapperCatalogSnapshot: snapshot,
     });
     expect(JSON.parse(fs.readFileSync(`${projectFile()}.bak`, 'utf-8'))).toMatchObject(legacy);
     expect(fs.readdirSync(path.dirname(projectFile())).some((name) => name.includes('.tmp-'))).toBe(false);
@@ -197,8 +196,8 @@ describe('project settings persistence on disk', () => {
     expect(fs.readFileSync(`${projectFile()}.bak`, 'utf-8')).toBe(old);
     expect(fs.readdirSync(path.dirname(projectFile()))).toEqual(['settings.json', 'settings.json.bak']);
     // A rejected transaction must not poison the shared queue.
-    await writeMcpConfigs(state.dir, { server: { url: 'local' } });
-    expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({ defaultMcps: ['old'], mcpConfigs: { server: { url: 'local' } } });
+    await writeDefaultMcps(state.dir, ['next']);
+    expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({ defaultMcps: ['next'] });
   });
 });
 

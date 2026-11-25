@@ -208,10 +208,6 @@ export function registerAnnexClientHandlers(): void {
       ...(typeof (opts as { limit?: unknown } | undefined)?.limit === 'number' && { limit: (opts as { limit: number }).limit }),
     }),
   ));
-  ipcMain.handle(IPC.ANNEX_CLIENT.CHAT_SESSIONS, withValidatedArgs(
-    [stringArg(), stringArg()],
-    (_event, satelliteId, agentId) => annexClient.requestChatSessions(satelliteId, agentId),
-  ));
   ipcMain.handle(IPC.ANNEX_CLIENT.CHAT_COMMAND, withValidatedArgs(
     [stringArg(), objectArg()],
     (_event, satelliteId, command) => annexClient.sendChatCommand(satelliteId, command as Record<string, unknown>),

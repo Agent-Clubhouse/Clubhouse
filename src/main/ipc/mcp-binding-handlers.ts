@@ -61,12 +61,12 @@ import { listConnectionSources, removeConnectionSource } from '../services/conne
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
 import { migrateDispatcherLinkTools } from '../services/dispatcher-controls';
 import {
-  applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, removeSourceAcrossMachines, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
+  applyConnectionTools, connectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, removeSourceAcrossMachines, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
 import { isNetworkComputer, syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
 import { startHandoffs } from '../services/handoff-host';
-import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
+import { addCardConnection, listConnectionPickerTargets, startCardConnections } from '../services/connection-card';
 import type { AddCardConnection } from '../../shared/connection-picker';
 import { startGroupProjectNetwork } from '../services/group-project-network';
 import { groupProjectRemoteCreate } from '../services/group-project-remote-create';
@@ -273,10 +273,6 @@ export function registerMcpBindingHandlers(): void {
     assertCallerIsAppWindow(event);
     await addCardConnection(request as AddCardConnection);
   }));
-  ipcMain.handle(IPC.MCP_BINDING.REMOVE_CARD_CONNECTION, withValidatedArgs([stringArg({ maxLength: 400 }), stringArg({ maxLength: 400 })], async (event, from, to) => {
-    assertCallerIsAppWindow(event);
-    await removeCardConnection(from as string, to as string);
-  }));
   ipcMain.handle(IPC.MCP_BINDING.REMOVE_REMOTE_SOURCE, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 }), stringArg({ maxLength: 30 })], async (event, agentId, address, kind) => {
     assertCallerIsAppWindow(event);
     if (kind !== 'user_link' && kind !== 'card_link' && kind !== 'tool_link') throw new Error('That connection source cannot be removed here.');
@@ -312,11 +308,6 @@ export function registerMcpBindingHandlers(): void {
       await setToolsAcrossMachines(agentId as string, address as string, outgoing as boolean, tools as string[]);
     },
   ));
-  ipcMain.handle(IPC.MCP_BINDING.DISCONNECT_ACROSS_MACHINES, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 })], async (event, agentId, address) => {
-    assertCallerIsAppWindow(event);
-    await disconnectAcrossMachines(agentId as string, address as string);
-  }));
-
   // Connection permissions (D129, #2972): the user's own surface.
   ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_GRANTS, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {
     assertCallerIsAppWindow(event);

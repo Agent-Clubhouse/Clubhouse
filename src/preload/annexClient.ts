@@ -60,9 +60,6 @@ export const annexClient = {
   /** A page of a satellite chat agent's transcript and state (#2390). */
   chatPage: (satelliteId: string, agentId: string, opts?: { beforeSeq?: number; limit?: number }): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_PAGE, satelliteId, agentId, opts ?? {}),
-  /** A satellite chat agent's sessions (#2390). */
-  chatSessions: (satelliteId: string, agentId: string): Promise<unknown> =>
-    ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_SESSIONS, satelliteId, agentId),
   /** Sends a chat command (chat.send, chat.permission, …) for a satellite's agent; answers its receipt (#2390). */
   chatCommand: (satelliteId: string, command: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_COMMAND, satelliteId, command),

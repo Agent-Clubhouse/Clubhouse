@@ -24,7 +24,6 @@ export const project = {
     ipcRenderer.on(IPC.PROJECT.LINKS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.PROJECT.LINKS_CHANGED, listener); };
   },
-  setHandoffProjectLinks: (groups: string[][]): Promise<void> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_PROJECT_LINKS, groups),
   getHandoffTransferBounds: (projectId: string): Promise<import('../shared/handoff-manifest').HandoffTransferBounds> => ipcRenderer.invoke(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, projectId),
   setHandoffTransferBounds: (projectId: string, bounds: import('../shared/handoff-manifest').HandoffTransferBounds): Promise<import('../shared/handoff-manifest').HandoffTransferBounds> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, projectId, bounds),
   getHandoffSecretSettings: (projectId: string): Promise<import('../shared/handoff-secret-settings').HandoffSecretSettings> => ipcRenderer.invoke(IPC.PROJECT.GET_HANDOFF_SECRET_SETTINGS, projectId),
@@ -59,10 +58,6 @@ export const project = {
     ipcRenderer.invoke(IPC.PROJECT.READ_DEFAULT_MCPS, projectPath),
   writeDefaultMcps: (projectPath: string, mcpIds: string[]) =>
     ipcRenderer.invoke(IPC.PROJECT.WRITE_DEFAULT_MCPS, projectPath, mcpIds),
-  readMcpConfigs: (projectPath: string) =>
-    ipcRenderer.invoke(IPC.PROJECT.READ_MCP_CONFIGS, projectPath),
-  writeMcpConfigs: (projectPath: string, configs: Record<string, Record<string, string>>) =>
-    ipcRenderer.invoke(IPC.PROJECT.WRITE_MCP_CONFIGS, projectPath, configs),
   readWrapperCatalogSnapshot: (projectPath: string): Promise<WrapperCatalogSnapshot | undefined> =>
     ipcRenderer.invoke(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT, projectPath),
   writeWrapperCatalogSnapshot: (projectPath: string, snapshot: WrapperCatalogSnapshot | undefined): Promise<void> =>

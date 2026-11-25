@@ -225,7 +225,7 @@ export function registerWindowHandlers(): void {
     win.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
     // Apply the same security guards as the main window
-    applyWindowSecurityGuards(win);
+    applyWindowSecurityGuards(win, MAIN_WINDOW_WEBPACK_ENTRY);
 
     win.once('ready-to-show', () => {
       win.show();
