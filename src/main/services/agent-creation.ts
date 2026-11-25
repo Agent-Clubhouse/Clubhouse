@@ -115,7 +115,7 @@ function optionalBoolean(raw: Record<string, unknown>, key: string): boolean | u
   return value;
 }
 
-/** Validate the fields of a START_DURABLE_CREATION request; the folder and branch fields are checked again by agent-config (#2221). */
+/** Validate the worktree fields of a create request; the folder and branch fields are checked again by agent-config (#2221). */
 export function parseWorktreeOptions(raw: Record<string, unknown>): DurableWorktreeOptions {
   const folderName = optionalString(raw, 'folderName');
   const branchName = optionalString(raw, 'branchName');

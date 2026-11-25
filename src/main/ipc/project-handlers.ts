@@ -1,5 +1,4 @@
 import { hydrateProjectLinks, changeProjectLinks, projectLinksStore } from '../services/project-links-store';
-import { setHandoffProjectLinks } from '../services/handoff-project-links';
 import { getHandoffTransferBounds, setHandoffTransferBounds } from '../services/handoff-transfer-settings';
 import { getHandoffSecretSettings, setHandoffSecretSettings } from '../services/handoff-secret-settings';
 import { HANDOFF_SECRET_MAX_PATHS } from '../../shared/handoff-secret-settings';
@@ -13,7 +12,7 @@ import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
 import * as projectStore from '../services/project-store';
 import { repoKeysFor } from '../services/project-repo-keys';
 import { registerProjectFolder } from '../services/project-add';
-import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readMcpConfigs, writeMcpConfigs, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
+import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { tel } from '../telemetry/facade';
@@ -46,7 +45,6 @@ export function registerProjectHandlers(): void {
   projectLinksStore().onChange(() => broadcastToAllWindows(IPC.PROJECT.LINKS_CHANGED, projectLinksStore().view()));
   ipcMain.handle(IPC.PROJECT.LINKS_HYDRATE, withValidatedArgs([objectArg()], (_event, legacy) => hydrateProjectLinks(legacy)));
   ipcMain.handle(IPC.PROJECT.LINKS_APPLY, withValidatedArgs([objectArg()], (_event, op) => changeProjectLinks(op)));
-  ipcMain.handle(IPC.PROJECT.SET_HANDOFF_PROJECT_LINKS, withValidatedArgs([arrayArg(arrayArg(stringArg({ maxLength: 512 }), { maxLength: 200 }), { maxLength: 200 })], (_event, groups) => setHandoffProjectLinks(groups)));
   ipcMain.handle(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffTransferBounds(id)));
   ipcMain.handle(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 }), objectArg()], (_event, id, bounds) => setHandoffTransferBounds(id, bounds)));
   ipcMain.handle(IPC.PROJECT.GET_HANDOFF_SECRET_SETTINGS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffSecretSettings(id)));
@@ -287,28 +285,6 @@ export function registerProjectHandlers(): void {
       await writeDefaultMcps(projectPath, mcpIds);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write default MCPs', {
-        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
-      });
-      throw err;
-    }
-  }));
-
-  ipcMain.handle(IPC.PROJECT.READ_MCP_CONFIGS, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
-    try {
-      return await readMcpConfigs(projectPath);
-    } catch (err) {
-      appLog('core:project', 'error', 'Failed to read MCP configs', {
-        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
-      });
-      return {};
-    }
-  }));
-
-  ipcMain.handle(IPC.PROJECT.WRITE_MCP_CONFIGS, withValidatedArgs([stringArg(), objectArg()], async (_event, projectPath: string, configs: unknown) => {
-    try {
-      await writeMcpConfigs(projectPath, configs as Record<string, Record<string, string>>);
-    } catch (err) {
-      appLog('core:project', 'error', 'Failed to write MCP configs', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
       });
       throw err;
