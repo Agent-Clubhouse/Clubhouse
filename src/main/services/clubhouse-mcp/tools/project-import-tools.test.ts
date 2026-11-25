@@ -359,7 +359,16 @@ afterAll(async () => {
   await fsPromises.rm(fixture.root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
 });
 
-describe('public Dispatcher repository import (#2808)', () => {
+/**
+ * Budget for the tests in a describe that drive real Git (ls-remote, init, fetch,
+ * checkout) plus guarded registration. Process creation is the cost, and a
+ * loaded hosted Windows runner took over the 5s default for these (preview,
+ * cancel, receipts). It is set on those describes only; a test with its own
+ * longer budget keeps it. Locally each takes well under a second or two.
+ */
+const REAL_GIT_FLOW_BUDGET_MS = 20_000;
+
+describe('public Dispatcher repository import (#2808)', { timeout: REAL_GIT_FLOW_BUDGET_MS }, () => {
   let imported: Awaited<ReturnType<typeof completeImport>>;
   const prepareImportedProject = async () => { imported = await completeImport(); };
 
