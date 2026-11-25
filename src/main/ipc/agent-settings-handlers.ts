@@ -13,7 +13,7 @@ import { withAgentTransition } from '../services/agent-transition';
 import { peekDurableConfigs, getDurableConfig } from '../services/agent-config';
 import { getProjectConfigBreakdown, removePluginInjectionItem, saveProjectUserDefaults } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
-import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
 /**
  * Resolve orchestrator conventions for a project path.
