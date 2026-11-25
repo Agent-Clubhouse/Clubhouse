@@ -226,6 +226,14 @@ afterAll(async () => {
   await fsp.rm(fixture.root, { recursive: true, force: true });
 });
 
+/**
+ * How long the eviction below may take to show. An fs.watch event can be late
+ * under load (measured 0.8s to over 3s on macOS, and sometimes it never comes), so the
+ * product also re-checks agents.json every AGENTS_FILE_CHECK_INTERVAL_MS and evicts then.
+ * Either is a real eviction; the default 1s wait took neither reliably (#3849).
+ */
+const EVICTION_BUDGET_MS = agentConfig.AGENTS_FILE_CHECK_INTERVAL_MS * 2;
+
 describe('authoritative attachment registration (#3715), direct pinned HTTPS only', () => {
   it('uploads exact bytes from an initialized but cold durable cache without warming it', async () => {
     agentConfig.clearAgentConfigCache(project.path);
@@ -241,11 +249,11 @@ describe('authoritative attachment registration (#3715), direct pinned HTTPS onl
     await expectUploaded();
     const before = JSON.parse(await fsp.readFile(primary, 'utf8'));
     await fsp.appendFile(primary, '\n');
-    await vi.waitFor(() => expect(agentConfig.peekCachedDurableConfig(project.path, agent.id)).toBeNull());
+    await vi.waitFor(() => expect(agentConfig.peekCachedDurableConfig(project.path, agent.id)).toBeNull(), { timeout: EVICTION_BUDGET_MS });
     expect(JSON.parse(await fsp.readFile(primary, 'utf8'))).toEqual(before);
     await expectUploaded();
     expect(agentConfig.peekCachedDurableConfig(project.path, agent.id)).toBeNull();
-  });
+  }, EVICTION_BUDGET_MS + 10_000);
 
   it('uploads unchanged image bytes from a large, cold primary registration file', async () => {
     const others = Array.from({ length: 400 }, (_, index) => ({ ...agent, id: `durable_other_${index}`, name: `other ${index}` }));
