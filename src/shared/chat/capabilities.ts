@@ -18,6 +18,9 @@ export const CHAT_DRIVER_IDS = [
   'claude_stream_json',
   'codex_app_server',
   'copilot_sdk',
+  // Antigravity over ACP (#3797). Named here so settings, history and telemetry
+  // know it; no driver registers it until its gates close.
+  'antigravity_acp',
 ] as const;
 
 export type ChatDriverId = (typeof CHAT_DRIVER_IDS)[number];
