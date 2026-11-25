@@ -1,5 +1,6 @@
 import { readRemoteChatMedia, uploadRemoteChatImage } from './annex-chat-images';
 import { isSelectedDispatcherDetails, isSelectedDispatcherPage, isSelectedDispatcherPageQuery, type SelectedDispatcherDetails, type SelectedDispatcherPageQuery } from '../../shared/selected-dispatcher-details';
+import { isRemoteCanvasBoardPage, REMOTE_CANVAS_BOARD_SOURCE } from '../../shared/remote-canvas-board-page';
 import { isRemoteDetailsQuery, type RemoteDetailsQuery } from '../../shared/remote-details-query';
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
@@ -3022,10 +3023,14 @@ export async function requestDispatcherDetails(machine: string, query?: Selected
 
 /** Same pinned paired-desktop read, with a bounded allowlisted Details response. */
 export async function requestAgentDetails(machine: string, agentId: string, query?: RemoteDetailsQuery): Promise<ControllerReadResult<RemoteAgentDetails>> {
-  if (query !== undefined && !isRemoteDetailsQuery(query)) return { status: 'error' };
-  // Capture the page identity before transport awaits; no caller object can retarget the response.
-  const page = query && { ...query };
-  const params = page ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...((page.card === 'skills-mcp' || page.card === 'actions' || page.card === 'canvases') ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
+  // Capture the page identity once, before transport awaits, and validate that frozen copy; no caller object can retarget the response.
+  let page: Readonly<RemoteDetailsQuery> | undefined;
+  try { page = query === undefined ? undefined : Object.freeze({ ...query }); }
+  catch { return { status: 'error' }; /* telemetry-exempt: an unreadable caller query is invalid, never partially used. */ }
+  if (page !== undefined && !isRemoteDetailsQuery(page)) return { status: 'error' };
+  const board = page?.card === 'canvases' && page.source === REMOTE_CANVAS_BOARD_SOURCE ? page : undefined;
+  const params = board ? new URLSearchParams({ card: board.card, source: board.source, member: board.member, selection: board.selection })
+    : page && !(page.card === 'canvases' && page.source === REMOTE_CANVAS_BOARD_SOURCE) ? new URLSearchParams({ card: page.card, source: page.source, offset: String(page.offset ?? 0), ...((page.card === 'skills-mcp' || page.card === 'actions' || page.card === 'canvases') ? page.selection ? { selection: page.selection } : {} : { projectOffset: String(page.projectOffset ?? 0) }) }) : undefined;
   const sat = satelliteFor(machine);
   if (!sat) return { status: 'offline' };
   const current = captureDetailsRead(sat);
@@ -3044,6 +3049,12 @@ export async function requestAgentDetails(machine: string, agentId: string, quer
       if (res.body.inventoryPages !== 1) return { status: 'unavailable' };
       if (!res.body.inventoryPage) return { status: 'error' };
       const response = res.body.inventoryPage;
+      if (board) {
+        // Main binds only what it asked for (agent, member, selection); the renderer binds the captured row and board context.
+        return res.body.inventoryPageOnly === true && isRemoteCanvasBoardPage(response) && response.agentId === agentId && response.member === board.member
+          && response.selection === board.selection ? { status: 'ok', value: res.body } : { status: 'error' };
+      }
+      if (response.source === REMOTE_CANVAS_BOARD_SOURCE || page.source === REMOTE_CANVAS_BOARD_SOURCE) return { status: 'error' };
       if (res.body.inventoryPageOnly !== true || response.source !== page.source || response.offset !== (page.offset ?? 0)
         || response.state === 'recorded' && page.selection !== undefined && response.selection !== page.selection) return { status: 'error' };
     } else if (page?.card === 'orchestrate') {

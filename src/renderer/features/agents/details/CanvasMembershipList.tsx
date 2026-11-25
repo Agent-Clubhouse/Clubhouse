@@ -1,8 +1,8 @@
 import type { CanvasHit } from './agent-canvases';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 
 /** The same membership rows for local and host-read Details. Jump only changes this view. */
-export function CanvasMembershipList({ hits, onJump, unavailable }: { hits: CanvasHit[]; onJump: (hit: CanvasHit) => void; unavailable?: (hit: CanvasHit) => string | null }) {
+export function CanvasMembershipList({ hits, onJump, unavailable, secondary }: { hits: CanvasHit[]; onJump: (hit: CanvasHit) => void; unavailable?: (hit: CanvasHit) => string | null; secondary?: (hit: CanvasHit, index: number) => ReactNode }) {
   const descriptionId = useId();
   return <ul className="flex flex-col" aria-label="Canvas memberships">{hits.map((c, index) => {
     const reason = unavailable?.(c);
@@ -17,6 +17,7 @@ export function CanvasMembershipList({ hits, onJump, unavailable }: { hits: Canv
         <span className="ml-auto text-xs text-ctp-accent">{reason ? 'Unavailable' : 'Jump'}</span>
       </button>
       {reason && <p id={reasonId} className="pl-[33px] pr-3.5 text-xs text-ctp-overlay1">{reason}</p>}
+      {secondary?.(c, index)}
     </li>;
   })}</ul>;
 }

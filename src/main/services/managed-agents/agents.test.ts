@@ -865,3 +865,21 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'named', 'indigo', undefined, true, 'claude-code', 'plan');
   });
 });
+
+describe('convertToManaged on Antigravity (#3792)', () => {
+  it('leaves AGENTS.md and its MCP servers where they are instead of copying them into the setup', async () => {
+    h.conventions = { configDir: '.agents', skillsDir: 'skills', skillsRoot: '.agents/skills', mcpConfigFile: '.agents/mcp_config.json', legacyInstructionsFile: 'AGENTS.md', settingsFormat: 'json' };
+    h.agents.get('ada')!.orchestrator = 'antigravity-cli';
+    h.instructions = '# Project rules\r\nUse tabs. é\r\n';
+    const mcp = '{ "mcpServers": { "mine": { "command": "mine" } } }\n';
+    write('.agents/mcp_config.json', mcp);
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.notes.join(' ')).toMatch(/AGENTS\.md stays as it is/);
+    expect(preview.notes.join(' ')).toMatch(/stay in that file/);
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    // No block from the file (it would be read twice) and no part for the person's server (it would collide on merge).
+    expect(setup.blocks.filter((id) => !id.startsWith('builtin-'))).toEqual([]);
+    expect(setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect(fs.readFileSync(path.join(wt, '.agents', 'mcp_config.json'), 'utf-8')).toBe(mcp);
+  });
+});

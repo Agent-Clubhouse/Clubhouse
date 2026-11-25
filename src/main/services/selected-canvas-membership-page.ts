@@ -37,12 +37,14 @@ function missingRecoveryReceipt(root: string, prefix: string, primary: DisplayRe
   return { current: check };
 }
 
-export async function readSelectedCanvasMembershipPage(target: AgentConfigTarget, query: RemoteCanvasMembershipQuery, options: {
+export type SelectedCanvasMemberships = { state: 'recorded'; rows: RemoteCanvasMembershipRow[]; selection: string; stores: Array<{ scope: 'app' | 'project'; raw: unknown[] }> }
+  | { state: 'unavailable'; reason: Extract<RemoteCanvasMembershipPage, { state: 'unavailable' }>['reason'] };
+
+/** One passive observation of the Home and selected-project primaries: memberships, their selection and the parsed stores. */
+export async function collectSelectedCanvasMemberships(target: AgentConfigTarget, options: {
   authorized(): boolean; target: DisplayReceipt; receipts: DisplayReceipt[];
-}): Promise<RemoteCanvasMembershipPage> {
-  if (!isRemoteCanvasMembershipQuery(query)) throw new Error('Invalid selected Canvas query.');
-  const base = { version: 1 as const, source: REMOTE_CANVAS_MEMBERSHIP_SOURCE, agentId: target.agent.id, projectId: target.project.id, offset: query.offset ?? 0, observedAt: Date.now(), notes: [] as string[] };
-  const unavailable = (reason: Extract<RemoteCanvasMembershipPage, { state: 'unavailable' }>['reason']): RemoteCanvasMembershipPage => ({ ...base, state: 'unavailable', reason });
+}): Promise<SelectedCanvasMemberships> {
+  const unavailable = (reason: Extract<SelectedCanvasMemberships, { state: 'unavailable' }>['reason']): SelectedCanvasMemberships => ({ state: 'unavailable', reason });
   const admitted = () => options.authorized() && current(options.target);
   if (!admitted()) return unavailable('changed');
   if (target.project.id === DISPATCHER_PROJECT_ID || isDispatcherIdentityAgentId(target.agent.id) || isDisposedAgent(target.agent)) return unavailable('unsupported');
@@ -52,7 +54,7 @@ export async function readSelectedCanvasMembershipPage(target: AgentConfigTarget
     { scope: 'app' as const, root: home, prefix: '.clubhouse/plugin-data/canvas/kv/' },
     { scope: 'project' as const, root: target.project.path, prefix: '.clubhouse/plugin-data-local/canvas/kv/' },
   ];
-  const budget = createReadOnlyMetadataBudget(), rows: RemoteCanvasMembershipRow[] = [];
+  const budget = createReadOnlyMetadataBudget(), rows: RemoteCanvasMembershipRow[] = [], parsed: Array<{ scope: 'app' | 'project'; raw: unknown[] }> = [];
   let visits = 0;
   try {
     for (const store of stores) {
@@ -61,6 +63,7 @@ export async function readSelectedCanvasMembershipPage(target: AgentConfigTarget
       options.receipts.push(source.receipt);
       if (source.missing) { options.receipts.push(missingRecoveryReceipt(store.root, store.prefix, source.receipt)); continue; }
       if (!Array.isArray(source.raw) || !source.raw.length) throw new InvalidMembership();
+      parsed.push({ scope: store.scope, raw: source.raw });
       const boards = new Set<string>(), views = new Set<string>();
       for (const board of source.raw) {
         if (++visits > REMOTE_CANVAS_MEMBERSHIP_MAX_ITEMS) throw new MembershipLimit();
@@ -87,12 +90,23 @@ export async function readSelectedCanvasMembershipPage(target: AgentConfigTarget
     options.receipts.push(combined);
     if (!combined.current()) return unavailable('changed');
     rows.sort((a, b) => { const left = JSON.stringify([a.scope, a.canvasId, a.viewId]), right = JSON.stringify([b.scope, b.canvasId, b.viewId]); return left < right ? -1 : left > right ? 1 : 0; });
-    const selection = hash([target.agent.id, target.project.id, target.project.path, home, rows]);
-    if (query.selection && query.selection !== selection || base.offset !== 0 && base.offset >= rows.length) return unavailable('changed');
-    return { ...base, state: 'recorded', selection, rows: rows.slice(base.offset, base.offset + REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE), total: rows.length,
-      next: base.offset + REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE < rows.length ? base.offset + REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE : null,
-      notes: ['Saved Home and selected-project membership metadata only. Live unsaved membership is not inspected; board contents are not shared.', 'Every page is a separate primary-file observation. Membership alone does not authorize opening an omitted board.'] };
+    return { state: 'recorded', rows, selection: hash([target.agent.id, target.project.id, target.project.path, home, rows]), stores: parsed };
   } catch (error) { // telemetry-exempt: closed source status only; no paths, recovery data or raw errors leave the host
     return unavailable(!admitted() ? 'changed' : error instanceof ReadOnlyMetadataLimitError || error instanceof MembershipLimit ? 'limit' : error instanceof InvalidMembership ? 'invalid' : 'unreadable');
   }
+}
+
+export async function readSelectedCanvasMembershipPage(target: AgentConfigTarget, query: RemoteCanvasMembershipQuery, options: {
+  authorized(): boolean; target: DisplayReceipt; receipts: DisplayReceipt[];
+}): Promise<RemoteCanvasMembershipPage> {
+  if (!isRemoteCanvasMembershipQuery(query)) throw new Error('Invalid selected Canvas query.');
+  const base = { version: 1 as const, source: REMOTE_CANVAS_MEMBERSHIP_SOURCE, agentId: target.agent.id, projectId: target.project.id, offset: query.offset ?? 0, observedAt: Date.now(), notes: [] as string[] };
+  const unavailable = (reason: Extract<RemoteCanvasMembershipPage, { state: 'unavailable' }>['reason']): RemoteCanvasMembershipPage => ({ ...base, state: 'unavailable', reason });
+  const collected = await collectSelectedCanvasMemberships(target, options);
+  if (collected.state === 'unavailable') return unavailable(collected.reason);
+  const { rows, selection } = collected;
+  if (query.selection && query.selection !== selection || base.offset !== 0 && base.offset >= rows.length) return unavailable('changed');
+  return { ...base, state: 'recorded', selection, rows: rows.slice(base.offset, base.offset + REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE), total: rows.length,
+    next: base.offset + REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE < rows.length ? base.offset + REMOTE_CANVAS_MEMBERSHIP_PAGE_SIZE : null,
+    notes: ['Saved Home and selected-project membership metadata only. Live unsaved membership is not inspected; board contents are not shared.', 'Every page is a separate primary-file observation. Membership alone does not authorize opening an omitted board.'] };
 }

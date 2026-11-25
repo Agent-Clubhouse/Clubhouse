@@ -69,14 +69,20 @@ describe('AntigravityCliProvider', () => {
       });
     });
 
-    it('keeps headless, hooks and session listing off until their gates land', () => {
+    it('keeps headless off; hooks on POSIX only; resumes by hook-reported id', () => {
       expect(provider.getCapabilities()).toMatchObject({
         headless: false,
-        hooks: false,
-        sessionResume: false,
+        hooks: process.platform !== 'win32',
+        sessionResume: true,
         supportsPositionalMission: false,
         ignoresToolListChanged: true,
       });
+    });
+
+    it('lists and reads no sessions: no store layout or transcript format is documented', async () => {
+      expect(await provider.listSessions()).toEqual([]);
+      expect(await provider.readSessionTranscript()).toBeNull();
+      expect(provider.extractSessionId()).toBeNull();
     });
 
     it('exits with /exit', () => {

@@ -35,15 +35,41 @@ Never add final lines to turn lines. A turn id is logged once. Lines are
 capped at 2,000 an hour; anything over the cap is counted and logged when the
 hour turns.
 
+### Totals
+
+```
+node scripts/usage-rollup.mjs [--by day,provider,role,agentId] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--dir <log folder>] [--json]
+```
+
+- **What it reads.** The `core:usage` lines in `~/.clubhouse/logs/telemetry-*.jsonl`, nothing else.
+- **How it adds.** It sums the turn lines (`src/shared/usage-rollup.mjs`). Session totals are counted but never added. A turn read twice is added once. A line without a turn id is added too, but counted in `turnsWithoutId`, since a repeat of it can't be detected.
+- **Unknown stays unknown.** A figure no turn reported is `null` in `--json` and `unknown` in the table, never 0; a reported 0 stays 0. `noLines` (or the message without `--json`) means no turn line was found, not zero use. Unreadable usage lines are counted in `malformed`.
+- **What it shows separately.** Total, uncached and cached input, cache writes, turns that reported no usage, the turns missing each figure, and the turns per source.
+- **Grouping.** `--by` picks any of `day`, `provider`, `driver`, `model`, `effort`, `role`, `agentId`, `parentAgentId` and `source`.
+- **Limits.**
+  - It covers only what the logging settings let through and retention kept.
+  - It covers only turns that fit the recorder's diag budget.
+  - A day with logging off reads as no turns, not as zero use.
+
 ### Not covered
 
 - **Terminal (TUI) agents** of any provider publish no chat events and log
   nothing here. For Codex, the rollout script covers them after the fact.
   There is no equivalent for Claude Code or Copilot in a terminal.
-- **Headless runs** (`codex exec`, `claude -p`) are not chat sessions and log
-  nothing here. Their transcript summary
-  (`src/shared/headless-transcript.ts`) and run view keep a side no event
-  reported absent. The view shows "Not reported" or "unknown" for it, never 0.
+- **Headless runs** (`codex exec`, `claude -p`) are not chat sessions. Each
+  run logs one `Usage turn` line of `kind: run`, `driver: headless`
+  (`src/main/services/headless-usage.ts`), which the rollup adds like a turn.
+  - **Figures:**
+    - Claude: per message id, cache reads and writes joined to input.
+    - Codex: each `turn.completed`, with cached input and reasoning kept as
+      parts of input and output.
+    - A result's own total is used only when nothing else reported.
+  - **Requested settings.** Provider, model and effort are what the run was
+    started with (`requested: true`), not a provider report.
+  - **No usage.** A run that reported none is `completeness: none`.
+  - **Display.** The transcript summary (`src/shared/headless-transcript.ts`)
+    and the run view keep a side no event reported absent. The view shows
+    "Not reported" or "unknown" for it, never 0.
 
 ## Adapter contract
 

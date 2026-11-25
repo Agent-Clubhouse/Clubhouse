@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeProvider } from './claude-code-provider';
+import { AntigravityCliProvider } from './antigravity-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
 
@@ -50,6 +51,7 @@ describe('settings-orchestrators.md capability matrix', () => {
       'Claude Code': new ClaudeCodeProvider(),
       'Copilot CLI': new CopilotCliProvider(),
       'Codex CLI': new CodexCliProvider(),
+      'Antigravity CLI': new AntigravityCliProvider(),
     };
 
     const expectedRows = [
@@ -90,6 +92,17 @@ describe('settings-orchestrators.md capability matrix', () => {
         }
       }
     }
+
+    // The help names the four providers, in this order.
+    expect(Object.keys(matrix['Headless mode'] ?? {})).toEqual(['Claude Code', 'Copilot CLI', 'Codex CLI', 'Antigravity CLI']);
+
+    // Antigravity hooks follow the platform (#3800 M2), so the cell has to name both sides.
+    const agyHooks = (matrix['Hooks']?.['Antigravity CLI'] ?? '').toLowerCase();
+    expect(agyHooks).toContain('macos and linux');
+    expect(agyHooks).toContain('windows');
+    const agyResume = (matrix['Session resume']?.['Antigravity CLI'] ?? '').toLowerCase();
+    expect(agyResume).toContain('hook-reported id');
+    expect(agyResume).toContain('most recent');
 
     const codexSessionCell = matrix['Session resume']?.['Codex CLI'] ?? '';
     expect(codexSessionCell.toLowerCase()).toContain('yes');

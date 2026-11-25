@@ -44,6 +44,7 @@ import {
 import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
 import { appLog } from '../log-service';
 import { skillsFolderOf } from '../../../shared/skills-folder';
+import { ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
 import { applyTemplateGrants } from '../agent-grants-service';
 
 export interface CreateManagedAgentInput {
@@ -370,8 +371,13 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
   const notes: string[] = [];
   const onDisk = await readInstructionsOf(provider, worktreePath);
   const instructions = await instructionsToKeep(projectPath, agent, onDisk);
+  // Antigravity (#3792): delivery adds a block to AGENTS.md and keeps the rest, so the file's text stays where it
+  // is and isn't copied into a block too, which would give the agent it twice.
+  const antigravity = provider.id === ANTIGRAVITY_PROVIDER_ID;
+  const staysInFile = antigravity && !!onDisk.trim();
+  if (staysInFile) notes.push(`${conv.legacyInstructionsFile} stays as it is. Antigravity keeps reading it, and Clubhouse adds the agent's setup in a block of its own.`);
   // The same checks createPart runs, so the preview and Keep agree.
-  let keepInstructions = !!instructions.trim();
+  let keepInstructions = !staysInFile && !!instructions.trim();
   if (keepInstructions) {
     const checked = validatePayload('block', { content: instructions });
     if (checked.ok === false) {
@@ -462,7 +468,12 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
     else if (parsed === 'no_list') notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file has no mcpServers list.`);
     else ownServers = parsed;
   }
-  for (const [serverKey, rawDef] of Object.entries(ownServers)) {
+  // Antigravity: servers in its MCP file stay there, as the person's; delivery merges the managed ones beside them.
+  const ownToBring = antigravity ? [] : Object.entries(ownServers);
+  if (antigravity && Object.keys(ownServers).some((k) => k !== 'clubhouse')) {
+    notes.push(`MCP servers in ${conv.mcpConfigFile} stay in that file, which Antigravity keeps reading. They aren't copied into the setup.`);
+  }
+  for (const [serverKey, rawDef] of ownToBring) {
     // Clubhouse's own bridge is the built-in Clubhouse part, added in convertToManaged.
     if (serverKey === 'clubhouse') continue;
     addMcp(serverKey, rawDef, 'folder');
@@ -482,7 +493,7 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
       }
     }
   }
-  if (await hasMcpFileToKeep(worktreePath, conv)) {
+  if (!antigravity && await hasMcpFileToKeep(worktreePath, conv)) {
     notes.push(`Its ${conv.mcpConfigFile} is copied to ${mcpBackupPath(conv)} in its folder before Clubhouse writes its own. The copy stays out of commits.`);
   }
   return { instructions, onDisk, keepInstructions, blockName: `${agent.name} notes`, skills, mcps, notes };

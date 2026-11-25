@@ -212,6 +212,7 @@ describe('Headless integration', () => {
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
         expect.any(Function), // observeStarted: a quick run reports its runtime
+        expect.objectContaining({ provider: expect.any(String) }), // run settings, for the usage line
       );
     });
 
@@ -361,6 +362,7 @@ describe('Headless integration', () => {
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
         expect.any(Function), // observeStarted: a quick run reports its runtime
+        expect.objectContaining({ provider: expect.any(String) }), // run settings, for the usage line
       );
     });
 
@@ -389,6 +391,7 @@ describe('Headless integration', () => {
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
         expect.any(Function), // observeStarted: a quick run reports its runtime
+        expect.objectContaining({ provider: expect.any(String) }), // run settings, for the usage line
       );
     });
 
@@ -417,6 +420,7 @@ describe('Headless integration', () => {
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
         expect.any(Function), // observeStarted: a quick run reports its runtime
+        expect.objectContaining({ provider: expect.any(String) }), // run settings, for the usage line
       );
     });
   });

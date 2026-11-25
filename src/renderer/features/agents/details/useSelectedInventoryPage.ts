@@ -3,11 +3,18 @@ import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
-import { isRemoteInventoryPage, type RemoteInventoryQuery, type RemoteInventorySource } from '../../../../shared/remote-inventory-page';
+import { isRemoteRowPagedInventoryPage, type RemoteRowPagedInventoryQuery, type RemoteRowPagedInventorySource } from '../../../../shared/remote-inventory-page';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { remoteDetailsAddress } from './remote-details-address';
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
-const cardFor = (source: RemoteInventorySource) => source === 'selected-canvas-memberships' ? 'canvases' : source === 'selected-action-relationships' ? 'actions' : 'skills-mcp';
+/** Offset/rows pages only: the selected board has its own transport and is never paged here. Exhaustive, so a new source must be placed. */
+const cardFor = (source: RemoteRowPagedInventorySource): 'canvases' | 'actions' | 'skills-mcp' => {
+  switch (source) {
+    case 'selected-canvas-memberships': return 'canvases';
+    case 'selected-action-relationships': return 'actions';
+    case 'selected-managed-blocks': case 'selected-managed-skills': case 'selected-managed-mcps': return 'skills-mcp';
+  }
+};
 export function useSelectedInventoryPage({ agent, details, status, freshnessKey, open, readable, card, onRefused }: {
   agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; readable: boolean; card: 'actions' | 'skills-mcp' | 'canvases'; onRefused?(): void;
 }) {
@@ -21,7 +28,7 @@ export function useSelectedInventoryPage({ agent, details, status, freshnessKey,
   const transport = useRef({ eligible, generation: 0 });
   if (transport.current.eligible !== eligible) transport.current = { eligible, generation: transport.current.generation + 1 };
   const identity = `${agent.id}:${agent.projectId}:${agent.kind}:${card}:${freshnessKey}:${details?.readAt ?? ''}:${details?.inventorySources?.join(',') ?? ''}:${transport.current.generation}`;
-  const [navigation, setNavigation] = useState<{ identity: string; query: RemoteInventoryQuery; revision: number } | null>(null);
+  const [navigation, setNavigation] = useState<{ identity: string; query: RemoteRowPagedInventoryQuery; revision: number } | null>(null);
   const selected = navigation?.identity === identity ? navigation : null, query = selected?.query;
   const key = `${identity}:${query?.source ?? ''}:${query?.offset ?? 0}:${query?.selection ?? ''}:${selected?.revision ?? 0}`;
   const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
@@ -38,13 +45,13 @@ export function useSelectedInventoryPage({ agent, details, status, freshnessKey,
   }, [open, eligible, query, key, snapshot, address?.satelliteId, address?.agentId, details?.inventorySources]);
   const result: Result = !eligible ? { status: !connected ? 'offline' : status === 'ok' ? 'unavailable' : status } as Result
     : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' };
-  const response = result.status === 'ok' && result.value.agentId === address?.agentId && result.value.inventoryPages === 1 && result.value.inventoryPageOnly === true && isRemoteInventoryPage(result.value.inventoryPage) ? result.value.inventoryPage : undefined;
+  const response = result.status === 'ok' && result.value.agentId === address?.agentId && result.value.inventoryPages === 1 && result.value.inventoryPageOnly === true && isRemoteRowPagedInventoryPage(result.value.inventoryPage) ? result.value.inventoryPage : undefined;
   const page = query && response?.source === query.source && response.offset === (query.offset ?? 0)
     && (response.state !== 'recorded' || !query.selection || response.selection === query.selection) ? response : undefined;
-  const select = (source: RemoteInventorySource, offset = 0, selection?: string) => {
+  const select = (source: RemoteRowPagedInventorySource, offset = 0, selection?: string) => {
     if (cardFor(source) !== card) return;
     const common = { offset, ...(selection && { selection }) };
-    const next: RemoteInventoryQuery = source === 'selected-canvas-memberships' ? { card: 'canvases', source, ...common } : source === 'selected-action-relationships' ? { card: 'actions', source, ...common } : { card: 'skills-mcp', source, ...common };
+    const next: RemoteRowPagedInventoryQuery = source === 'selected-canvas-memberships' ? { card: 'canvases', source, ...common } : source === 'selected-action-relationships' ? { card: 'actions', source, ...common } : { card: 'skills-mcp', source, ...common };
     setNavigation({ identity, query: next, revision: (selected?.revision ?? 0) + 1 });
   };
   return { eligible, contextReadable, query, key, page, result: result.status === 'ok' && query && !page ? { status: 'error' as const } : result, select };

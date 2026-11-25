@@ -46,15 +46,15 @@ describe('descriptors reproduce the former lists exactly', () => {
     expect(defaultAutoBudgetPolicy()).toEqual({ version: 1, enabled: true, reserves: { 'claude-code': 10, 'codex-cli': 10 } });
   });
 
-  it('handoff capacity keys (handoff-capacity.ts); peers check the set, not the order', () => {
-    expect(CAPACITY_PROVIDERS).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
+  it('handoff capacity keys (handoff-capacity.ts); the legacy three keep their wire order', () => {
+    expect(CAPACITY_PROVIDERS.slice(0, 3)).toEqual(['claude-code', 'copilot-cli', 'codex-cli']);
     expect([...CAPACITY_WIRE_ORDER].sort()).toEqual([...providerIdsWhere((d) => d.capacityTracked)].sort());
     const parsed = parseHandoffCapacity({
       machine: Array(32).fill('ab').join(':'), online: true, sampledAt: 1, lastSeen: null,
       agents: { running: 0, sleeping: 0, idleDurable: 0 }, load: 'low', disk: 'ample',
       providers: { 'claude-code': 'available', 'copilot-cli': 'limited', 'codex-cli': 'unknown' }, accepting_handoffs: true,
     });
-    expect(JSON.stringify(parsed.online && parsed.providers)).toBe('{"claude-code":"available","copilot-cli":"limited","codex-cli":"unknown"}');
+    expect(JSON.stringify(parsed.online && parsed.providers)).toBe('{"claude-code":"available","copilot-cli":"limited","codex-cli":"unknown","antigravity-cli":"unknown"}');
   });
 
   it('display strings per surface', () => {
@@ -86,11 +86,10 @@ describe('descriptors reproduce the former lists exactly', () => {
   });
 
   it('telemetry codes stay closed (attributes.ts and the six knownCli checks)', () => {
-    for (const id of ['claude-code', 'codex-cli', 'copilot-cli']) expect(providerTelemetryCode(id)).toBe(id);
-    expect(providerTelemetryCode('antigravity-cli')).toBe('other');
+    for (const id of ['claude-code', 'codex-cli', 'copilot-cli', 'antigravity-cli']) expect(providerTelemetryCode(id)).toBe(id);
     for (const id of ['gemini-cli', '', null, undefined, '__proto__', 'toString']) expect(providerTelemetryCode(id)).toBe('other');
     expect(ATTR.orchestrator('claude-code').value).toBe('claude-code');
-    expect(ATTR.orchestrator('antigravity-cli' as never).value).toBe('other');
+    expect(ATTR.orchestrator('antigravity-cli').value).toBe('antigravity-cli');
     expect(ATTR.orchestrator('gemini-cli' as never).value).toBe('other');
     expect(ATTR.helperRoutingRequestedCli('auto').value).toBe('auto');
     expect(ATTR.helperAskerCli('none').value).toBe('none');
@@ -126,9 +125,9 @@ describe('Antigravity descriptor', () => {
     expect(PRESET_PROVIDERS).not.toContain('antigravity-cli');
   });
 
-  it('reports other in telemetry and stays out of capacity until those reviewed changes land', () => {
-    expect(d.telemetryCode).toBe('other');
-    expect(CAPACITY_PROVIDERS).not.toContain('antigravity-cli');
+  it('has its reviewed telemetry value, and is capacity-tracked behind the capacity-providers feature', () => {
+    expect(d.telemetryCode).toBe('antigravity-cli');
+    expect(CAPACITY_PROVIDERS).toContain('antigravity-cli');
     expect(AUTO_RESERVE_PROVIDERS).not.toContain('antigravity-cli');
   });
 

@@ -250,6 +250,22 @@ describe('a saved provider the running session isn\'t on (#3191)', () => {
     expect(deps.prepareStart).not.toHaveBeenCalled();
   });
 
+  it('starts fresh in place, with no second restart, when a wake queued ahead of the hold already moved it to the saved provider', async () => {
+    const { deps, order } = moved();
+    let provider = 'claude-code';
+    deps.runningProvider = () => provider;
+    const hold = deps.holdDeliveries;
+    // The queued wake runs first and restarts the idle controller on Codex.
+    deps.holdDeliveries = async <T,>(id: string, fn: () => Promise<T>): Promise<T> => { provider = 'codex-cli'; return hold(id, fn); };
+    const result = await startDispatcherWorkFresh('user', deps);
+    expect(result).toBe('now');
+    expect(deps.stopRunning).not.toHaveBeenCalled();
+    expect(deps.wakeWork).not.toHaveBeenCalled();
+    // Its new conversation is the one set aside and cleared.
+    expect(order).toEqual(['hold', 'release', 'quarantine:old-native', 'prepare:work', 'take', 'end:req_1']);
+    expect(deps.clearContext).toHaveBeenCalledWith('work');
+  });
+
   it('ends a request the old conversation took during the stop, since the requests are read once it has stopped', async () => {
     const { deps, running } = moved();
     const owed = ['req_1'];

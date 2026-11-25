@@ -856,7 +856,7 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       expect(getDelivery('here', first.id)).not.toHaveProperty('reason');
     } finally { vi.useRealTimers(); }
   });
-  it('keeps busy-target retries fixed and timer-driven while a longer transport retry is waiting', async () => {
+  it('grows busy-target retries with age, timer-driven, while a longer transport retry is waiting (#3829)', async () => {
     vi.useFakeTimers();
     try {
       useMemoryDeliveryStore();
@@ -871,7 +871,8 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       for (let attempt = 1; attempt <= 8; attempt++) {
         const status = getDelivery('here', busy.id)!;
         expect(status.attempts).toBe(attempt);
-        expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(READINESS_RETRY_MS);
+        const age = Date.parse(status.updatedAt) - Date.parse(busy.queuedAt);
+        expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(Math.min(60 * 60_000, Math.max(READINESS_RETRY_MS, Math.floor(age / 4))));
         const remaining = Date.parse(status.nextAttemptAt!) - Date.now();
         const calls = posts.filter((p) => p.path.endsWith('agent-call') && p.body.to === 'busy').length;
         await vi.advanceTimersByTimeAsync(remaining - 1);
@@ -916,6 +917,25 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       await vi.waitFor(() => expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', attempts: 2 }));
       const next = getDelivery('here', id)!;
       expect(Date.parse(next.nextAttemptAt!) - Date.parse(next.updatedAt)).toBe(120_000);
+    } finally { vi.useRealTimers(); }
+  });
+  it('caps a never-ready target at the hourly maximum, bounding tries before expiry (#3829)', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); connected = false;
+      await forwardAgentCall('here', `busy@${OTHER}`, 'Busy target', 'send_message', { message: 'never ready', idempotency_key: 'never-ready' });
+      const id = waitingFor(OTHER)[0].id;
+      respond = (urlPath, body) => !urlPath.endsWith('agent-call') ? { status: 200, body: { directions: [] } }
+        : { status: 200, body: { result: { ...ok('No input accepted'), isError: true }, delivery: { callId: body.callId, state: 'retry_later', reason: 'target_not_ready' } } };
+      vi.setSystemTime(Date.now() + 6 * 60 * 60_000);
+      connected = true; await flushOutbox(OTHER);
+      const status = getDelivery('here', id)!;
+      expect(status).toMatchObject({ state: 'retry_later', attempts: 1 });
+      expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(60 * 60_000);
+      const calls = posts.filter((p) => p.path.endsWith('agent-call')).length;
+      // An event-driven flush before the deadline does not send again.
+      await flushOutbox(OTHER);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(calls);
     } finally { vi.useRealTimers(); }
   });
   it('honors an old unproven readiness deadline after restart without rewriting historical status', async () => {
@@ -1043,6 +1063,73 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     await setConnectionLink(inbound.from, inbound.to, true);
     expect(await receiveAgentCall(OTHER, call({ epoch: { sender: 'peer-epoch', receiver: 'self-epoch' } }), now)).toMatchObject({ error: 'pairing_changed' });
     expect(seen).toHaveLength(0);
+  });
+
+  describe('a receiver that has not published what the delivery needs (#3829)', () => {
+    const notReady = { allowed: false as const, reason: 'The receiving Dispatcher has not published its controller yet.', notReady: true as const };
+    const agentCalls = () => posts.filter((p) => p.path.endsWith('agent-call'));
+
+    it('waits without sending or refusing, then delivers once the receiver is ready', async () => {
+      vi.useFakeTimers();
+      try {
+        const store = useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0);
+        connected = false;
+        let ready = false;
+        restart({ deliveryStore: store, authorizeQueuedCall: async () => ready ? { allowed: true } : notReady });
+        await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'during restart' });
+        const id = waitingFor(OTHER)[0].id;
+        connected = true;
+        await flushOutbox(OTHER);
+        expect(agentCalls()).toHaveLength(0);
+        expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', reason: 'receiver_not_ready', attempts: 0 });
+        expect(waitingFor(OTHER)).toHaveLength(1);
+        ready = true;
+        await vi.advanceTimersByTimeAsync(READINESS_RETRY_MS);
+        expect(getDelivery('here', id)?.state).toBe('delivered');
+        expect(agentCalls()).toHaveLength(1);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('does not count an attempt when the check just before sending finds the receiver not ready', async () => {
+      connected = false;
+      let checks = 0;
+      restart({ authorizeQueuedCall: async () => ++checks === 1 ? { allowed: true } : notReady });
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'raced restart' });
+      const id = waitingFor(OTHER)[0].id;
+      connected = true;
+      await flushOutbox(OTHER);
+      expect(checks).toBe(2);
+      expect(agentCalls()).toHaveLength(0);
+      expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', reason: 'receiver_not_ready', attempts: 0 });
+    });
+
+    it('ends at the existing expiry when the receiver never becomes ready', async () => {
+      connected = false;
+      const notices = vi.fn(async () => {});
+      restart({ authorizeQueuedCall: async () => notReady, onDeliveryFailure: notices });
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'never ready' });
+      const id = waitingFor(OTHER)[0].id;
+      connected = true;
+      await flushOutbox(OTHER);
+      expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', reason: 'receiver_not_ready' });
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + DELIVERY_MAX_AGE_MS + 1);
+      await flushOutbox(OTHER);
+      expect(waitingFor(OTHER)).toHaveLength(0);
+      expect(getDelivery('here', id)).toMatchObject({ state: 'expired', reason: 'expired' });
+      expect(notices).toHaveBeenCalledWith(expect.objectContaining({ callId: id, state: 'expired' }));
+      expect(agentCalls()).toHaveLength(0);
+    });
+
+    it('still refuses for good on an ordinary refusal', async () => {
+      connected = false;
+      restart({ authorizeQueuedCall: async () => ({ allowed: false, reason: 'agent.message was revoked' }) });
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'revoked' });
+      const id = waitingFor(OTHER)[0].id;
+      connected = true;
+      await flushOutbox(OTHER);
+      expect(getDelivery('here', id)).toMatchObject({ state: 'refused', reason: 'authorization_revoked' });
+      expect(waitingFor(OTHER)).toHaveLength(0);
+    });
   });
 
   it('makes refusal/expiry durable and notifies the sender, retrying an unacknowledged notice on restart', async () => {

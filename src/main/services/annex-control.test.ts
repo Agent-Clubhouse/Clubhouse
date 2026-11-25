@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-control-test' } }));
 vi.mock('ws', () => ({ WebSocket: { OPEN: 1, CLOSED: 3 }, WebSocketServer: vi.fn() }));
@@ -138,6 +139,10 @@ function sentOfType(ws: FakeSocket, type: string) {
   return ws.sent.filter((m) => m.type === type);
 }
 
+function lateResponse(id: string) {
+  return { v: 1, type: 'bulk', op: 'start', transfer: randomUUID(), id, kind: 'response', size: 1, meta: { status: 200, headers: {} } };
+}
+
 beforeEach(() => {
   world = { peer: peer() };
   inboundAllowed = true;
@@ -191,6 +196,187 @@ describe('GET bulletin and transcript envelope boundary (#3613)', () => {
     ['GET', '/other?x=/api/v1/agents/a/sessions/s/transcript'],
   ] as const)('keeps the ordinary envelope for %s %s', (method, path) => {
     expect(control.responseBodyLimit(path, method)).toBe(formerLimit);
+  });
+});
+
+describe('locally cancelled late bulk response offers', () => {
+  async function cancel(id: string, input: control.ControlRequestInput = { method: 'GET', path: '/api/v1/status' }, maxResponseBytes?: number) {
+    const abort = new AbortController();
+    const result = expect(control.request(TARGET, input, { requestId: id, signal: abort.signal, maxResponseBytes }))
+      .rejects.toMatchObject({ code: 'cancelled', indeterminate: input.method !== 'GET' });
+    abort.abort();
+    await result;
+  }
+
+  it('cancels only the delayed offer and keeps subscriptions and the next request on the same link', async () => {
+    const { requesterWs, targetWs } = await connected();
+    const onEnd = vi.fn();
+    const subscription = control.subscribe(TARGET, { onFrame: vi.fn(), onEnd });
+    await flush();
+    requesterWs.peer = null;
+    await cancel('cancelled');
+    const offer = lateResponse('cancelled');
+    requesterWs.deliver(offer);
+    expect(requesterWs.sent).toContainEqual({ ...offer, op: 'cancel' });
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+    expect(requesterWs.closed).toBeNull();
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(served[0].close).not.toHaveBeenCalled();
+    requesterWs.peer = targetWs;
+    expect((await control.request(TARGET, { method: 'GET', path: '/api/v1/status' })).status).toBe(200);
+    expect(requesterWs.closed).toBeNull();
+    subscription.close();
+  });
+
+  it('still closes for a never-issued response id', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.deliver(lateResponse('never-issued'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each([control.CANCELLED_REQUEST_TTL_MS - 1, control.CANCELLED_REQUEST_TTL_MS, control.CANCELLED_REQUEST_TTL_MS + 1])('enforces the exact cancellation TTL after %i ms', async (elapsed) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('expired');
+    vi.setSystemTime(Date.now() + elapsed);
+    requesterWs.deliver(lateResponse('expired'));
+    if (elapsed < control.CANCELLED_REQUEST_TTL_MS) expect(requesterWs.closed).toBeNull();
+    else expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('retains exactly the newest bounded set through a flood of legitimate cancels', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const count = control.CANCELLED_REQUEST_MAX_PER_LINK * 3 + 1;
+    for (let index = 0; index < count; index++) await cancel(`flood-${index}`);
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(count);
+    for (let index = count - control.CANCELLED_REQUEST_MAX_PER_LINK; index < count; index++) {
+      requesterWs.deliver(lateResponse(`flood-${index}`));
+      expect(requesterWs.closed).toBeNull();
+    }
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'cancel')).toHaveLength(control.CANCELLED_REQUEST_MAX_PER_LINK);
+    requesterWs.deliver(lateResponse(`flood-${count - control.CANCELLED_REQUEST_MAX_PER_LINK - 1}`));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each(['same token', 'new token'])('does not tolerate a second offer using the %s', async (replay) => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('once');
+    const offer = lateResponse('once');
+    requesterWs.deliver(offer);
+    expect(requesterWs.closed).toBeNull();
+    requesterWs.deliver(replay === 'same token' ? offer : lateResponse('once'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each(['metadata', 'request kind', 'client kind', 'route limit'])('does not exempt an offer with invalid %s', async (invalid) => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const path = '/api/v1/icons/agents/a';
+    await cancel('invalid', { method: 'GET', path });
+    const offer = lateResponse('invalid');
+    if (invalid === 'metadata') requesterWs.deliver({ ...offer, meta: { status: '200', headers: {} } });
+    if (invalid === 'request kind') requesterWs.deliver({ ...offer, kind: 'request', meta: { method: 'GET', path } });
+    if (invalid === 'client kind') requesterWs.deliver({ ...offer, kind: 'client', meta: { frame: { type: 'clipboard:image', payload: {} } } });
+    if (invalid === 'route limit') requesterWs.deliver({ ...offer, size: control.responseBodyLimit(path, 'GET') + 1 });
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('refuses an offer above the caller limit but within the route envelope without retiring the link', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const path = '/api/v1/network/replica';
+    await cancel('local-limit', { method: 'POST', path, body: '{}' }, 1024 * 1024);
+    const offer = { ...lateResponse('local-limit'), size: 1024 * 1024 + 1 };
+    requesterWs.deliver(offer);
+    expect(requesterWs.sent).toContainEqual({ ...offer, op: 'cancel' });
+    expect(requesterWs.closed).toBeNull();
+  });
+
+  it.each([
+    ['GET', '/api/v1/projects/p/git/diff', false],
+    ['POST', '/api/v1/projects/p/git/diff', true],
+    ['GET', '/api/v1/projects/p/git/diff-extra', true],
+  ] as const)('uses the original %s %s bounds, without path/method exemptions', async (method, path, closes) => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('bound', { method, path });
+    requesterWs.deliver({ ...lateResponse('bound'), size: CONTROL_FRAME_MAX_BYTES + 64 * 1024 + 1 });
+    if (closes) expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    else expect(requesterWs.closed).toBeNull();
+  });
+
+  it('never applies one connection cancellation to a fresh authenticated connection', async () => {
+    const old = await connected();
+    old.requesterWs.peer = null;
+    await cancel('old-link');
+    control.closeFor(TARGET, 'in');
+    await flush();
+    const fresh = await connected();
+    fresh.requesterWs.deliver(lateResponse('old-link'));
+    expect(fresh.requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('invalidates the exception when the local caller reuses the request id', async () => {
+    const { requesterWs, targetWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('reused');
+    requesterWs.peer = targetWs;
+    expect((await control.request(TARGET, { method: 'GET', path: '/different' }, { requestId: 'reused' })).status).toBe(200);
+    requesterWs.deliver(lateResponse('reused'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('retains the authority-loss fence even for a recently cancelled id', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('revoked');
+    inboundAllowed = false;
+    requesterWs.deliver(lateResponse('revoked'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_REVOKED);
+  });
+
+  it('never exempts a pre-aborted request that was not issued', async () => {
+    const { requesterWs } = await connected();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' }, { requestId: 'pre-aborted', signal: abort.signal }))
+      .rejects.toMatchObject({ code: 'cancelled' });
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
+    requesterWs.deliver(lateResponse('pre-aborted'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('does not remember an abort after a request failed to issue', async () => {
+    const { requesterWs } = await connected();
+    const abort = new AbortController();
+    await expect(control.request(TARGET, {
+      method: 'POST', path: '/api/v1/status', body: Buffer.alloc(CONTROL_FRAME_MAX_BYTES + 1),
+    }, { requestId: 'not-issued', signal: abort.signal })).rejects.toMatchObject({ code: 'request_too_large' });
+    abort.abort();
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
+    expect(sentOfType(requesterWs, 'bulk')).toHaveLength(0);
+    requesterWs.deliver(lateResponse('not-issued'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('refuses a late offer for a timed-out request without retiring the link', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const result = expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' }, { requestId: 'timeout', timeoutMs: 1 }))
+      .rejects.toMatchObject({ code: 'timeout' });
+    await vi.advanceTimersByTimeAsync(1);
+    await result;
+    const offer = lateResponse('timeout');
+    requesterWs.deliver(offer);
+    expect(requesterWs.sent).toContainEqual({ ...offer, op: 'cancel' });
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+    expect(requesterWs.closed).toBeNull();
+    requesterWs.deliver(lateResponse('timeout'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
   });
 });
 
@@ -1938,4 +2124,25 @@ it.each(['unknown', 'wrong-operation'])('P6 late cancel %s cannot alter UUID own
   }
   targetWs.deliver({ ...transfer.start, op: 'cancel', id: 'foreign' });
   expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+});
+
+describe('capacity-providers feature (#3799)', () => {
+  it('is agreed when both sides offer it, and read from the current link', async () => {
+    const { requesterWs } = await connected(['request', 'capacity-providers']);
+    expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(true);
+    expect(control.peerAgreedFeature(REQUESTER, 'capacity-providers')).toBe(true);
+    requesterWs.close(1000, '');
+    await flush();
+    expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(false);
+  });
+
+  it('is not agreed with an older peer that never offers it', async () => {
+    await connected(['request', 'subscribe', 'ws-control', 'bulk']);
+    expect(control.peerAgreedFeature(TARGET, 'capacity-providers')).toBe(false);
+    expect(control.peerAgreedFeature(REQUESTER, 'capacity-providers')).toBe(false);
+  });
+
+  it('is not agreed with a machine that has no link at all', () => {
+    expect(control.peerAgreedFeature(Array(32).fill('ef').join(':'), 'capacity-providers')).toBe(false);
+  });
 });

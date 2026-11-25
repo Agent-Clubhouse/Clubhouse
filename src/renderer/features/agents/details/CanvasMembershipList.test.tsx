@@ -40,3 +40,13 @@ it('keeps unavailable descriptions distinct across scopes and multiple lists', (
   for (const row of rows) fireEvent.click(row);
   expect(jump).not.toHaveBeenCalled();
 });
+
+it('renders an optional secondary action per row and is unchanged without it', () => {
+  const jump = vi.fn();
+  const plain = render(<CanvasMembershipList hits={[home, project]} onJump={jump} unavailable={() => 'Omitted'} />);
+  // Without the prop each row is exactly its button and reason, as before.
+  expect([...plain.container.querySelectorAll('li')].map((li) => [...li.children].map((c) => c.tagName))).toEqual([['BUTTON', 'P'], ['BUTTON', 'P']]);
+  plain.unmount();
+  render(<CanvasMembershipList hits={[home, project]} onJump={jump} unavailable={() => 'Omitted'} secondary={(hit, index) => <span data-testid="secondary">{`${hit.scope}:${index}`}</span>} />);
+  expect(screen.getAllByTestId('secondary').map((n) => n.textContent)).toEqual(['app:0', 'project:1']);
+});

@@ -12,7 +12,7 @@ describe('Annex control protocol (#3613 P3)', () => {
   });
 
   it('offers request (P3), subscribe (P4), ws-control (P5) and bulk (P6)', () => {
-    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe', 'ws-control', 'bulk']);
+    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe', 'ws-control', 'bulk', 'capacity-providers']);
   });
 
   it('parses a client frame exactly', () => {

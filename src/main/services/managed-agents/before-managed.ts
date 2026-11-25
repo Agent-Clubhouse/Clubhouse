@@ -35,12 +35,13 @@ export function firstStartName(file: string): string {
  * name is taken, a time suffix is added (as backupMcpFile does). Returns the
  * name written.
  */
-async function writeNew(dir: string, name: string, content: string): Promise<string> {
+async function writeNew(dir: string, name: string, content: string | Buffer): Promise<string> {
   await fsp.mkdir(dir, { recursive: true });
   const stamp = Date.now();
   for (let n = 0; n < 100; n++) {
     const candidate = n === 0 ? name : n === 1 ? `${name}.${stamp}` : `${name}.${stamp}-${n}`;
     try {
+      // A Buffer is written as its bytes; the encoding applies to a string only.
       await fsp.writeFile(path.join(dir, candidate), content, { encoding: 'utf-8', flag: 'wx' });
       return candidate;
     } catch (err) {
@@ -54,9 +55,10 @@ async function writeNew(dir: string, name: string, content: string): Promise<str
  * Keep a copy of the instructions file before Clubhouse takes it over, so
  * nothing is lost. An earlier copy, from an earlier switch, is never
  * overwritten. Returns the copy's file name, or null when there was nothing to keep.
+ * Bytes (a Buffer) are kept exactly, including any that aren't valid UTF-8.
  */
-export async function backupInstructions(agentId: string, file: string, existing: string): Promise<string | null> {
-  if (!existing) return null;
+export async function backupInstructions(agentId: string, file: string, existing: string | Buffer): Promise<string | null> {
+  if (existing.length === 0) return null;
   return writeNew(beforeManagedDir(agentId), backupName(file), existing);
 }
 

@@ -1,0 +1,74 @@
+M1 shared: member view key need not equal member (wrong focus) [src/shared/remote-canvas-board-page.ts] exit=1 restore=byte-identical sha256=608fe0a7fca8e489b7bbc90886036cf2b8d76989a613b4766ef780b91dbb7198
+  × rejects wrong focus: a member view whose key is not the row, two members, none, or a non-agent member 2ms
+  Tests  1 failed | 31 passed (32)
+M2 shared: board context canvasId not bound (wrong board) [src/shared/remote-canvas-board-page.ts] exit=1 restore=byte-identical sha256=608fe0a7fca8e489b7bbc90886036cf2b8d76989a613b4766ef780b91dbb7198
+  × rejects a page for another canvasId (wrong board / wrong row) 3ms
+  × renderer adapter binds the captured row context: a page main would accept for another board, row or project is refused 3ms
+  Tests  2 failed | 30 passed (32)
+M3 renderer adapter: page validated without captured context [src/renderer/features/agents/details/RemoteCanvasesCard.tsx] exit=1 restore=byte-identical sha256=7cccc3ef1e5c8689c6fb58490b71d9dd7dbd82b5f39de8161a8d280d4518c733
+  × renderer adapter binds the captured row context: a page main would accept for another board, row or project is refused 3ms
+  Tests  1 failed | 5 passed (6)
+M4 main client: member binding dropped [src/main/services/annex-client.ts] exit=1 restore=byte-identical sha256=4de698589965e850fcd28f9264779632c9b20d54367a0298f5893927cd10f0ba
+  × sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview) 8ms
+  Tests  1 failed | 348 passed (349)
+M5 main client: selection binding dropped [src/main/services/annex-client.ts] exit=1 restore=byte-identical sha256=4de698589965e850fcd28f9264779632c9b20d54367a0298f5893927cd10f0ba
+  × sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview) 8ms
+  Tests  1 failed | 348 passed (349)
+M6 main client: agent binding dropped [src/main/services/annex-client.ts] exit=0 restore=byte-identical sha256=4de698589965e850fcd28f9264779632c9b20d54367a0298f5893927cd10f0ba
+  Tests  349 passed (349)
+M7 producer: board advertised in inventorySources [src/main/services/remote-agent-details.ts] exit=1 restore=byte-identical sha256=58d40f365dd94d9553da9c76e9151cb38bb3cf796f73d11d9d2de70fa3b53f79
+  × composes selected passive Dispatcher metadata and final receipts: same 22ms
+  × composes selected passive Dispatcher metadata and final receipts: missing-source 13ms
+  × composes selected passive Dispatcher metadata and final receipts: legacy-source 7ms
+  × composes selected passive Dispatcher metadata and final receipts: broken-index 8ms
+  × composes selected passive Dispatcher metadata and final receipts: missing-index 7ms
+  × composes selected passive Dispatcher metadata and final receipts: withheld 8ms
+M8 producer: board admitted by its own (unadvertised) source [src/main/services/remote-agent-details.ts] exit=1 restore=byte-identical sha256=58d40f365dd94d9553da9c76e9151cb38bb3cf796f73d11d9d2de70fa3b53f79
+  × dispatches the board query to the board reader only, admitted through the advertised membership source 4ms
+  × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 0ms
+  Tests  2 failed | 213 passed (215)
+M9 producer: no premeasure [src/main/services/remote-agent-details.ts] exit=1 restore=byte-identical sha256=58d40f365dd94d9553da9c76e9151cb38bb3cf796f73d11d9d2de70fa3b53f79
+  × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 5ms
+  Tests  1 failed | 214 passed (215)
+M10 producer: board dispatched to membership reader [src/main/services/remote-agent-details.ts] exit=1 restore=byte-identical sha256=58d40f365dd94d9553da9c76e9151cb38bb3cf796f73d11d9d2de70fa3b53f79
+  × dispatches the board query to the board reader only, admitted through the advertised membership source 4ms
+  × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 0ms
+  Tests  2 failed | 213 passed (215)
+M11 route: member key accepted for every source [src/main/services/annex-server.ts] exit=1 restore=byte-identical sha256=a975e221f0a294619e17df7369287aaa10f31ba518135cb58e4d8ca4ee73e4d7
+  × admits the selected board query (member only for the board source) under the same desktop GET and final revocation gate 5003ms
+  Tests  1 failed | 644 passed (645)
+M12 renderer: settlement ignores the transition generation (ABA) [src/renderer/features/agents/details/RemoteCanvasBoardPreview.tsx] exit=1 restore=byte-identical sha256=6432be51e821ad2b92ddb46874c5b8d5163e10414a648eddf52d8cad1c092750
+  × retires a pending read permanently across omitted -> navigable -> omitted with the same fence (ABA), then reads again only on request 26ms
+  Tests  1 failed | 5 passed (6)
+M13 host: other agents labelled by their names [src/main/services/selected-canvas-board-page.ts] exit=1 restore=byte-identical sha256=5d32a987939664ad9ee47c0ce7bda6c5086a397f66b1c6465ea5e510c4232945
+  × projects only the member row’s board: member keyed by the row, other agents generic, no content, ids or other boards 18ms
+  Tests  1 failed | 9 passed (10)
+M14 host: member view keyed by a fresh hash, not the row key [src/main/services/selected-canvas-board-page.ts] exit=1 restore=byte-identical sha256=5d32a987939664ad9ee47c0ce7bda6c5086a397f66b1c6465ea5e510c4232945
+  × projects only the member row’s board: member keyed by the row, other agents generic, no content, ids or other boards 17ms
+  Tests  1 failed | 9 passed (10)
+M15 host: board over 500 views not limited [src/main/services/selected-canvas-board-page.ts] exit=1 restore=byte-identical sha256=5d32a987939664ad9ee47c0ce7bda6c5086a397f66b1c6465ea5e510c4232945
+  × refuses a board over 500 views as limit, without any partial layout 15ms
+  Tests  1 failed | 9 passed (10)
+M16 shared: isRemoteInventoryPage loses the board branch [src/shared/remote-inventory-page.ts] exit=1 restore=byte-identical sha256=2d2c20212ddd5eb608b843d6f1a9fd9f7fd6f0ab649785e2bfcb1b667370138f
+  × accepts a bounded page and its full ownership context 3ms
+  × is admitted only when the advertised sources include memberships (the board is never advertised) 0ms
+  × dispatches the board query to the board reader only, admitted through the advertised membership source 4ms
+  × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 2ms
+  × sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview) 4ms
+  × captures the board query once before any await: later mutation and getter re-reads change neither URL nor binding 5ms
+M17 shared Details: board page bound to its own source, not membership [src/shared/remote-agent-details.ts] exit=1 restore=byte-identical sha256=c6196f74c5921d1a4b868fb22e004399f3146048337cc063c83a939cc4040b58
+  × is admitted only when the advertised sources include memberships (the board is never advertised) 3ms
+  × dispatches the board query to the board reader only, admitted through the advertised membership source 4ms
+  × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 2ms
+  × sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview) 4ms
+  × captures the board query once before any await: later mutation and getter re-reads change neither URL nor binding 4ms
+  Tests  5 failed | 585 passed (590)
+M18 shared: isRemoteDetailsQuery loses the board branch [src/shared/remote-details-query.ts] exit=1 restore=byte-identical sha256=a0348f1154dde63d0feaa096645892753379154ec58a1483a79ac2d0600c72ff
+  × accepts exactly card, source, member and selection with literal card/source and 64-hex ids 3ms
+  × a late board denial still revokes the receipt it was read under 2ms
+  × sends the selected board query exactly and binds the page to the requested agent, member and selection (#13 preview) 5ms
+  × captures the board query once before any await: later mutation and getter re-reads change neither URL nor binding 3ms
+  × admits the selected board query (member only for the board source) under the same desktop GET and final revocation gate 64ms
+  Tests  5 failed | 1015 passed (1020)
+M19 hook: row pager uses the general inventory guard [src/renderer/features/agents/details/useSelectedInventoryPage.ts] exit=0 restore=byte-identical sha256=5ecb13b975f8de9303b1ad9cb3f9e5d813fee685f7170e3af19534d81dff5a8a
+  Tests  453 passed (453)

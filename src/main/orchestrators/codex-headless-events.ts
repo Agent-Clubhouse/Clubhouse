@@ -141,9 +141,12 @@ export function createCodexHeadlessNormalizer(): (raw: StreamJsonEvent) => Strea
       case 'turn.completed': {
         // A figure Codex left out stays out: a turn that reported no usage is not a zero-token turn.
         const usage = (raw.usage ?? {}) as Record<string, unknown>;
-        const reported: { input_tokens?: number; output_tokens?: number } = {};
-        if (isCount(usage.input_tokens)) reported.input_tokens = usage.input_tokens;
-        if (isCount(usage.output_tokens)) reported.output_tokens = usage.output_tokens;
+        // Codex's input_tokens already includes cached input; reasoning is part of output.
+        const reported: { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number; reasoning_output_tokens?: number } = {};
+        for (const key of ['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens'] as const) {
+          const value = usage[key];
+          if (isCount(value)) reported[key] = value;
+        }
         return [{
           type: 'result',
           subtype: 'success',
