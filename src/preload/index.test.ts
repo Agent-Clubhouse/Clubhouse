@@ -268,14 +268,6 @@ describe('preload IPC bridge', () => {
       );
     });
 
-    it('starts and cancels asynchronous creations (#2226)', async () => {
-      const params = { name: 'Helper', color: 'indigo', branchFrom: 'main' };
-      await expect(api.agent.startDurableCreation('/projects/demo', params)).resolves.toBe('bridge-result');
-      expect(invoke).toHaveBeenCalledWith('agent:start-durable-creation', '/projects/demo', params);
-      await expect(api.agent.cancelDurableCreation('/projects/demo', 'agent-1')).resolves.toBe('bridge-result');
-      expect(invoke).toHaveBeenCalledWith('agent:cancel-durable-creation', '/projects/demo', 'agent-1');
-    });
-
     it('passes agent updates and returns the handler result', async () => {
       const updates = { name: 'Builder 2', emoji: 'rocket' };
 

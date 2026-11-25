@@ -39,6 +39,7 @@ import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import { noteRetiredPlugins } from './services/retired-plugin-data';
+import { removeSavedChatCliDenylist } from './services/retired-chat-cli-denylist';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry } from './telemetry/crash-handlers';
@@ -217,7 +218,7 @@ const createWindow = (): void => {
   });
 
   // Apply security guards (will-navigate, setWindowOpenHandler, will-attach-webview)
-  applyWindowSecurityGuards(mainWindow);
+  applyWindowSecurityGuards(mainWindow, MAIN_WINDOW_WEBPACK_ENTRY);
 
 
   // Clean up file watchers when the window is about to close (before webContents is destroyed)
@@ -479,6 +480,9 @@ app.on('ready', async () => {
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin check failed: ${err instanceof Error ? err.message : String(err)}`);
     });
+
+  // The remote chat CLI kill switch is gone (#3515): drop the list older builds saved.
+  void removeSavedChatCliDenylist(app.getPath('userData'));
 
   // Start stale session sweeps (safety net for leaked sessions)
   // Logs main-process stalls of a second or more with what was running (#3230).

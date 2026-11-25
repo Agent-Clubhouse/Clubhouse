@@ -404,7 +404,7 @@ One `clubhouse.audit.setting` event per change or refusal, in the local telemetr
 | App | The asset catalog (`asset-catalog/store.ts`): new assets, revisions, template publications, names, deletions | Changed only, by asset id, refusals too |
 | Agent | The asset catalog: compositions, accepted structure, template switches and copies | Changed only, refusals too |
 
-`settings-audit-inventory.test.ts` pins this: a new settings store has to report or be named as not settings, and the writers and entry points are checked. **Not settings:** `annex-ports.json`, `finished-quick-agents.json`, `project-state.json`, `chat-cli-denylist.json`.
+`settings-audit-inventory.test.ts` pins this: a new settings store has to report or be named as not settings, and the writers and entry points are checked. **Not settings:** `annex-ports.json`, `finished-quick-agents.json`, `project-state.json`.
 
 **Not covered:** the renderer's own stores such as keyboard shortcuts, plugin storage, files edited by hand, and the Dispatcher's control calls, which have their own audit event (`clubhouse.audit.dispatcher_control`). Project pin and inactive state isn't treated as a setting. A store's save records a key's value as saved, which can include neighbours saved at their defaults, as `docs/settings-read-mcp.md` describes.
 

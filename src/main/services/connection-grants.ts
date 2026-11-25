@@ -393,21 +393,6 @@ export async function setToolsAcrossMachines(agentId: string, address: string, o
   await setConnectionTools(from, to, disabledTools);
 }
 
-/** Remove the user's links between an agent here and one on another machine, both ways. */
-export async function disconnectAcrossMachines(agentId: string, address: string): Promise<void> {
-  const other = connectionEnd(address);
-  if (!other.machineId) throw new Error('That agent is on this computer.');
-  for (const [from, to] of [[local(agentId), other], [other, local(agentId)]] as const) {
-    const direction = getConnectionDirection(from, to);
-    if (direction?.link) await setConnectionLink(from, to, false);
-    if (activeAgentLinks(direction).length) {
-      await removeAgentNetworkSources(from, to);
-      markSourceRemovedByUser(NETWORK_AGENT_CONNECTION_SOURCE_ID, bindingTargetOf(from), bindingTargetOf(to));
-    }
-  }
-  await rebuildPersistedBindings();
-}
-
 /** Remove only one source across both directions of a network connection. */
 export async function removeSourceAcrossMachines(agentId: string, address: string, kind: 'user_link' | 'card_link' | 'tool_link'): Promise<void> {
   const other = connectionEnd(address);

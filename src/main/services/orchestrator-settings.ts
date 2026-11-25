@@ -3,12 +3,9 @@ import { isExperimentalProvider } from '../../shared/providers/descriptors';
 import * as path from 'path';
 import { app } from 'electron';
 import { createSettingsStore } from './settings-store';
-import type { AgentExecutionMode } from '../orchestrators/types';
 
 export interface OrchestratorSettings {
   enabled: string[];
-  /** Per-provider default execution mode preference */
-  defaultExecutionMode?: Partial<Record<string, AgentExecutionMode>>;
   /**
    * Per-provider opt-in/out of the hook server (permission requests, tool
    * observability).  App-level only.  An absent entry resolves to the default

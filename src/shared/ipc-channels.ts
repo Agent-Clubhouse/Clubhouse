@@ -112,8 +112,6 @@ export const IPC = {
     WRITE_MCP_CATALOG: 'project:write-mcp-catalog',
     READ_DEFAULT_MCPS: 'project:read-default-mcps',
     WRITE_DEFAULT_MCPS: 'project:write-default-mcps',
-    READ_MCP_CONFIGS: 'project:read-mcp-configs',
-    WRITE_MCP_CONFIGS: 'project:write-mcp-configs',
     READ_WRAPPER_CATALOG_SNAPSHOT: 'project:read-wrapper-catalog-snapshot',
     WRITE_WRAPPER_CATALOG_SNAPSHOT: 'project:write-wrapper-catalog-snapshot',
     /** Pins, inactive marks, activity and the idle window, kept by main (#2458). */
@@ -128,7 +126,6 @@ export const IPC = {
     LINKS_HYDRATE: 'project:links-hydrate',
     LINKS_APPLY: 'project:links-apply',
     LINKS_CHANGED: 'project:links-changed',
-    SET_HANDOFF_PROJECT_LINKS: 'project:set-handoff-project-links',
     GET_HANDOFF_TRANSFER_BOUNDS: 'project:get-handoff-transfer-bounds',
     SET_HANDOFF_TRANSFER_BOUNDS: 'project:set-handoff-transfer-bounds',
     GET_HANDOFF_SECRET_SETTINGS: 'project:get-handoff-secret-settings',
@@ -136,9 +133,6 @@ export const IPC = {
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',
-    /** Asynchronous create (#2226): returns the id at once; stages arrive on DURABLE_CREATION_EVENT. */
-    START_DURABLE_CREATION: 'agent:start-durable-creation',
-    CANCEL_DURABLE_CREATION: 'agent:cancel-durable-creation',
     DURABLE_CREATION_EVENT: 'agent:durable-creation-event',
     LIST_DURABLE: 'agent:list-durable',
     GET_RUNNING_STATUSES: 'agent:get-running-statuses',
@@ -174,9 +168,7 @@ export const IPC = {
     GET_ORCHESTRATION_POLICY: 'agent:get-orchestration-policy',
     SET_ORCHESTRATION_POLICY: 'agent:set-orchestration-policy',
     TURN_OFF_ORCHESTRATION: 'agent:turn-off-orchestration',
-    GET_HELPER_SUMMARY: 'agent:get-helper-summary',
     RESOLVE_HELPER_ACCESS: 'agent:resolve-helper-access',
-    CHECK_HELPER_LIMIT: 'agent:check-helper-limit',
     RENAME_DURABLE: 'agent:rename-durable',
     UPDATE_DURABLE: 'agent:update-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',
@@ -214,13 +206,11 @@ export const IPC = {
     GET_CONTEXT_WINDOW_OPTIONS: 'agent:get-context-window-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
-    GET_TOOL_VERB: 'agent:get-tool-verb',
     GET_SUMMARY_INSTRUCTION: 'agent:get-summary-instruction',
     READ_TRANSCRIPT: 'agent:read-transcript',
     GET_TRANSCRIPT_INFO: 'agent:get-transcript-info',
     READ_TRANSCRIPT_PAGE: 'agent:read-transcript-page',
     READ_TRANSCRIPT_FROM: 'agent:read-transcript-from',
-    IS_HEADLESS_AGENT: 'agent:is-headless-agent',
     REORDER_DURABLE: 'agent:reorder-durable',
     PICK_ICON: 'agent:pick-icon',
     SAVE_ICON: 'agent:save-icon',
@@ -336,7 +326,6 @@ export const IPC = {
     PUSH: 'git:push',
     PULL: 'git:pull',
     DIFF: 'git:diff',
-    CREATE_BRANCH: 'git:create-branch',
     STASH: 'git:stash',
     STASH_POP: 'git:stash-pop',
     LIST_WORKTREES: 'git:list-worktrees',
@@ -591,7 +580,6 @@ export const IPC = {
     AGENT_CHANGES: 'annex-client:agent-changes',
     CONTROLLER_CHAT_PAGE: 'annex-client:controller-chat-page',
     CONTROLLER_CHAT_SESSIONS: 'annex-client:controller-chat-sessions',
-    CHAT_SESSIONS: 'annex-client:chat-sessions',
     CHAT_COMMAND: 'annex-client:chat-command',
     RESPOND_PERMISSION: 'annex-client:respond-permission',
     SESSION_LIST: 'annex-client:session-list',
@@ -684,7 +672,6 @@ export const IPC = {
     GET_BINDINGS: 'mcp-binding:get-bindings',
     LIST_CARD_TARGETS: 'mcp-binding:list-card-targets',
     ADD_CARD_CONNECTION: 'mcp-binding:add-card-connection',
-    REMOVE_CARD_CONNECTION: 'mcp-binding:remove-card-connection',
     REMOVE_REMOTE_SOURCE: 'mcp-binding:remove-remote-source',
     BIND: 'mcp-binding:bind',
     UNBIND: 'mcp-binding:unbind',
@@ -712,8 +699,6 @@ export const IPC = {
     MAKE_TWO_WAY: 'mcp-binding:make-two-way',
     /** Connect an agent here with one on another machine, one way or both (#3064). */
     CONNECT_ACROSS_MACHINES: 'mcp-binding:connect-across-machines',
-    /** Remove the user's links between an agent here and one on another machine (#3064). */
-    DISCONNECT_ACROSS_MACHINES: 'mcp-binding:disconnect-across-machines',
     /** Set the tools turned off on one direction with an agent on another machine (#3064). */
     SET_TOOLS_ACROSS_MACHINES: 'mcp-binding:set-tools-across-machines',
     /** Turn Wake it on or off for one direction between two agents on this computer (#3215). */

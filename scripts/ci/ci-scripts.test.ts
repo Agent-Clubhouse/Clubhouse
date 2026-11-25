@@ -22,7 +22,7 @@ const run = (d: string) => classify([...changedLinesByFile(d).keys()], changedLi
 
 describe('classify-changes', () => {
   it('docs-only changes need nothing', () => {
-    expect(run(diff({ 'docs/ci.md': ['+x'], 'README.md': ['+y'], 'notes/a.md': ['+z'] })))
+    expect(run(diff({ 'docs/ci.md': ['+x'], 'README.md': ['+y'], 'docs/b.md': ['+z'] })))
       .toEqual({ docsOnly: true, e2e: false, macosBuild: false });
   });
 
@@ -45,18 +45,6 @@ describe('classify-changes', () => {
     expect(run(diff({ 'scripts/ci/stable-candidate.mjs': ['+x'], 'src/main/index.ts': ['+x'] }))).toMatchObject({ e2e: true });
     expect(run(diff({ 'scripts/ci/stable-candidate.mjs': ['+x'], 'scripts/ci/package-integration.mjs': ['+x'] }))).toMatchObject({ macosBuild: true });
     expect(run(diff({ 'e2e/stable-state-seeds.mjs': ['+x'] }))).toMatchObject({ e2e: true });
-  });
-
-  it('an edit to the CLI kill switch list needs neither E2E nor the macOS build, but is not docs-only, so the unit job still checks it', () => {
-    expect(run(diff({ 'release/chat-cli-denylist.json': ['-null', '+[]'] })))
-      .toEqual({ docsOnly: false, e2e: false, macosBuild: false });
-  });
-
-  it('the CLI kill switch exception covers only that file', () => {
-    expect(run(diff({ 'release/chat-cli-denylist.json': ['+[]'], 'src/main/index.ts': ['+x'] }))).toMatchObject({ e2e: true });
-    expect(run(diff({ 'release/chat-cli-denylist.json': ['+[]'], '.github/workflows/release.yml': ['+x'] }))).toMatchObject({ e2e: true });
-    expect(run(diff({ 'release/other.json': ['+[]'] }))).toMatchObject({ e2e: true });
-    expect(run(diff({ 'release/chat-cli-denylist.json': ['+[]'], 'scripts/ci/cli-denylist.mjs': ['+x'] }))).toMatchObject({ e2e: true, macosBuild: true });
   });
 
   it('an ordinary source change gets E2E but not the macOS build', () => {

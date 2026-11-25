@@ -186,7 +186,7 @@ The TCP listener is safe enough for this: it bound to `127.0.0.1`, and with `COP
 - Pin the SDK exactly, as for the Claude SDK. `@github/copilot-sdk` 1.0.28 shipped with CLI 1.0.105, and 1.0.29 ships with 1.0.107. The earlier note's "SDK 1.0.N matches CLI 1.0.N" is wrong.
 - Set `copilot_sdk: { minVersion: '1.0.83', testedMax: '1.0.107' }` in `TESTED_CLI_VERSIONS`. 1.0.83 is two months old and these CLIs update themselves, so few users should be below it. 1.0.81 and 1.0.82 would work for `send` plus events, but they sit next to a broken SDK path, and the floor has no need to be that tight.
 - Newer than `testedMax`: keep the SDK, and log a note per §7.1.
-- Use the `chatCliDenylist` kill switch for a bad release. It already covers the driver id.
+- A bad release is answered with an app release: there is no remote kill switch (#3515).
 
 ## Fallback
 

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Mock the agent store
 const mockSetResumeStatus = vi.fn();
 const mockAgents: Record<string, { status: string }> = {};
+const mockResuming: Record<string, string> = {};
 const mockSetState = vi.fn();
 
 vi.mock('../stores/agentStore', () => {
@@ -13,6 +14,7 @@ vi.mock('../stores/agentStore', () => {
     useAgentStore: {
       getState: () => ({
         agents: mockAgents,
+        resumingAgents: mockResuming,
         setResumeStatus: mockSetResumeStatus,
         clearResumingAgents: vi.fn(),
         loadAgentIcon: mockLoadAgentIcon,
@@ -37,6 +39,7 @@ vi.mock('../stores/projectStore', () => ({
 // Mock window.clubhouse
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
 const mockGetDurableConfig = vi.fn().mockResolvedValue(null);
+const mockGetRunningStatuses = vi.fn().mockResolvedValue([]);
 const mockLoadAgentIcon = vi.fn().mockResolvedValue(undefined);
 const mockPtyKill = vi.fn();
 Object.defineProperty(globalThis, 'window', {
@@ -45,6 +48,7 @@ Object.defineProperty(globalThis, 'window', {
       agent: {
         spawnAgent: mockSpawnAgent,
         getDurableConfig: mockGetDurableConfig,
+        getRunningStatuses: mockGetRunningStatuses,
       },
       pty: {
         kill: mockPtyKill,
@@ -54,7 +58,7 @@ Object.defineProperty(globalThis, 'window', {
   writable: true,
 });
 
-import { processResumeQueue } from './resume-queue';
+import { processResumeQueue, resumeFromBanner } from './resume-queue';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID, type DispatcherState } from '../../shared/dispatcher-types';
 import { useAgentStore } from '../stores/agentStore';
@@ -86,6 +90,9 @@ function makeState(sessions: RestartSessionEntry[]): RestartSessionState {
 describe('resume-queue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockGetRunningStatuses.mockResolvedValue([]);
+    for (const key of Object.keys(mockResuming)) delete mockResuming[key];
 
     // Clear mockAgents between tests
     for (const key of Object.keys(mockAgents)) {
@@ -369,7 +376,7 @@ describe('resume-queue', () => {
       await processResumeQueue(makeState([entry]));
 
       expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
-      expect(mockSetResumeStatus).toHaveBeenCalledWith('double-fail-agent', 'failed');
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('double-fail-agent', 'failed', undefined, 'second failure');
     });
 
     it('sets status to failed when spawnAgent fails and there is no sessionId to fall back from', async () => {
@@ -385,7 +392,7 @@ describe('resume-queue', () => {
 
       // No fallback attempt since there was no sessionId
       expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
-      expect(mockSetResumeStatus).toHaveBeenCalledWith('no-session-fail-agent', 'failed');
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('no-session-fail-agent', 'failed', undefined, 'spawn error');
     });
   });
 
@@ -889,6 +896,101 @@ describe('resume-queue', () => {
         }),
       );
       expect(mockSpawnAgent.mock.calls[1][0]).not.toHaveProperty('structuredMode');
+    });
+  });
+
+  describe('resumeFromBanner (the banner\'s Resume and Retry buttons)', () => {
+    // The store mock doesn't track rows, so a test puts the row on screen itself.
+    const showRow = (agentId: string, status = 'manual') => { mockResuming[agentId] = status; };
+
+    it('resumes a manual session through the same spawn the auto path uses', async () => {
+      const entry = makeEntry({ agentId: 'manual-agent', resumeStrategy: 'manual', sessionId: 'sess-9' });
+      await processResumeQueue(makeState([entry]));
+      showRow('manual-agent');
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+
+      await resumeFromBanner('manual-agent');
+
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: 'manual-agent', resume: true, sessionId: 'sess-9' }),
+      );
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('manual-agent', 'resuming');
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('manual-agent', 'resumed');
+    });
+
+    it('shows the failure on the row, and a second click retries the resume', async () => {
+      const entry = makeEntry({ agentId: 'retry-agent', resumeStrategy: 'manual', sessionId: 'sess-1' });
+      await processResumeQueue(makeState([entry]));
+      showRow('retry-agent');
+      mockSpawnAgent.mockRejectedValueOnce(new Error('CLI not installed'));
+
+      await resumeFromBanner('retry-agent');
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('retry-agent', 'failed', undefined, 'CLI not installed');
+
+      await resumeFromBanner('retry-agent');
+      expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('retry-agent', 'resumed');
+    });
+
+    it('strips Electron\'s IPC prefix from the error it shows', async () => {
+      const entry = makeEntry({ agentId: 'ipc-agent', resumeStrategy: 'manual' });
+      await processResumeQueue(makeState([entry]));
+      showRow('ipc-agent');
+      mockSpawnAgent.mockRejectedValueOnce(new Error("Error invoking remote method 'agent:spawn': Error: Cannot verify the saved execution policy"));
+
+      await resumeFromBanner('ipc-agent');
+
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('ipc-agent', 'failed', undefined, 'Cannot verify the saved execution policy');
+    });
+
+    it('reports a failed auto resume\'s final error, not just the first attempt\'s', async () => {
+      const entry = makeEntry({ agentId: 'auto-fail', resumeStrategy: 'auto', sessionId: 'sess-2' });
+      mockSpawnAgent
+        .mockRejectedValueOnce(new Error('session not found'))
+        .mockRejectedValueOnce(new Error('nothing to continue'));
+      await processResumeQueue(makeState([entry]));
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('auto-fail', 'failed', undefined, 'nothing to continue');
+    });
+
+    it('does nothing, and writes nothing, for an agent whose row is gone (deleted or dismissed)', async () => {
+      await processResumeQueue(makeState([makeEntry({ agentId: 'gone-agent', resumeStrategy: 'manual' })]));
+      mockSetResumeStatus.mockClear();
+      mockSetState.mockClear();
+
+      await resumeFromBanner('gone-agent');
+
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+      expect(mockSetResumeStatus).not.toHaveBeenCalled();
+      expect(mockSetState).not.toHaveBeenCalled();
+    });
+
+    it('does not spawn over an agent that is already running; the row is marked resumed', async () => {
+      await processResumeQueue(makeState([makeEntry({ agentId: 'woken-agent', resumeStrategy: 'manual' })]));
+      showRow('woken-agent', 'failed');
+      mockGetRunningStatuses.mockResolvedValue(['woken-agent']);
+      mockSetState.mockClear();
+
+      await resumeFromBanner('woken-agent');
+
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+      expect(mockSetState).not.toHaveBeenCalled();
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('woken-agent', 'resumed');
+    });
+
+    it('runs one resume at a time per agent', async () => {
+      await processResumeQueue(makeState([makeEntry({ agentId: 'busy-agent', resumeStrategy: 'manual' })]));
+      showRow('busy-agent');
+
+      await Promise.all([resumeFromBanner('busy-agent'), resumeFromBanner('busy-agent')]);
+
+      expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it('says so when its row has no saved session', async () => {
+      showRow('never-captured', 'failed');
+      await resumeFromBanner('never-captured');
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('never-captured', 'failed', undefined, 'No saved session to resume');
     });
   });
 });

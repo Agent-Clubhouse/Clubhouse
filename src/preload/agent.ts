@@ -1,8 +1,8 @@
 import type { ContextWindowOptions } from '../shared/context-window';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentDeleteMode, AgentDeleteResult, AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, RemoveDisposedManyResult, StartDurableCreationParams } from '../shared/types';
-import type { HelperAccessResolution, HelperLimitCheck, HelperSummary, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
+import type { AgentDeleteMode, AgentDeleteResult, AgentHookEvent, AgentSleepInfo, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, RemoveDisposedManyResult } from '../shared/types';
+import type { HelperAccessResolution, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { AccessLevel } from '../shared/agent-access';
 import type { AgentGrantsView, GrantChange, GrantToolMap } from '../shared/agent-grant-changes';
 import type { GrantRequest, GrantRequestAnswer } from '../shared/grant-requests';
@@ -45,12 +45,6 @@ export const agent = {
   /** `creationOptions.copyLegacyDefaults`: copy the project's legacy agent defaults into it, as asked on the New agent page (#3245). */
   createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, access?: boolean | AccessLevel, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions, creationOptions?: { copyLegacyDefaults?: boolean; creationRequestId?: string }) =>
     ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions, creationOptions),
-  /** Asynchronous create (#2226): resolves with the id while the worktree is still being made. */
-  startDurableCreation: (projectPath: string, params: StartDurableCreationParams): Promise<{ agentId: string; config: DurableAgentConfig }> =>
-    ipcRenderer.invoke(IPC.AGENT.START_DURABLE_CREATION, projectPath, params),
-  /** Cancel a creation in progress; resolves false when the agent is not being created. */
-  cancelDurableCreation: (projectPath: string, agentId: string): Promise<boolean> =>
-    ipcRenderer.invoke(IPC.AGENT.CANCEL_DURABLE_CREATION, projectPath, agentId),
   onDurableCreationEvent: (callback: (event: DurableCreationEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, creationEvent: DurableCreationEvent) => callback(creationEvent);
     ipcRenderer.on(IPC.AGENT.DURABLE_CREATION_EVENT, listener);
@@ -164,15 +158,9 @@ export const agent = {
   /** Turn orchestration off, keeping or disposing the helpers; cancel changes nothing. */
   turnOffOrchestration: (projectPath: string, agentId: string, choice: OrchestrationOffChoice, force?: boolean): Promise<TurnOffOrchestrationResult> =>
     ipcRenderer.invoke(IPC.AGENT.TURN_OFF_ORCHESTRATION, projectPath, agentId, choice, force),
-  /** An agent's live direct helpers in every project, for the turn-off warning. */
-  getHelperSummary: (projectPath: string, agentId: string): Promise<HelperSummary> =>
-    ipcRenderer.invoke(IPC.AGENT.GET_HELPER_SUMMARY, projectPath, agentId),
   /** The launch access this orchestrator's helpers would get now, ranked for `helperProvider` (default: its own). */
   resolveHelperAccess: (projectPath: string, agentId: string, helperProvider?: string): Promise<HelperAccessResolution> =>
     ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPER_ACCESS, projectPath, agentId, helperProvider),
-  /** Whether this orchestrator may start another helper under its limit and the global cap. */
-  checkHelperLimit: (projectPath: string, agentId: string): Promise<HelperLimitCheck> =>
-    ipcRenderer.invoke(IPC.AGENT.CHECK_HELPER_LIMIT, projectPath, agentId),
   readQuickSummary: (agentId: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId, projectPath),
   /** The stored finished quick agents; the first window ever hands over `legacy`, its localStorage copy (#2467). */
@@ -229,9 +217,6 @@ export const agent = {
   getOrchestrators: () =>
     ipcRenderer.invoke(IPC.AGENT.GET_ORCHESTRATORS),
 
-  getToolVerb: (toolName: string, projectPath: string, orchestrator?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.GET_TOOL_VERB, toolName, projectPath, orchestrator),
-
   getSummaryInstruction: (agentId: string, projectPath: string, orchestrator?: string) =>
     ipcRenderer.invoke(IPC.AGENT.GET_SUMMARY_INSTRUCTION, agentId, projectPath, orchestrator),
 
@@ -247,9 +232,6 @@ export const agent = {
   /** Transcript events from a byte cursor: complete lines only, malformed lines skipped (run monitor). */
   readTranscriptFrom: (agentId: string, cursor: number): Promise<{ events: unknown[]; cursor: number; skipped: number; more: boolean; reset: boolean } | null> =>
     ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT_FROM, agentId, cursor),
-
-  isHeadlessAgent: (agentId: string): Promise<boolean> =>
-    ipcRenderer.invoke(IPC.AGENT.IS_HEADLESS_AGENT, agentId),
 
   onHookEvent: (callback: (agentId: string, event: {
     kind: string;
