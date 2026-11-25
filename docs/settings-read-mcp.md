@@ -83,7 +83,7 @@ Only the keys below ever come out. Each is read by name from its source, never b
 - **Secrets and raw config:** `agents.json` and `settings.json` as a whole, `mcpJson`, `mcpConfigs`, launch wrappers, `commandPrefix`, the old `profiles.json`, Annex pairing, TLS and device data, the CLI token, nonces, and the whole telemetry settings file.
 - **Free text that can hold a credential:** build, test and lint commands, project instructions and permissions.
 - **Session and work data:** session ids and history, `pendingTask`, handoff notes.
-- **Editor, Goobers and security settings.** Nothing an agent needs to explain its own behavior. `allowLocalFileWebviews` lives behind the IPC layer, which this service shouldn't import.
+- **Editor, Goobers and security settings.** Nothing an agent needs to explain its own behavior. The security store only holds the retired `allowLocalFileWebviews` key, which nothing reads (#3869).
 
 Personas were retired (#2901). `agent.persona.persona` and `project.defaults.persona` stay in the allowlist so a reader's keys don't vanish, but they always read `stored: null`, `effective: null`, `source: default`, whatever an old config still holds. Only the switch to managed reads a saved persona id.
 

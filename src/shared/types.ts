@@ -1106,7 +1106,10 @@ export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
 // --- Security settings ---
 
 export interface SecuritySettings {
-  /** Allow loading file:// URLs in webview widgets and the browser view. Default: false. */
+  /**
+   * Retired (#3869): nothing reads it. Kept so saved values stay on disk.
+   * The Browser plugin's "Allow file:// URLs" setting controls file:// in webviews.
+   */
   allowLocalFileWebviews: boolean;
 }
 
