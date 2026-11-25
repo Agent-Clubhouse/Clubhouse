@@ -763,6 +763,7 @@ describe('annex-server', () => {
         'card=actions&source=selected-action-relationships&selection=XYZ', 'card=actions&source=selected-action-relationships&selection=' + 'a'.repeat(64) + '&selection=' + 'b'.repeat(64),
         'card=actions&source=selected-action-relationships&offset=025&selection=' + 'a'.repeat(64), 'card=actions&source=selected-managed-skills', 'card=canvases&source=selected-canvas-memberships',
         'card=actions&source=selected-action-relationships&agentId=unrelated', 'card=actions&source=outgoing',
+        `card=canvases&source=selected-canvas-board&member=${'a'.repeat(64)}&selection=${'b'.repeat(64)}`,
         'card=connections&source=outgoing&offset=01', 'card=connections&source=outgoing&offset=99999', 'card=connections&source=nope', 'card=connections&source=outgoing&selection=' + 'a'.repeat(64)]) {
         expect((await request(port, 'GET', `${route}?${query}`)).status).toBe(400);
       }
@@ -1061,6 +1062,27 @@ describe('annex-server', () => {
       vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
       vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await Promise.resolve(); vi.mocked(annexPeers.getPeer).mockReturnValue(undefined); return { status: 200, body: { PRIVATE_LATE_CANVAS: true } }; });
       const refused = await request(port, 'GET', paged); expect(refused.status).toBe(403); expect(JSON.stringify(refused.body)).not.toContain('PRIVATE_LATE_CANVAS');
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('admits the selected board query (member only for the board source) under the same desktop GET and final revocation gate', async () => {
+      const member = 'a'.repeat(64), selection = 'b'.repeat(64), boardRoute = route + `?card=canvases&source=selected-canvas-board&member=${member}&selection=${selection}`;
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized, query) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true); expect(query).toEqual({ card: 'canvases', source: 'selected-canvas-board', member, selection });
+        return { status: 200, body: { readOnly: true } };
+      });
+      const { port } = await startAndPair(); expect((await request(port, 'GET', boardRoute)).status).toBe(200); vi.mocked(readRemoteAgentDetails).mockClear();
+      for (const query of [`card=canvases&source=selected-canvas-memberships&member=${member}&selection=${selection}`, `card=canvases&source=selected-canvas-board&member=${member}&selection=${selection}&offset=0`,
+        `card=canvases&source=selected-canvas-board&member=${member}&selection=${selection}&projectOffset=0`, `card=canvases&source=selected-canvas-board&member=${member}`,
+        `card=canvases&source=selected-canvas-board&member=${member}&member=${member}&selection=${selection}`, `card=canvases&source=selected-canvas-board&canvasId=board-1&viewId=view-1&selection=${selection}`,
+        `card=canvases&source=selected-canvas-board&member=not-hex&selection=${selection}`, `card=actions&source=selected-canvas-board&member=${member}&selection=${selection}`,
+        `card=connections&source=outgoing&member=${member}`]) expect((await request(port, 'GET', `${route}?${query}`)).status).toBe(400);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' });
+      expect((await request(port, 'GET', boardRoute)).status).toBe(403); expect((await request(port, 'GET', `${route}?card=canvases&source=selected-canvas-board&member=bad`)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async () => { await Promise.resolve(); vi.mocked(annexPeers.getPeer).mockReturnValue(undefined); return { status: 200, body: { PRIVATE_LATE_BOARD: true } }; });
+      const refused = await request(port, 'GET', boardRoute); expect(refused.status).toBe(403); expect(JSON.stringify(refused.body)).not.toContain('PRIVATE_LATE_BOARD');
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled(); expect(ptyManagerModule.write).not.toHaveBeenCalled();
     });
     it.each([undefined, 'phone', 'unknown'])('rejects ineligible device kind %s before any Details work', async (kind) => {

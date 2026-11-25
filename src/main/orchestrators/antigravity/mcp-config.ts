@@ -386,13 +386,18 @@ export function awaitAuthenticatedBridge(
     };
     if (!input.expectedNonce) return finish({ ok: false, reason: 'nonce_changed' });
     if (input.signal?.aborted) return finish({ ok: false, reason: 'aborted' });
-    const onAbort = () => finish({ ok: false, reason: 'aborted' });
-    input.signal?.addEventListener('abort', onAbort, { once: true });
-    cleanups.push(() => input.signal?.removeEventListener('abort', onAbort));
-    cleanups.push(deps.onAgentMcpConnected((id) => { if (id === input.agentId) guarded(); }));
-    cleanups.push(deps.onAuthChange((id) => { if (id === input.agentId) guarded(); }));
-    const timer = setTimeout(() => finish({ ok: false, reason: 'timeout' }), Math.max(0, input.deadlineMs));
-    cleanups.push(() => clearTimeout(timer));
+    // A registration that throws releases the ones made before it.
+    try {
+      const onAbort = () => finish({ ok: false, reason: 'aborted' });
+      input.signal?.addEventListener('abort', onAbort, { once: true });
+      cleanups.push(() => input.signal?.removeEventListener('abort', onAbort));
+      cleanups.push(deps.onAgentMcpConnected((id) => { if (id === input.agentId) guarded(); }));
+      cleanups.push(deps.onAuthChange((id) => { if (id === input.agentId) guarded(); }));
+      const timer = setTimeout(() => finish({ ok: false, reason: 'timeout' }), Math.max(0, input.deadlineMs));
+      cleanups.push(() => clearTimeout(timer));
+    } catch (err) {
+      return fail(err);
+    }
     guarded();
   });
 }

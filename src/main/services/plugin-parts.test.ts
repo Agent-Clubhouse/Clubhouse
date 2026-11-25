@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { skipFsyncInThisFile } from '../../../test/skip-fsync';
 
 // A plugin's agentConfig instructions and MCP servers as attributed Managed
 // Agent parts (#3245), over the real parts library and the project's real
@@ -41,6 +42,9 @@ function writeDefaults(agentDefaults: Record<string, unknown>): void {
 async function pluginEntries() {
   return Object.values(await service.liveEntries()).filter((e) => e.source.kind === 'plugin').sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// These tests are about what is written, not durability: skip the per-write fsync, which is several ms each on hosted Windows.
+skipFsyncInThisFile();
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-parts-'));

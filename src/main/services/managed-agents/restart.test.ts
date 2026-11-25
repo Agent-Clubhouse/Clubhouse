@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
+import { BUILTINS_SEED_BUDGET_MS, buildBuiltinsSeed, copyBuiltinsSeed, removeBuiltinsSeed } from '../../../../test/managed-builtins-seed';
 
 const state = vi.hoisted(() => ({
   agents: new Map<string, DurableAgentConfig>(), running: new Set<string>(),
@@ -53,6 +54,10 @@ function add(id: string, managed: boolean): void {
 }
 
 let receiptRoot: string;
+// Installing the built-ins is dozens of fsync'd writes (slow on hosted Windows): once per file, copied per test.
+let seed: string;
+beforeAll(async () => { seed = await buildBuiltinsSeed('managed-restart'); }, BUILTINS_SEED_BUDGET_MS);
+afterAll(() => { removeBuiltinsSeed(seed); });
 
 beforeEach(async () => {
   state.agents.clear();
@@ -70,6 +75,7 @@ beforeEach(async () => {
   const { _resetSettingsAuditForTesting } = await import('../settings-audit');
   receiptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-restart-'));
   _resetSettingsAuditForTesting(false);
+  copyBuiltinsSeed(seed, receiptRoot);
   _setManagedAgentsForTesting(createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(receiptRoot, 'catalog') }),
     state: createManagedStateStore(path.join(receiptRoot, 'managed')),
@@ -339,6 +345,7 @@ describe('a setup saved before the Clubhouse MCP part was required (D69)', () =>
     const actual = await vi.importActual<typeof import('./delivery')>('./delivery');
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-old-setup-'));
     _resetSettingsAuditForTesting(false);
+    copyBuiltinsSeed(seed, root);
     const svc = createManagedAgentsService({
       catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
       state: createManagedStateStore(path.join(root, 'managed')),

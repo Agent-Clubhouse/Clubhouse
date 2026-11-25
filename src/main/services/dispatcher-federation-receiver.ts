@@ -3,7 +3,8 @@ import { FederationRefusal } from '../../shared/dispatcher-federation-requests';
 import { getAgentRuntime } from './agent-runtime';
 import { federationTurnOpen, withFederationInput } from './dispatcher-federation-context';
 import { countFederatedDuplicate, federatedRequests, receiveFederatedNewsCause, receiveFederatedRequest } from './dispatcher-federation-runtime';
-import type { AgentToolRunResult, DispatcherAgentCallReceiver } from './annex-agent-calls';
+import { isNetworkComputer, type AgentToolRunResult, type DispatcherAgentCallReceiver } from './annex-agent-calls';
+import { remoteFederationController } from './dispatcher-federation';
 import { federationDirection, federationMessageDirection } from './dispatcher-federation-policy';
 import { getDispatcherAgentId, isDispatcherEnabled } from './dispatcher/dispatcher-service';
 import { runAgentToolForRemoteCaller } from './clubhouse-mcp/tool-registry';
@@ -17,6 +18,13 @@ export const federationReceiver: DispatcherAgentCallReceiver = {
     const caller = { agentId: request.origin.agentId, machineId: request.origin.machineId };
     const controller = federationDirection(caller, { agentId: request.targetId });
     const directNews = ['send_message', 'send_file'].includes(request.tool) && federationMessageDirection(caller, { agentId: request.targetId });
+    // A member whose controller this computer hasn't learned yet, from a restart on either side (#3829):
+    // nothing ran, so the sender retries until its own expiry instead of refusing for good.
+    if (!controller && !directNews && request.targetId === getDispatcherAgentId() && isNetworkComputer(caller.machineId!)
+      && !remoteFederationController(caller.machineId!)?.agentId) return {
+      content: [{ type: 'text', text: 'This computer has not learned the sending controller yet.' }],
+      isError: true, annexDelivery: { state: 'retry_later', reason: 'target_not_ready' },
+    };
     if (!controller && (!directNews || request.args.news !== undefined)) return {
       content: [{ type: 'text', text: 'That controller is not linked by this computer’s Annex Network membership.' }],
       isError: true, annexDelivery: { state: 'refused', reason: 'not_connected' },

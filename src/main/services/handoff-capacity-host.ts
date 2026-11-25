@@ -5,7 +5,7 @@ import { isDisposedAgent } from '../../shared/agent-helpers';
 import { getOrCreateIdentity } from './annex-identity';
 import { getSettings, networkEnabled } from './annex-settings';
 import { listDevices } from './annex-devices';
-import { isMachineConnected, postToMachine } from './annex-client';
+import { canReachMachine, postToMachine } from './annex-client';
 import { peekProjects } from './project-store';
 import { peekDurableConfigs } from './agent-config';
 import { agentRegistry } from './agent-registry';
@@ -59,7 +59,7 @@ export function handoffCapacityService(): HandoffCapacityService {
     machine,
     authorize: async (callerId) => holdsGrant(callerId, 'device.read', { kind: 'app' }),
     computers: () => listDevices().filter((device) => device.role === 'member' && device.kind !== 'phone').map((device) => ({
-      machine: device.fingerprint.toLowerCase(), online: isMachineConnected(device.fingerprint),
+      machine: device.fingerprint.toLowerCase(), online: canReachMachine(device.fingerprint),
       lastSeen: Number.isFinite(Date.parse(device.lastSeen)) ? Date.parse(device.lastSeen) : null,
     })),
     sampleLocal: () => sampleLocalHandoffCapacity(),

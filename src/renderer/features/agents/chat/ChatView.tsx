@@ -401,6 +401,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}
           onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
+          onEffortChange={actions.setEffort ? (e) => { void actions.setEffort?.(e); } : undefined}
           context={composerContext}
           layout={composerLayout}
           behaviorChip={dispatcher ? <DispatcherBehaviorChip compact={composerLayout === 'narrow'} /> : undefined}

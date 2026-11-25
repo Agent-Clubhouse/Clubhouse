@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { BUILTINS_SEED_BUDGET_MS, buildBuiltinsSeed, copyBuiltinsSeed, removeBuiltinsSeed } from '../../../../test/managed-builtins-seed';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -35,9 +36,14 @@ async function disk(folder = root): Promise<Record<string, unknown>> {
   return result;
 }
 async function temp(name: string) { const file = path.join(root, `.${name}.tmp-${process.pid + 100000}-1`); await fs.writeFile(file, 'do not sweep'); const old = new Date(Date.now() - 3 * 86400000); await fs.utimes(file, old, old); }
+// Installing the built-ins is dozens of fsync'd writes (slow on hosted Windows): once per file, copied per test.
+let seed: string;
+beforeAll(async () => { seed = await buildBuiltinsSeed('managed-display'); }, BUILTINS_SEED_BUDGET_MS);
+afterAll(() => { removeBuiltinsSeed(seed); });
 beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-managed-display-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); _resetSettingsAuditForTesting(false); m.running = false;
   agent = { id: 'selected', name: 'Admitted Selected', color: '', createdAt: '', worktreePath: path.join(root, 'worktree'), orchestration: { orchestrate: false, connectToDispatcher: false }, managed: { version: 1, blocks: [], skills: [], mcps: [] } };
+  copyBuiltinsSeed(seed, root);
   service = createManagedAgentsService({ catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }), state: createManagedStateStore(path.join(root, 'managed')), listProjects: async () => [], listAgents: async () => [], getAgent: m.config, setManagedSetup: vi.fn(), isRunning: () => m.running });
   // Ordinary library creation is fixture setup, before the passive capture.
   await service.ensureBuiltins(); _setManagedAgentsForTesting(service); resetAllSettingsStoresForTests();

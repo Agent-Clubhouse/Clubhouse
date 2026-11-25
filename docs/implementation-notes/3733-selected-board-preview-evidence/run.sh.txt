@@ -1,0 +1,11 @@
+#!/bin/zsh
+P=/tmp/dlc-proof-board; cd <worktree>
+TESTS=($(cat $P/scope.txt)); SRC=($(git diff --name-only e6fc2201feb28cd8f0af6bb152ea831935188aef HEAD -- src))
+state() { echo "date $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "head $(git rev-parse HEAD)"; echo "tree $(git rev-parse 'HEAD^{tree}')"; echo "status-lines $(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"; git status --porcelain --untracked-files=all; echo "load $(uptime | sed 's/.*load averages: //')"; }
+hashes() { for f in $SRC; do echo "$(shasum -a 256 $f | cut -c1-64) $(git show "HEAD:${f}" | shasum -a 256 | cut -c1-64) $f"; done; }
+state > $P/state-before.txt; hashes > $P/hashes-before.txt
+T=$(mktemp -d "${TMPDIR%/}/dlc-fresh.XXXX"); echo "TMPDIR=<fresh> npx vitest run --no-cache --maxWorkers=4 <scope.txt: ${#TESTS} files>" > $P/argv-vitest.txt
+TMPDIR=$T npx vitest run --no-cache --maxWorkers=4 ${TESTS[@]} > $P/vitest-raw.txt 2>&1; echo "vitest exit=$?" > $P/exits.txt
+echo "npx tsc --noEmit" > $P/argv-tsc.txt; npx tsc --noEmit > $P/tsc-raw.txt 2>&1; echo "tsc exit=$?" >> $P/exits.txt
+echo "npx eslint <the ${#SRC} files changed from e6fc>" > $P/argv-eslint.txt; npx eslint ${SRC[@]} > $P/eslint-raw.txt 2>&1; echo "eslint exit=$?" >> $P/exits.txt
+state > $P/state-after.txt; hashes > $P/hashes-after.txt

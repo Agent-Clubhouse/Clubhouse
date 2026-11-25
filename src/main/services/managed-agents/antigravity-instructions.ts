@@ -10,6 +10,7 @@
  * person's own global rules, which Clubhouse can't see, so a delivery is
  * recorded as within the per-file limit with the aggregate unverified.
  */
+import { constants as fsConstants } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
@@ -109,7 +110,26 @@ async function readOwnFile(file: string): Promise<{ bytes: Buffer; mode: number 
     throw new ManagedStartRefused('antigravity_instructions_unsafe',
       `${ANTIGRAVITY_PATHS.instructions} in the agent's folder is a link or not a plain file, so Clubhouse won't write through it. Nothing was written. Replace it with a plain file.`);
   }
-  return { bytes: await fsp.readFile(file), mode: st.mode & 0o777 };
+  // Read through a handle opened without following links, and only if it is
+  // the same file lstat saw: a swap in between (a link, or another file)
+  // refuses rather than reading or later writing through it.
+  const unsafe = () => new ManagedStartRefused('antigravity_instructions_unsafe',
+    `${ANTIGRAVITY_PATHS.instructions} in the agent's folder changed while Clubhouse read it, so nothing was written. Start the agent again.`);
+  let handle: Awaited<ReturnType<typeof fsp.open>>;
+  try {
+    handle = await fsp.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ELOOP' || code === 'ENOENT' || code === 'EISDIR') throw unsafe();
+    throw err;
+  }
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.dev !== st.dev || opened.ino !== st.ino) throw unsafe();
+    return { bytes: await handle.readFile(), mode: st.mode & 0o777 };
+  } finally {
+    await handle.close();
+  }
 }
 
 /** Clubhouse's own writes to one file, one at a time. */

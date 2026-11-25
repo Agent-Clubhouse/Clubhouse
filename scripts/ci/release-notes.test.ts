@@ -109,10 +109,15 @@ describe('release-notes', () => {
       repo.commit('Annex terminals (#4)', undefined, '2.0.0');
       repo.commit('Rich chat files (#5)');
       repo.tag('v1.1.0-beta.1');
-      const run = () => extract({ git: repo.git, github: fakeGithub(repo, { 3: BUMP_BODY, 5: '## Summary\nAgent PR' }), tag: 'v1.1.0-beta.1' });
-      expect(run).toThrow(/2 commit\(s\) after the version bump/);
-      expect(run).toThrow(/Annex terminals \(#4\)\n.*Rich chat files \(#5\)/);
-      expect(run).toThrow(new RegExp(`git tag -s v1\\.1\\.0-beta\\.1 -m "<release message>" ${repo.shas[3]}`));
+      // One extract, three checks on its error: each extract is a dozen Git processes, slow on hosted Windows.
+      let failure: unknown;
+      try { extract({ git: repo.git, github: fakeGithub(repo, { 3: BUMP_BODY, 5: '## Summary\nAgent PR' }), tag: 'v1.1.0-beta.1' }); }
+      catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(Error);
+      const message = (failure as Error).message;
+      expect(message).toMatch(/2 commit\(s\) after the version bump/);
+      expect(message).toMatch(/Annex terminals \(#4\)\n.*Rich chat files \(#5\)/);
+      expect(message).toMatch(new RegExp(`git tag -s v1\\.1\\.0-beta\\.1 -m "<release message>" ${repo.shas[3]}`));
     });
 
     it('a dependency change to package.json after the bump is not a bump', () => {

@@ -167,6 +167,16 @@ describe('production sleeping-controller delivery (#3345)', () => {
     expect(await receiveAgentCall(PEER, request)).toEqual(first);
     expect(state.send).toHaveBeenCalledTimes(1);
   });
+  it('asks a member whose controller it has not learned yet to retry, never refusing for good (#3829)', async () => {
+    await learnFederationController(PEER, { agentId: null, name: 'Laptop controller', enabled: false });
+    const early = await receiveAgentCall(PEER, { ...call('early-handoff', 'hand_off_request'), args: {} });
+    expect(early).toMatchObject({ delivery: { state: 'retry_later', reason: 'target_not_ready' } });
+    expect(state.spawn).not.toHaveBeenCalled();
+    // A project agent, or a call to someone other than this controller, is still refused.
+    expect(await receiveAgentCall(PEER, { ...call('early-project', 'hand_off_request'), to: 'someone-else', args: {} })).not.toMatchObject({ delivery: { state: 'retry_later' } });
+    await learnFederationController(PEER, { agentId: 'peer-controller', name: 'Laptop controller', enabled: true });
+    expect(await receiveAgentCall(PEER, { ...call('late-handoff', 'hand_off_request'), args: {} })).not.toMatchObject({ delivery: { reason: 'target_not_ready' } });
+  });
   it('never admits a project agent as a controller or a forwarded-news authority', async () => {
     const from = { agentId: 'project-agent', name: 'Project agent' };
     expect(await receiveAgentCall(PEER, { ...call('fake-controller', 'hand_off_request'), from, args: {} })).toMatchObject({ delivery: { state: 'refused' } });

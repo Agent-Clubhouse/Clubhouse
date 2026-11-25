@@ -274,6 +274,8 @@ export interface AgentRuntime {
   /** Chat-only controls; undefined on PTY runtimes. */
   setLevel?(level: PermissionLevel): Promise<void>;
   setModel?(modelId: string, effort?: string | null): Promise<void>;
+  /** Effort only, for a session with no model choice (ChatDriverSession.setEffort). */
+  setEffort?(effort: string | null): Promise<void>;
   /** Capability record of the active chat driver; undefined on PTY runtimes. */
   getCapabilities?(): ChatCapabilities | undefined;
 }
@@ -414,6 +416,13 @@ export interface ChatDriverSession {
    * Omitted keeps the current effort; null returns it to the provider's default (`capabilities.effortDefault`).
    */
   setModel(modelId: string, effort?: string | null): Promise<void>;
+  /**
+   * Change only the effort, for a session that offers effort but no model
+   * choice (`model` null, no models), where setModel has no model id to take.
+   * Absent: the driver changes effort only with setModel. null returns it to
+   * the provider's default where `capabilities.effortDefault` says it can.
+   */
+  setEffort?(effort: string | null): Promise<void>;
   compact(): Promise<void>;
   /**
    * Bytes for a ChatImage `assetId` from this session's own native store

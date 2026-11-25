@@ -282,6 +282,13 @@ describe('isLongMessage', () => {
   });
 });
 
+it('shows a refusal as a failed turn that names no cause (#3797)', () => {
+  const end: TurnEndItem = { id: 'end:s:2', sessionId: 's', seq: 2, ts: 2, kind: 'turn_end', stopReason: 'refusal' };
+  render(<TurnFooter item={end} turnNumber={1} capabilities={null} />);
+  const label = screen.getByText('Refused by the provider');
+  expect(label.className).toContain('text-ctp-error');
+});
+
 it('shows an empty response as a quiet notice rather than a failed turn (#3284)', () => {
   const notice: NoticeItem = { id: 'notice:s:1', sessionId: 's', seq: 1, ts: 1, kind: 'notice', level: 'info', code: 'empty_response', message: 'No response' };
   const end: TurnEndItem = { id: 'end:s:2', sessionId: 's', seq: 2, ts: 2, kind: 'turn_end', stopReason: 'end_turn' };

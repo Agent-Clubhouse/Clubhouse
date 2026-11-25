@@ -1,0 +1,1007 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.12 <worktree>
+
+ ❯ |main| src/main/services/remote-agent-details.test.ts (215 tests | 92 failed) 939ms
+     × composes selected passive Dispatcher metadata and final receipts: same 23ms
+     × composes selected passive Dispatcher metadata and final receipts: missing-source 7ms
+     × composes selected passive Dispatcher metadata and final receipts: legacy-source 7ms
+     × composes selected passive Dispatcher metadata and final receipts: broken-index 6ms
+     × composes selected passive Dispatcher metadata and final receipts: missing-index 6ms
+     × composes selected passive Dispatcher metadata and final receipts: withheld 7ms
+     × composes selected passive Dispatcher metadata and final receipts: truncated 7ms
+     × composes selected passive Dispatcher metadata and final receipts: missing-controller 6ms
+     × composes selected passive Dispatcher metadata and final receipts: wrong-role 7ms
+     × composes selected passive Dispatcher metadata and final receipts: name-collision 6ms
+     × composes selected passive Dispatcher metadata and final receipts: switch-off 6ms
+     × composes selected passive Dispatcher metadata and final receipts: switch-unknown 7ms
+     × composes selected passive Dispatcher metadata and final receipts: connected-off 10ms
+     × composes selected passive Dispatcher metadata and final receipts: both 8ms
+     × binds the corresponding helper ceiling note through full Details assembly: same 1ms
+     × binds the corresponding helper ceiling note through full Details assembly: missing-record 0ms
+     × binds the corresponding helper ceiling note through full Details assembly: stopped 0ms
+     × separates current registered provider from inherited next-start choice and fences late evidence: same 1ms
+     × projects current provider facts only after the complete Details assembly fence: same 0ms
+     × does not describe a connected peer without a snapshot as cached name evidence 1ms
+     × folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents 1ms
+     × never substitutes a different cached agent’s name when the saved network target is absent 0ms
+     × projects only the selected agent’s verified bounded canvas membership navigation identities 0ms
+     × projects policy and the selected host folder/branch without invented usage or local defaults 0ms
+     × returns only touching connections and related actions, never private definitions or unrelated records 1ms
+     × projects selected agent Actions relationship groups and safe last-run fields only 1ms
+     × counts bounded action relationship rows and makes omissions explicit without truncating a last-run record 1ms
+     × binds last-session usage to the selected saved session and provider, not a broad session list 1ms
+     × labels selected explicit historical activity without inventing a sleep time: complete 1ms
+     × labels selected explicit historical activity without inventing a sleep time: truncated 0ms
+     × labels selected explicit historical activity without inventing a sleep time: unknown-completeness 0ms
+     × labels selected explicit historical activity without inventing a sleep time: sleep-record 0ms
+     × does not present synthetic or invalid historical timestamps as activity: undefined 0ms
+     × does not present synthetic or invalid historical timestamps as activity: invalid 0ms
+     × does not present synthetic or invalid historical timestamps as activity: 2026-11-19T01:00:00 0ms
+     × does not present synthetic or invalid historical timestamps as activity: 0 0ms
+     × does not present synthetic or invalid historical timestamps as activity: -1 0ms
+     × does not present synthetic or invalid historical timestamps as activity: NaN 0ms
+     × does not present synthetic or invalid historical timestamps as activity: Infinity 0ms
+     × does not present synthetic or invalid historical timestamps as activity: 8640000000000001 0ms
+     × keeps historical provider attribution unknown with missing association 0ms
+     × keeps historical provider attribution unknown with unrelated association 0ms
+     × keeps historical provider attribution unknown with unset association 0ms
+     × keeps historical provider attribution unknown with conflicting association 0ms
+     × keeps historical provider attribution unknown with partly-unset association 0ms
+     × preserves historical reported values and completeness: zero 0ms
+     × preserves historical reported values and completeness: missing 1ms
+     × preserves historical reported values and completeness: truncated 0ms
+     × keeps historical availability explicit: uninstalled 0ms
+     × keeps historical availability explicit: no-transcript 0ms
+     × keeps historical availability explicit: no-results 0ms
+     × keeps historical availability explicit: unknown-completeness 0ms
+     × keeps historical availability explicit: invalid-totals 0ms
+     × keeps historical availability explicit: unsafe-id 0ms
+     × does not initialize shell environment for historical display: cold 1ms
+     × does not initialize shell environment for historical display: warm 1ms
+     × keeps a limited historical native lookup unknown rather than verified missing or empty 0ms
+     × reads historical native provider file with real byte bound and unchanged storage: small 30ms
+     × reads historical native provider file with real byte bound and unchanged storage: truncated 6ms
+     × distinguishes verified empty, per-section error and explicit bounded omissions 1ms
+     × does not claim an earlier run’s retained MCP handshake or tool count is current 0ms
+     × keeps unqualified helper runtime/work facts unknown while preserving independent counters 1ms
+     × keeps disposed and live handed-off helpers distinct with their real timestamps 0ms
+     × keeps nested Settings valid for a 1024-character MCP name 0ms
+     × keeps nested Settings valid for a 1025-character MCP name 0ms
+     × keeps nested Settings valid for a 2048-character MCP name 0ms
+     × keeps unreadable global MCP config unknown, preserving other independent cards 0ms
+     × accepts a stable registered PTY using the real resolver despite new facade objects per lookup 0ms
+   × holds a real selected instruction receipt across later Details card work: same 1ms
+   × keeps independently known Settings rows when the unchanged v1 contract cannot express unknown runtime 0ms
+     × retains actual admitted selected evidence across a later card await: unchanged 3ms
+     × retains actual admitted selected evidence across a later card await: unrelated-binding 1ms
+     × keeps independent saved and process-known final receipts: unchanged 3ms
+     × delivers qualified primary fields and preserves final refusal: unchanged 10ms
+     × uses passive admitted policy/controller and final receipts: on 6ms
+     × uses passive admitted policy/controller and final receipts: off 8ms
+     × uses passive admitted policy/controller and final receipts: unknown-controller 4ms
+     × uses passive admitted policy/controller and final receipts: wrong-role 4ms
+     × uses passive admitted policy/controller and final receipts: unreadable-controller 3ms
+     × preserves distinct source associations and final evidence: cross-project 12ms
+     × preserves distinct source associations and final evidence: convergent 12ms
+   × keeps typed outgoing Wires absent from denied and source-only Details responses 1ms
+     × keeps unavailable helper inventory counts independent of readable pending starts 0ms
+   × preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page 0ms
+   × returns an independent selected managed page beyond100 without full setup, history, board content or unrelated card reads 1ms
+   × integrates selected Actions through the actual Details assembler and real started engine, preserving final relationship rows without mutation 19ms
+   × integrates actual selected Canvas primary metadata and final publication receipts: all-pages 8ms
+     × keeps the ordinary omitted-budget path at the 256 KiB cap 1ms
+     × passes a body exactly at the budget untouched and trims one byte under it, staying valid 2ms
+     × keeps advertised sources identical to be0091d16, so a frozen old client still accepts the overview (ordinary, managed, Dispatcher) 8ms
+     × dispatches the board query to the board reader only, admitted through the advertised membership source 0ms
+     × premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read 2ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 92 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: same
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-source
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: legacy-source
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: broken-index
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-index
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: withheld
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: truncated
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: missing-controller
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: wrong-role
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: name-collision
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-off
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: switch-unknown
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: connected-off
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > composes selected passive Dispatcher metadata and final receipts: both
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:179:59
+    177|       if (late || mode === 'revoked' || mode === 'both-revoked') expec…
+    178|       else {
+    179|         expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                           ^
+    180|         const card = (response.body as RemoteAgentDetails).cards.find(…
+    181|         const unknown = ['missing-source', 'legacy-source', 'broken-in…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: same
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: missing-record
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds the corresponding helper ceiling note through full Details assembly: stopped
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:258:57
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > separates current registered provider from inherited next-start choice and fences late evidence: same
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:305:57
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects current provider facts only after the complete Details assembly fence: same
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:328:57
+    326|     expect(response.status).toBe(mode === 'same' ? 200 : mode === 'rep…
+    327|     if (mode === 'same') {
+    328|       expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                         ^
+    329|       expect((response.body as RemoteAgentDetails).providerEvidence).t…
+    330|       expect(JSON.stringify(response.body)).not.toContain('private-aut…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not describe a connected peer without a snapshot as cached name evidence
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:336:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:351:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > never substitutes a different cached agent’s name when the saved network target is absent
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:365:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects only the selected agent’s verified bounded canvas membership navigation identities
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:418:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects policy and the selected host folder/branch without invented usage or local defaults
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:422:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > returns only touching connections and related actions, never private definitions or unrelated records
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:435:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > projects selected agent Actions relationship groups and safe last-run fields only
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:448:151
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > counts bounded action relationship rows and makes omissions explicit without truncating a last-run record
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:458:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > binds last-session usage to the selected saved session and provider, not a broad session list
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:464:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: complete
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: truncated
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: unknown-completeness
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > labels selected explicit historical activity without inventing a sleep time: sleep-record
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:485:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: undefined
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: invalid
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 2026-11-19T01:00:00
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 0
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: -1
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: NaN
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: Infinity
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not present synthetic or invalid historical timestamps as activity: 8640000000000001
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:499:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with missing association
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with unrelated association
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with unset association
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with conflicting association
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical provider attribution unknown with partly-unset association
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:507:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: zero
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: missing
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > preserves historical reported values and completeness: truncated
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:519:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: uninstalled
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: no-transcript
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: no-results
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: unknown-completeness
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: invalid-totals
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps historical availability explicit: unsafe-id
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:531:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not initialize shell environment for historical display: cold
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not initialize shell environment for historical display: warm
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:550:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps a limited historical native lookup unknown rather than verified missing or empty
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:559:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: small
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > reads historical native provider file with real byte bound and unchanged storage: truncated
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:585:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > distinguishes verified empty, per-section error and explicit bounded omissions
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:623:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > does not claim an earlier run’s retained MCP handshake or tool count is current
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:650:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps unqualified helper runtime/work facts unknown while preserving independent counters
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:668:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps disposed and live handed-off helpers distinct with their real timestamps
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:677:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 1024-character MCP name
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 1025-character MCP name
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps nested Settings valid for a 2048-character MCP name
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:683:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > keeps unreadable global MCP config unknown, preserving other independent cards
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:689:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > host selected-agent Details projections > accepts a stable registered PTY using the real resolver despite new facade objects per lookup
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:700:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > holds a real selected instruction receipt across later Details card work: same
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:730:79
+    728|     const result = await readRemoteAgentDetails('a1', () => allowed);
+    729|     expect.soft(result.status).toBe(mode === 'same' ? 200 : mode === '…
+    730|     if (mode === 'same') expect.soft(isRemoteAgentDetails(result.body,…
+       |                                                                               ^
+    731|     else expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|H…
+    732|   } finally { await fs.rm(root, { recursive: true, force: true }); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > keeps independently known Settings rows when the unchanged v1 contract cannot express unknown runtime
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:736:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: unchanged
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > actual selected Connections receipts at the complete Details boundary > retains actual admitted selected evidence across a later card await: unrelated-binding
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:780:94
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold manual Dispatcher link evidence at final Details assembly > keeps independent saved and process-known final receipts: unchanged
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:833:94
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > admitted endpoint target fields at complete normal Details assembly > delivers qualified primary fields and preserves final refusal: unchanged
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:876:94
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: on
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: off
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: unknown-controller
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: wrong-role
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > cold selected saved automatic Dispatcher source at whole Details assembly > uses passive admitted policy/controller and final receipts: unreadable-controller
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:922:59
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: cross-project
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > whole Details joins configured sources only through admitted endpoint project identity > preserves distinct source associations and final evidence: convergent
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:966:64
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > keeps typed outgoing Wires absent from denied and source-only Details responses
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:1132:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > structured selected helper pages at the complete Details boundary > keeps unavailable helper inventory counts independent of readable pending starts
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:1153:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:1161:55
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > returns an independent selected managed page beyond100 without full setup, history, board content or unrelated card reads
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:1178:82
+    1176|   m.settings.mockRejectedValue(new Error('Ordinary setup must not be r…
+    1177|   const first = await readRemoteAgentDetails('a1', () => true, { card:…
+    1178|   expect(first.status).toBe(200); expect(isRemoteAgentDetails(first.bo…
+       |                                                                                  ^
+    1179|   const value = first.body as RemoteAgentDetails;
+    1180|   expect(value.inventoryPageOnly).toBe(true); expect(value.inventoryPa…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > integrates selected Actions through the actual Details assembler and real started engine, preserving final relationship rows without mutation
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:1204:92
+    1202|     for (;;) {
+    1203|       const response = await readRemoteAgentDetails('a1', () => true, …
+    1204|       expect(response.status).toBe(200); expect(isRemoteAgentDetails(r…
+       |                                                                                            ^
+    1205|       const value = response.body as RemoteAgentDetails, page = value.…
+    1206|       if (page?.source !== 'selected-action-relationships' || page.sta…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > integrates actual selected Canvas primary metadata and final publication receipts: all-pages
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:1280:94
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > keeps the ordinary omitted-budget path at the 256 KiB cap
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:1306:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > Details byte budget for wrapping callers (M1) > passes a body exactly at the budget untouched and trims one byte under it, staying valid
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:1322:84
+    1320|     expect(exact.status).toBe(200); expect(rows(exact.body as RemoteAg…
+    1321|     const under = await pressured(() => readRemoteAgentDetails('a1', (…
+    1322|     expect(under.status).toBe(200); expect(isRemoteAgentDetails(under.…
+       |                                                                                    ^
+    1323|     expect(bytes(under.body)).toBeLessThanOrEqual(size - 1);
+    1324|     expect(rows(under.body as RemoteAgentDetails)).toBe(rows(base) - 1…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[43/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected board read (#13 preview, mixed-version safe) > keeps advertised sources identical to be0091d16, so a frozen old client still accepts the overview (ordinary, managed, Dispatcher)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ read src/main/services/remote-agent-details.test.ts:122:53
+    120|   const response = await readRemoteAgentDetails('a1', () => true);
+    121|   expect(response.status).toBe(200);
+    122|   expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+       |                                                     ^
+    123|   return response.body as RemoteAgentDetails;
+    124| };
+ ❯ src/main/services/remote-agent-details.test.ts:1393:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[44/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected board read (#13 preview, mixed-version safe) > dispatches the board query to the board reader only, admitted through the advertised membership source
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:1412:92
+    1410|     try {
+    1411|       const response = await readRemoteAgentDetails('a1', () => true, …
+    1412|       expect(response.status).toBe(200); expect(isRemoteAgentDetails(r…
+       |                                                                                            ^
+    1413|       const body = response.body as RemoteAgentDetails;
+    1414|       expect(body.inventoryPage).toEqual(boardPage()); expect(body.inv…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[45/92]⎯
+
+ FAIL  |main| src/main/services/remote-agent-details.test.ts > selected board read (#13 preview, mixed-version safe) > premeasures the board against the remaining budget: oversize is a 200 limit page, never a failed read
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/main/services/remote-agent-details.test.ts:1442:86
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[46/92]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  92 failed | 123 passed (215)
+   Start at  10:26:54
+   Duration  1.75s (transform 633ms, setup 4ms, import 735ms, tests 939ms, environment 0ms)
+

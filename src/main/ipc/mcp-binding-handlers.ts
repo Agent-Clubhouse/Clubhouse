@@ -544,7 +544,7 @@ export function restorePersistedBindings(): Promise<void> {
       for (const peer of annexPeers.listPeers()) {
         if (peer.role === 'member' && peer.kind !== 'phone') void syncDirectionsWith(peer.fingerprint.toLowerCase());
       }
-    }, (machine) => annexClient.isMachineConnected(machine));
+    }, (machine) => annexClient.canReachMachine(machine));
     // A lead change goes to every connected computer member at once (#3351).
     stopDispatcherLead = startDispatcherLead({
       push: () => {
@@ -552,22 +552,22 @@ export function restorePersistedBindings(): Promise<void> {
           if (peer.role === 'member' && peer.kind !== 'phone') void syncDirectionsWith(peer.fingerprint.toLowerCase());
         }
       },
-      connected: (machine) => annexClient.isMachineConnected(machine),
+      connected: (machine) => annexClient.canReachMachine(machine),
     });
     startHandoffs();
     // Other computers' Dispatchers (#3349): one read-only snapshot, recomputed when its sources change.
-    stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine), (machine) => annexClient.lastConfirmedConnectivity(machine));
+    stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.canReachMachine(machine), (machine) => annexClient.lastConfirmedConnectivity(machine));
     // And its memory pages for them, keyed by machine-qualified address.
     stopWatchingPeerPages = watchPeerPages({ remotes: () => getDispatcherPresence().remotes, enabled: isDispatcherEnabled, onChanged: onDispatcherPresenceChanged });
     // A follower's agent news goes to the lead's chat while it's reachable (#3352).
     stopFollowerNews = startFollowerNews({
-      connected: (machine) => annexClient.isMachineConnected(machine),
+      connected: (machine) => annexClient.canReachMachine(machine),
       machineName: (machine) => annexClient.machineAlias(machine),
     });
     setChatForwarder(forwardNewsToLead);
     // Messages typed while the lead was offline go when it's back (#3353).
     stopLeadOutbox = startLeadOutbox({
-      connected: (machine) => annexClient.isMachineConnected(machine),
+      connected: (machine) => annexClient.canReachMachine(machine),
       dispatcherAgentId: (machine) => annexClient.machineDispatcherAgentId(machine),
       chatSession: async (machine, agentId) => {
         const key = annexClient.satelliteKeyFor(machine);
@@ -587,7 +587,7 @@ export function restorePersistedBindings(): Promise<void> {
       },
       // Its snapshot names the lead's Dispatcher, and comes just after the connection opens.
       onConnected: (listener) => {
-        const offConnected = annexClient.onSatelliteConnected(listener);
+        const offConnected = annexClient.onMachineReachable(listener);
         const offSnapshot = annexClient.onSatelliteSnapshot(listener);
         return () => { offConnected(); offSnapshot(); };
       },
@@ -600,7 +600,7 @@ export function restorePersistedBindings(): Promise<void> {
         extra: { local: leadShare, learn: learnLeadShare },
       },
       transport: {
-        connected: (machine) => annexClient.isMachineConnected(machine),
+        connected: (machine) => annexClient.canReachMachine(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
         supportsDurableDelivery: async (machine) => {
           const response = await annexClient.postToMachine(machine, '/api/v1/network/agent-delivery-capabilities', {});
@@ -611,7 +611,7 @@ export function restorePersistedBindings(): Promise<void> {
             && 'receiptBoundary' in response.body && response.body.receiptBoundary === 'runtime-accepted';
         },
         machineName: (machine) => annexClient.machineAlias(machine),
-        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+        onConnected: (listener) => annexClient.onMachineReachable(listener),
       },
       runTool: runAgentToolForRemoteCaller,
       configReader: { isDispatcher: isConfigDispatcher, read: readConfigForRemoteCaller },
@@ -625,9 +625,9 @@ export function restorePersistedBindings(): Promise<void> {
     stopFederatedRequests = startFederatedRequests();
     const replicaOptions: ReplicaNetworkOptions = {
       transport: {
-        connected: (machine) => annexClient.isMachineConnected(machine),
+        connected: (machine) => annexClient.canReachMachine(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body, { maxResponseBytes: 1024 * 1024 }),
-        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+        onConnected: (listener) => annexClient.onMachineReachable(listener),
       },
       isMember: (machine) => networkEnabled() && isNetworkComputer(machine),
       members: () => networkEnabled() ? annexPeers.listPeers().map((p) => p.fingerprint.toLowerCase()).filter((machine) => isNetworkComputer(machine)) : [],
@@ -640,9 +640,9 @@ export function restorePersistedBindings(): Promise<void> {
     // Network group projects (#3363): copies of other computers' group projects, and writes to their hosts.
     startGroupProjectNetwork({
       transport: {
-        connected: (machine) => annexClient.isMachineConnected(machine),
+        connected: (machine) => annexClient.canReachMachine(machine),
         post: (machine, urlPath, body, options) => annexClient.postToMachine(machine, urlPath, body, options),
-        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+        onConnected: (listener) => annexClient.onMachineReachable(listener),
         machineName: (machine) => annexClient.machineAlias(machine) || annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase())?.alias,
       },
       isMember: (machine) => isNetworkComputer(machine),

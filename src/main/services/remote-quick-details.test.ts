@@ -77,6 +77,11 @@ const read = async () => {
   return result.body as RemoteAgentDetails;
 };
 describe('read-only quick Details target and cards', () => {
+  it('refuses the selected board query like every inventory page (#13 preview)', async () => {
+    start();
+    const target = await resolveReadOnlyQuickTarget('quick', () => true); expect(target).not.toBeNull();
+    expect(await readRemoteQuickDetails(target!, () => true, { card: 'canvases', source: 'selected-canvas-board', member: 'a'.repeat(64), selection: 'b'.repeat(64) })).toEqual({ status: 400, body: { error: 'unsupported_inventory_page' } });
+  });
   it('uses the shared selected quick-agent action groups without exposing action definitions or another run', async () => {
     start();
     const related = { id: 'reminder', name: 'Quick reminder', owner: { kind: 'agent', agentId: 'quick' }, enabled: false, trigger: { kind: 'once', at: 1000 }, steps: [{ kind: 'message', agentId: 'quick', text: 'PRIVATE_PROMPT' }], lastRun: { outcome: 'done', startedAt: 1000, reason: 'PRIVATE_RUN_REASON' } };

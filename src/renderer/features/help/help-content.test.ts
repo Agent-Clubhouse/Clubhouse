@@ -13,9 +13,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 26 total topics', () => {
+  it('has 27 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(26);
+    expect(total).toBe(27);
   });
 
   it('each section has at least 1 topic', () => {
@@ -47,9 +47,9 @@ describe('help-content', () => {
     expect(general?.topics).toHaveLength(5);
   });
 
-  it('Agents & Orchestrators section has 9 topics', () => {
+  it('Agents & Orchestrators section has 10 topics', () => {
     const agents = HELP_SECTIONS.find((s) => s.id === 'agents');
-    expect(agents?.topics).toHaveLength(9);
+    expect(agents?.topics).toHaveLength(10);
   });
 
   it('Settings section has 4 topics', () => {
@@ -145,6 +145,66 @@ describe('help-content', () => {
   });
 });
 
+describe('Antigravity CLI help (#3801)', () => {
+  const find = (sections: typeof HELP_SECTIONS) => sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-antigravity')!;
+
+  it('follows Agent providers in both shells', () => {
+    for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
+      const agents = sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
+      expect(agents.indexOf('agents-antigravity')).toBe(agents.indexOf('orchestrators') + 1);
+      expect(find(sections).title).toBe('Antigravity CLI');
+    }
+  });
+
+  it('gives the install link, sign-in routes, trust prompt, headless limit and API key steps', () => {
+    const content = find(HELP_SECTIONS).content;
+    for (const part of [
+      'https://antigravity.google/docs/getting-started/', 'agy --version', 'agy acp --login', 'asks whether you trust that folder',
+      '`agy -p`', 'not supported under consumer plans', 'not available for business or enterprise accounts',
+      '"modelProvider": "gemini"', '`GEMINI_API_KEY`', '~/.gemini/antigravity-cli/log/acp-*.log', '~/.gemini', 'AGY_CLI_DISABLE_AUTO_UPDATE',
+    ]) expect(content, part).toContain(part);
+  });
+
+  it('states both documented eligibility statements and the model discrepancy without a verdict', () => {
+    const content = find(HELP_SECTIONS).content;
+    expect(content).toContain('https://antigravity.google/docs/faq/');
+    expect(content).toContain('https://antigravity.google/docs/ide/extensions/acp/');
+    expect(content).toContain('2026-11-23');
+    expect(content).toContain('Clubhouse does not decide which one covers you');
+    // Paraphrase, not copied passages: at most one short quoted phrase.
+    expect(content).not.toMatch(/^>/m);
+    const quoted = [...content.replace(/`[^`]*`/g, '').matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(' ');
+    expect(quoted.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(25);
+    expect(content).toContain('1.5.1 changelog');
+    // No promise about plans, models or quotas.
+    expect(content).not.toMatch(/\b(is|are) (allowed|permitted|supported on)\b|guarantee/i);
+  });
+
+  it('names only the workspace files Clubhouse writes and never writes to ~/.gemini', () => {
+    const content = find(HELP_SECTIONS).content;
+    for (const file of ['`AGENTS.md`', '`.agents/skills/`', '`.agents/mcp_config.json`', '`.agents/hooks.json`']) expect(content, file).toContain(file);
+    expect(content).toContain('Clubhouse never writes to `~/.gemini`');
+    expect(content).toContain('never reads, copies or stores your Antigravity credentials');
+  });
+
+  it('follows the copy rules and points only at pages that exist', () => {
+    const content = find(HELP_SECTIONS).content;
+    expect(content).not.toContain('\u2014');
+    expect(content).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
+    expect(content).toContain('**Settings > Agents & providers**');
+    expect(content).toContain('**Antigravity CLI provider** in **Settings > Experimental**');
+    expect(content).not.toContain('antigravityProvider');
+    expect(content).not.toMatch(/\b(orchestrator|persona)\b/i);
+  });
+
+  it('is a row and a column in the provider matrix', () => {
+    const matrix = find(HELP_SECTIONS) && HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === 'orchestrators')!.content;
+    expect(matrix).toContain('| **Antigravity CLI** |');
+    expect(matrix).toContain('| Hooks | Yes | Yes | Yes | Yes on macOS and Linux, no on Windows |');
+    expect(matrix).toMatch(/\| Capability \| Claude Code \| Copilot CLI \| Codex CLI \| Antigravity CLI \|/);
+  });
+});
+
 describe('help-content in the new shell', () => {
   afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 
@@ -191,7 +251,7 @@ describe('help-content in the new shell', () => {
 
   it('points only at settings pages that exist', () => {
     const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Smart selection', 'Actions', 'Dispatcher', 'Display & UI', 'External editor', 'Keyboard shortcuts',
-      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', 'Group Projects', "What's new"];
+      'Notifications & alerts', 'Experimental', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', 'Group Projects', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
         const page = m[1].split(' > ')[0];

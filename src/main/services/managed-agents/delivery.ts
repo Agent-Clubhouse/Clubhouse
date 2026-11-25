@@ -13,6 +13,7 @@ import { agentAccess } from '../free-agent-settings';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import { accessLevelsFor, isAccessLevel, startableAccess } from '../../../shared/agent-access';
 import * as fsp from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
@@ -923,6 +924,9 @@ export async function deliverManagedSetup(params: {
  * missing, a folder, a link to nothing, or text without Antigravity markers
  * is Codex's as before.
  */
+/** For tests. */
+export const _keepTextBesideAntigravityBlockForTesting = (agentId: string, worktree: string) => keepTextBesideAntigravityBlock(agentId, worktree);
+
 async function keepTextBesideAntigravityBlock(agentId: string, worktree: string): Promise<void> {
   const file = path.join(worktree, ANTIGRAVITY_PATHS.instructions);
   const unknown = (why: string) => new ManagedStartRefused('antigravity_instructions_unsafe',
@@ -937,6 +941,8 @@ async function keepTextBesideAntigravityBlock(agentId: string, worktree: string)
   }
   // A folder can't be written over (Codex's write fails, as before); any other non-file is never read, which could block.
   if (st.isDirectory()) return;
+  // What the read must find: the plain file lstat saw, or the link's target.
+  let expected = st;
   if (st.isSymbolicLink()) {
     let target;
     try {
@@ -947,14 +953,25 @@ async function keepTextBesideAntigravityBlock(agentId: string, worktree: string)
       throw unknown(`a link Clubhouse can't follow: ${code(err)}`);
     }
     if (!target.isFile()) throw unknown('a link to something other than a plain file');
+    expected = target;
   } else if (!st.isFile()) {
     throw unknown('not a plain file');
   }
+  // Read through a handle, and only if it is the file checked above: a plain
+  // file is opened without following links, and a swap in between refuses.
   let bytes: Buffer;
+  let handle: Awaited<ReturnType<typeof fsp.open>> | undefined;
   try {
-    bytes = await fsp.readFile(file);
+    const flags = fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0) | (st.isSymbolicLink() ? 0 : (fsConstants.O_NOFOLLOW ?? 0));
+    handle = await fsp.open(file, flags);
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.dev !== expected.dev || opened.ino !== expected.ino) throw unknown('it changed while Clubhouse read it');
+    bytes = await handle.readFile();
   } catch (err) {
+    if (isManagedStartRefused(err)) throw err;
     throw unknown(code(err));
+  } finally {
+    await handle?.close();
   }
   if (st.isSymbolicLink()) {
     // Read through the link only to see whether an Antigravity start wrote there; never written through when it did.

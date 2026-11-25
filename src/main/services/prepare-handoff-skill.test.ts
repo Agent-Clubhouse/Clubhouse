@@ -22,7 +22,7 @@ vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.machine }), getOrCreateIdentity: () => ({ fingerprint: state.machine }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: 'this-computer', enableServer: true, networkEnabled: true, acceptHandoffs: true }), networkEnabled: () => true }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.peer, alias: 'machine-b', role: 'member', kind: 'desktop' }] }));
-vi.mock('./annex-client', () => ({ getSatellite: (): undefined => undefined, isMachineConnected: () => true, postToMachine: vi.fn(), onSatelliteConnected: () => () => {} }));
+vi.mock('./annex-client', () => ({ getSatellite: (): undefined => undefined, isMachineConnected: () => true, canReachMachine: () => true, postToMachine: vi.fn(), onSatelliteConnected: () => () => {} }));
 vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => true }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => false, sendMessage: vi.fn(async () => ({})) }) }));
 vi.mock('./project-store', () => ({

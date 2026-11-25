@@ -240,8 +240,7 @@
       ],
       "required": [
         "agentId",
-        "sessionId",
-        "model"
+        "sessionId"
       ]
     },
     "dispatcher.clearChat": {

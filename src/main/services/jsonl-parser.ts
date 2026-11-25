@@ -4,7 +4,7 @@ export interface StreamJsonEvent {
   type: string;
   subtype?: string;
   content_block?: { type: string; text?: string; name?: string; id?: string };
-  message?: { role?: string; content?: unknown; usage?: { input_tokens?: number; output_tokens?: number } };
+  message?: { role?: string; content?: unknown; usage?: { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number; reasoning_output_tokens?: number } };
   result?: string;
   cost_usd?: number;
   duration_ms?: number;

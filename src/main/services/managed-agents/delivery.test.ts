@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { skipFsyncInThisFile } from '../../../../test/skip-fsync';
 import type { TestContext } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, PREPARE_HANDOFF_SKILL_ID, isListed } from '../../../shared/managed-agents-types';
@@ -225,6 +226,8 @@ function serviceAt(dir: string): ManagedAgentsService {
   });
 }
 
+// These tests are about what is written, not durability: skip the per-write fsync, which is several ms each on hosted Windows.
+skipFsyncInThisFile();
 // Installing every built-in writes each part to disk, which took over 10s once
 // on a loaded Windows runner. Install them once per file and copy the result in
 // for each test; ensureBuiltins then finds them current and writes nothing.

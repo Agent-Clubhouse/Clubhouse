@@ -4392,8 +4392,11 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
   catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   const params = new URL(ctx.url, 'http://localhost').searchParams;
-  const detailsQuery = params.size ? { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }), ...(params.has('selection') && { selection: params.get('selection') }) } : undefined;
-  if (match[2] === 'details' && detailsQuery !== undefined && ([...params.keys()].some((key) => !['card', 'source', 'offset', 'projectOffset', 'selection'].includes(key))
+  // The selected board takes exactly card, source, member and selection; member is never accepted for any other source.
+  const boardQuery = params.get('source') === 'selected-canvas-board';
+  const detailsQuery = !params.size ? undefined : boardQuery ? { card: params.get('card'), source: params.get('source'), ...(params.has('member') && { member: params.get('member') }), ...(params.has('selection') && { selection: params.get('selection') }) }
+    : { card: params.get('card'), source: params.get('source'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('projectOffset') && { projectOffset: Number(params.get('projectOffset')) }), ...(params.has('selection') && { selection: params.get('selection') }) };
+  if (match[2] === 'details' && detailsQuery !== undefined && ([...params.keys()].some((key) => !(boardQuery ? ['card', 'source', 'member', 'selection'] : ['card', 'source', 'offset', 'projectOffset', 'selection']).includes(key))
     || [...params.keys()].some((key) => params.getAll(key).length !== 1) || ['offset', 'projectOffset'].some((key) => params.has(key) && !/^(0|[1-9]\d{0,3})$/.test(params.get(key)!)) || !isRemoteDetailsQuery(detailsQuery))) {
     sendJson(ctx.res, 400, { error: 'invalid_details_query' }); return;
   }
