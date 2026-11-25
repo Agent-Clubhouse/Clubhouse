@@ -24,7 +24,7 @@ export const EXPERIMENTAL_FEATURES: Array<{
   {
     id: ANTIGRAVITY_EXPERIMENTAL_FLAG,
     label: 'Antigravity CLI provider',
-    description: 'Lists Google\'s Antigravity CLI (agy) under Agent providers, where you can turn it on. Terminal agents only for now. Clubhouse never turns it on or picks it for you. Requires app restart.',
+    description: 'Lists Google\'s Antigravity CLI (agy) under Agent providers, where you can turn it on. Its agents run in chat or in the CLI view. Clubhouse never turns it on or picks it for you. Requires app restart.',
   },
 ];
 
