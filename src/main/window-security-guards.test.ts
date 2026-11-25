@@ -267,6 +267,10 @@ describe('applyWindowSecurityGuards', () => {
       guest.on = vi.fn((event: string, handler: Listener) => { listeners[event] = handler; }) as never;
       guest.setWindowOpenHandler = vi.fn((handler: WindowOpenHandler) => { openHandler = handler; }) as never;
       (guest as unknown as { stop: () => void }).stop = vi.fn();
+      (guest as unknown as { isDestroyed: () => boolean }).isDestroyed = vi.fn(() => false);
+      const realLoadURL = vi.fn(async () => undefined);
+      (guest as unknown as { loadURL: unknown }).loadURL = realLoadURL;
+      (guest as unknown as { _realLoadURL: unknown })._realLoadURL = realLoadURL;
       mockWin._trigger('did-attach-webview', {}, guest);
       return {
         guest,
@@ -337,6 +341,48 @@ describe('applyWindowSecurityGuards', () => {
       expect(fire('will-navigate', { url: 'chrome://settings' }).preventDefault).toHaveBeenCalled();
     });
 
+    describe('loadURL gate for programmatic loads', () => {
+      const real = (guest: unknown) => (guest as { _realLoadURL: ReturnType<typeof vi.fn> })._realLoadURL;
+      const load = (guest: unknown, url: string) => (guest as { loadURL: (u: string) => Promise<void> }).loadURL(url);
+
+      it.each([
+        'data:text/html,<p>x</p>',
+        'javascript:alert(1)',
+        'chrome://settings',
+        'clubhouse-plugin://browser/main.js',
+        'about:srcdoc',
+        'not a url',
+      ])('refuses %s before any navigation starts', async (url) => {
+        const { guest } = attachGuest();
+        await expect(load(guest, url)).rejects.toThrow(/blocked/);
+        expect(real(guest)).not.toHaveBeenCalled();
+      });
+
+      it.each(['https://example.com/', 'http://127.0.0.1:3000/', 'about:blank', 'blob:https://example.com/1'])('passes %s through', async (url) => {
+        const { guest } = attachGuest();
+        await load(guest, url);
+        expect(real(guest)).toHaveBeenCalledWith(url, undefined);
+      });
+
+      it.each([false, true])('leaves file:// to the Browser session gate (setting on: %s)', async (on) => {
+        vi.mocked(isBrowserFileAccessAllowed).mockReturnValue(on);
+        const { guest } = attachGuest();
+        await load(guest, 'file:///etc/hosts');
+        expect(real(guest)).toHaveBeenCalledWith('file:///etc/hosts', undefined);
+      });
+    });
+
+    describe('redirects into file:// (#3869)', () => {
+      it.each([false, true])('are blocked whatever the setting (on: %s)', (on) => {
+        vi.mocked(isBrowserFileAccessAllowed).mockReturnValue(on);
+        const { fire } = attachGuest();
+        for (const url of ['file:///etc/hosts', 'FILE:///etc/hosts', 'file://localhost/etc/hosts', 'file://server/share/x']) {
+          expect(fire('will-redirect', { url }).preventDefault).toHaveBeenCalled();
+          expect(fire('will-redirect', { url, isMainFrame: false }).preventDefault).toHaveBeenCalled();
+        }
+      });
+    });
+
     describe('did-start-navigation backstop for programmatic loads', () => {
       function start(fire: ReturnType<typeof attachGuest>['fire'], details: { url: string; isMainFrame?: boolean; isSameDocument?: boolean }) {
         return fire('did-start-navigation', { isMainFrame: true, isSameDocument: false, ...details } as { url: string; isMainFrame?: boolean });
@@ -347,23 +393,32 @@ describe('applyWindowSecurityGuards', () => {
         expect(guest.on).toHaveBeenCalledWith('did-start-navigation', expect.any(Function));
       });
 
-      it('stops a main-frame file:// load when the setting is off everywhere', () => {
-        const { guest, fire } = attachGuest();
-        start(fire, { url: 'file:///etc/hosts' });
-        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalledTimes(1);
-      });
+      const nextTick = () => new Promise<void>((resolve) => setImmediate(resolve));
+      const stopOf = (guest: unknown) => (guest as { stop: ReturnType<typeof vi.fn> }).stop;
 
-      it('lets a main-frame file:// load through when the setting is on', () => {
-        vi.mocked(isBrowserFileAccessAllowed).mockReturnValue(true);
-        const { guest, fire } = attachGuest();
-        start(fire, { url: 'file:///tmp/page.html' });
-        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).not.toHaveBeenCalled();
-      });
-
-      it('stops a main-frame load with a disallowed scheme', () => {
+      it('stops a main-frame load with a disallowed scheme, after the event returns', async () => {
         const { guest, fire } = attachGuest();
         start(fire, { url: 'chrome://settings' });
-        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalledTimes(1);
+        // Never inside the callback: that crashed the main process (SIGTRAP) in E2E.
+        expect(stopOf(guest)).not.toHaveBeenCalled();
+        await nextTick();
+        expect(stopOf(guest)).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not stop a guest that was destroyed in the meantime', async () => {
+        const { guest, fire } = attachGuest();
+        start(fire, { url: 'javascript:alert(1)' });
+        (guest as unknown as { isDestroyed: ReturnType<typeof vi.fn> }).isDestroyed.mockReturnValue(true);
+        await nextTick();
+        expect(stopOf(guest)).not.toHaveBeenCalled();
+      });
+
+      it.each([false, true])('leaves file:// to the Browser session gate (setting on: %s)', async (on) => {
+        vi.mocked(isBrowserFileAccessAllowed).mockReturnValue(on);
+        const { guest, fire } = attachGuest();
+        start(fire, { url: 'file:///etc/hosts' });
+        await nextTick();
+        expect(stopOf(guest)).not.toHaveBeenCalled();
       });
 
       it.each([
@@ -371,10 +426,11 @@ describe('applyWindowSecurityGuards', () => {
         { url: 'about:blank' },
         { url: 'file:///etc/hosts', isMainFrame: false },
         { url: 'file:///tmp/page.html#section', isSameDocument: true },
-      ])('leaves $url alone (main frame: $isMainFrame, same document: $isSameDocument)', (details) => {
+      ])('leaves $url alone (main frame: $isMainFrame, same document: $isSameDocument)', async (details) => {
         const { guest, fire } = attachGuest();
         start(fire, details);
-        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).not.toHaveBeenCalled();
+        await nextTick();
+        expect(stopOf(guest)).not.toHaveBeenCalled();
       });
     });
 

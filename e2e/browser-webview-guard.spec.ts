@@ -9,7 +9,10 @@
  *   real Clubhouse MCP bridge.
  * - file://: with "Allow file:// URLs" off in every scope (the default), a
  *   load the renderer starts on the webview itself, which skips will-navigate,
- *   is stopped by the did-start-navigation backstop and never commits.
+ *   is refused by the Browser session's file gate: the app stays up, the gate
+ *   logs it, and the local file's content never reaches the guest.
+ * - data:: the same kind of load is refused in main before any navigation
+ *   starts, so nothing commits and the guest stays on its page.
  *
  * No model and no network: the fake replays a committed fixture and the page
  * comes from this test.
@@ -38,6 +41,7 @@ const PROJECT_ID = 'proj_e2e_browser';
 const VIEW_ID = 'cv_e2e_browser';
 const PAGE_MARKER = 'browser-guard-page';
 const FILE_MARKER = 'browser-guard-local-file';
+const SECOND_FILE_MARKER = 'browser-guard-second-file';
 
 let fakes: FakeClis | undefined;
 let profile: DisposableProfile | undefined;
@@ -93,7 +97,7 @@ async function writeQuietFixture(dir: string): Promise<string> {
  * Seed the profile before launch: the project (fixed id), the Browser's settings
  * for the app and that project, and an app-wide canvas holding one Browser widget.
  */
-function seedProfile(userDataDir: string, pageUrl: string, projectDir: string): void {
+function seedProfile(userDataDir: string, pageUrl: string, projectDir: string, allowFileProtocol = false): void {
   const baseDir = path.join(userDataDir, '.clubhouse-dev');
   fs.mkdirSync(baseDir, { recursive: true });
   fs.writeFileSync(path.join(baseDir, 'projects.json'), JSON.stringify({
@@ -103,9 +107,9 @@ function seedProfile(userDataDir: string, pageUrl: string, projectDir: string): 
   const plugins = path.join(userDataDir, '.clubhouse', 'plugin-data');
   const systemKv = path.join(plugins, '_system', 'kv');
   fs.mkdirSync(systemKv, { recursive: true });
-  // Localhost on so the widget shows the local page; file:// stays off (the default) in every scope.
+  // Localhost on so the widget shows the local page. file:// is off (the default) unless the test turns it on.
   for (const scope of ['app', PROJECT_ID]) {
-    fs.writeFileSync(path.join(systemKv, `settings-${scope}-browser.json`), JSON.stringify({ allowLocalhost: true, allowFileProtocol: false }));
+    fs.writeFileSync(path.join(systemKv, `settings-${scope}-browser.json`), JSON.stringify({ allowLocalhost: true, allowFileProtocol }));
   }
 
   const canvasKv = path.join(plugins, 'canvas', 'kv');
@@ -153,6 +157,9 @@ test('a Browser webview takes agent tools and refuses programmatic file:// loads
   const localFile = path.join(scratch, 'local.html');
   fs.writeFileSync(localFile, `<!doctype html><body>${FILE_MARKER}</body>`);
   const fileUrl = pathToFileURL(localFile).href;
+  const secondFile = path.join(scratch, 'second.html');
+  fs.writeFileSync(secondFile, `<!doctype html><body>${SECOND_FILE_MARKER}</body>`);
+  const secondFileUrl = pathToFileURL(secondFile).href;
   const projectDir = makeProject(scratch);
 
   fakes = await installFakeClis({ claude: await writeQuietFixture(scratch) });
@@ -213,32 +220,101 @@ test('a Browser webview takes agent tools and refuses programmatic file:// loads
     expect(read.text).toContain(PAGE_MARKER);
   });
 
-  await test.step('a programmatic file:// load is stopped before it commits', async () => {
-    // Record every main-frame commit in the guest from here on.
+  await test.step('a programmatic data: load is refused before it starts and never commits', async () => {
     await electronApp.evaluate(({ webContents }) => {
-      const g = globalThis as unknown as { __e2eCommits: string[] };
-      g.__e2eCommits = [];
+      const g = globalThis as unknown as { __e2eDataCommits: string[] };
+      g.__e2eDataCommits = [];
       for (const wc of webContents.getAllWebContents()) {
-        if (wc.getType() === 'webview') wc.on('did-navigate', (_e, url) => g.__e2eCommits.push(url));
+        if (wc.getType() === 'webview') wc.on('did-navigate', (_e, url) => { if (url.startsWith('data:')) g.__e2eDataCommits.push(url); });
       }
     });
+    const dataBlocks = async () => (await securityLines(app!.userDataDir))
+      .filter((l) => l.meta?.stage === 'loadURL' && l.meta?.protocol === 'data:').length;
+
+    // loadURL on the element: refused in main, so the element's promise rejects.
+    const refused = await webview.evaluate((el) =>
+      (el as unknown as { loadURL(u: string): Promise<void> }).loadURL('data:text/html,<p>data-one</p>').then(() => 'loaded', () => 'refused'));
+    expect(refused).toBe('refused');
+    await expect.poll(dataBlocks, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
+    const afterLoadUrl = await dataBlocks();
+    // A src change goes through the same guest loadURL.
+    await webview.evaluate((el) => el.setAttribute('src', 'data:text/html,<p>data-two</p>'));
+    await expect.poll(dataBlocks, { timeout: 15_000 }).toBeGreaterThan(afterLoadUrl);
+
+    await w.waitForTimeout(2_000);
+    expect(await electronApp.evaluate(() => (globalThis as unknown as { __e2eDataCommits: string[] }).__e2eDataCommits)).toEqual([]);
+    expect(await guestUrl()).toEqual([pageUrl]);
+  });
+
+  await test.step('a programmatic file:// load is refused by the Browser session gate', async () => {
+    // Record every main-frame commit in the guest from here on, with its status.
+    await electronApp.evaluate(({ webContents }) => {
+      const g = globalThis as unknown as { __e2eCommits: Array<{ url: string; status: number }> };
+      g.__e2eCommits = [];
+      for (const wc of webContents.getAllWebContents()) {
+        if (wc.getType() === 'webview') wc.on('did-navigate', (_e, url, status) => g.__e2eCommits.push({ url, status }));
+      }
+    });
+    const fileBlocks = async () => (await securityLines(app!.userDataDir))
+      .filter((l) => l.meta?.stage === 'browser-session-file' && l.meta?.protocol === 'file:').length;
+
     // Both skip will-navigate: loadURL on the element, and a src change after attach.
+    // Two different files, so the src change is a real change.
     await webview.evaluate((el, url) => {
       void (el as unknown as { loadURL(u: string): Promise<void> }).loadURL(url).catch(() => {});
     }, fileUrl);
-    const fileBlocks = async () => (await securityLines(app!.userDataDir))
-      .filter((l) => l.meta?.stage === 'did-start-navigation' && l.meta?.protocol === 'file:').length;
     await expect.poll(fileBlocks, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
     const afterLoadUrl = await fileBlocks();
-    await webview.evaluate((el, url) => el.setAttribute('src', url), fileUrl);
+    await webview.evaluate((el, url) => el.setAttribute('src', url), secondFileUrl);
     await expect.poll(fileBlocks, { timeout: 15_000 }).toBeGreaterThan(afterLoadUrl);
 
-    // Give a load that slipped through time to commit, then check it didn't.
+    // Give a load that slipped through time to land, then check it didn't.
     await w.waitForTimeout(2_000);
-    const commits = await electronApp.evaluate(() => (globalThis as unknown as { __e2eCommits: string[] }).__e2eCommits);
-    expect(commits.filter((url) => url.startsWith('file:'))).toEqual([]);
-    expect((await guestUrl()).some((url) => url.startsWith('file:'))).toBe(false);
-    // The guest is still on the page.
-    expect(await guestUrl()).toEqual([pageUrl]);
+    // The app is still up: the first run of this spec crashed main (SIGTRAP) here.
+    expect(app!.electronApp.process().exitCode).toBeNull();
+    const commits = await electronApp.evaluate(() =>
+      (globalThis as unknown as { __e2eCommits: Array<{ url: string; status: number }> }).__e2eCommits);
+    // A file: commit, if Chromium shows one at all, is the gate's 403 page, never the file.
+    expect(commits.filter((c) => c.url.startsWith('file:') && c.status !== 403)).toEqual([]);
+    const shown = await electronApp.evaluate(async ({ webContents }) => Promise.all(webContents.getAllWebContents()
+      .filter((wc) => wc.getType() === 'webview')
+      .map((wc) => wc.executeJavaScript('document.documentElement ? document.documentElement.innerText : ""').catch(() => ''))));
+    expect(shown.join('\n')).not.toContain(FILE_MARKER);
+    expect(shown.join('\n')).not.toContain(SECOND_FILE_MARKER);
   });
+});
+
+test('with Allow file:// URLs on, a local file renders and a missing one gets a clean 404', async () => {
+  test.setTimeout(120_000);
+  scratch = await fs.promises.realpath(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'browser-guard-on-e2e-')));
+  const localFile = path.join(scratch, 'local.html');
+  fs.writeFileSync(localFile, `<!doctype html><body><p id="m">${FILE_MARKER}</p></body>`);
+  const fileUrl = pathToFileURL(localFile).href;
+  const missingUrl = pathToFileURL(path.join(scratch, 'missing.html')).href;
+  const projectDir = makeProject(scratch);
+
+  profile = createDisposableProfile({ label: 'browser-guard-on' });
+  // The widget opens the local file directly; the setting is on in both scopes.
+  seedProfile(profile.userDataDir, fileUrl, projectDir, true);
+  app = await launchApp({ profile });
+  const { electronApp, window: w } = app;
+  await assertRunLayout(w);
+
+  await w.getByTestId('app-row-canvas').click();
+  const webview = w.locator('webview[partition="persist:plugin-browser"]');
+  await expect(webview).toHaveCount(1, { timeout: 20_000 });
+  const guestText = () => electronApp.evaluate(async ({ webContents }) => Promise.all(webContents.getAllWebContents()
+    .filter((wc) => wc.getType() === 'webview')
+    .map((wc) => wc.executeJavaScript('document.body ? document.body.innerText : ""').catch(() => '')))).then((t) => t.join('\n'));
+
+  // Allowed: the file comes through the session gate's net.fetch pass-through and renders.
+  await expect.poll(guestText, { timeout: 20_000 }).toContain(FILE_MARKER);
+
+  // Missing: the pass-through fails and the gate answers a clean 404 without the path.
+  await webview.evaluate((el, url) => {
+    void (el as unknown as { loadURL(u: string): Promise<void> }).loadURL(url).catch(() => {});
+  }, missingUrl);
+  await expect.poll(guestText, { timeout: 20_000 }).toContain('This local file could not be read.');
+  expect(await guestText()).not.toContain(scratch);
+  expect(app.electronApp.process().exitCode).toBeNull();
 });
