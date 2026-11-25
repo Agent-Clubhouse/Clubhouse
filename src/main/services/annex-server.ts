@@ -2147,9 +2147,12 @@ function deviceOf(ws: WebSocket): ShellDevice | null {
   return fingerprint ? { fingerprint, pin: wsPeerPins.get(ws) } : null;
 }
 
-/** The same device, pairing and certificate alike: a session id alone never is (#3843). */
+/**
+ * The same device, pairing and certificate alike: a session id alone never is (#3843).
+ * Both sides must name a certificate: two unknown pins are not a match.
+ */
 function sameDevice(a: ShellDevice | null, b: ShellDevice | null): boolean {
-  return !!a && !!b && a.fingerprint === b.fingerprint && a.pin === b.pin;
+  return !!a && !!b && !!a.fingerprint && !!a.pin && !!b.pin && a.fingerprint === b.fingerprint && a.pin === b.pin;
 }
 
 /**
@@ -6575,7 +6578,11 @@ function startServer(strict = false): Promise<void> {
   // that would otherwise leave the "connected (paused)" badge stuck forever.
   heartbeatInterval = setInterval(() => {
     if (!wss) return;
-    endUnauthorizedDetachedShells();
+    // Never at the cost of this tick's dead-client sweep below.
+    try { endUnauthorizedDetachedShells(); } catch (err) {
+      appLog('core:annex', 'error', 'Ending unauthorized detached shells failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      tel.exception(Object.assign(new Error('annex_detached_shell_sweep_failed'), { stack: undefined }), { origin: 'main', handled: true });
+    }
     for (const client of wss.clients) {
       if (wsAlive.get(client) === false) {
         appLog('core:annex', 'info', 'Heartbeat: terminating unresponsive WebSocket client');
@@ -7593,6 +7600,7 @@ export const _testing = {
   shellTombstones,
   addShellTombstone,
   endUnauthorizedDetachedShells,
+  sameDevice,
   MAX_SHELL_TOMBSTONES_PER_DEVICE,
   SHELL_REATTACH_GRACE_MS,
   get wss() { return wss; },

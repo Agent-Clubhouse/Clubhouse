@@ -3052,6 +3052,54 @@ describe('annex-server', () => {
         expect(shells.procs.has('theirs')).toBe(true);
       });
 
+      it('never treats two unknown pins as the same device', () => {
+        const { sameDevice } = annexServer._testing;
+        expect(sameDevice({ fingerprint: 'f', pin: 'p' }, { fingerprint: 'f', pin: 'p' })).toBe(true);
+        expect(sameDevice({ fingerprint: 'f', pin: undefined }, { fingerprint: 'f', pin: undefined })).toBe(false);
+        expect(sameDevice({ fingerprint: 'f', pin: '' }, { fingerprint: 'f', pin: '' })).toBe(false);
+        expect(sameDevice({ fingerprint: 'f', pin: 'p' }, { fingerprint: 'f', pin: undefined })).toBe(false);
+        expect(sameDevice({ fingerprint: '', pin: 'p' }, { fingerprint: '', pin: 'p' })).toBe(false);
+        expect(sameDevice(null, null)).toBe(false);
+      });
+
+      it('a pinless socket never takes a pinless record\'s shell', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const a = await connectAs(PHONE);
+        await spawn(a, { sessionId: 'pinless', projectId: 'p' });
+        drop(a);
+        // Its record says no pin: a socket with no pin must not match it.
+        annexServer._testing.detachedShells.get('pinless')!.device.pin = undefined;
+        const b = await connectAs(PHONE);
+        annexServer._testing.wsPeerPins.delete(b as never);
+        b.send.mockClear();
+        b.emit('message', frame('pty:reattach-shell', { sessionId: 'pinless' }));
+        await new Promise((r) => setTimeout(r, 50));
+        expect(sent(b).some((f) => f.type === 'pty:reattach-shell:ack')).toBe(false);
+        expect(annexServer._testing.detachedShells.has('pinless')).toBe(true);
+        expect(annexServer._testing.shellOwners.has('pinless')).toBe(false);
+        expect(shells.procs.has('pinless')).toBe(true);
+      });
+
+      it('a throwing detached-shell sweep never skips the heartbeat\'s dead-client sweep', async () => {
+        fakeShells();
+        const intervals = vi.spyOn(globalThis, 'setInterval');
+        try {
+          await startAndPair();
+          const tick = intervals.mock.calls.find((c) => c[1] === annexServer._testing.SERVER_HEARTBEAT_INTERVAL_MS)![0] as () => void;
+          const a = await connectAs(PHONE);
+          await spawn(a, { sessionId: 'swept', projectId: 'p' });
+          drop(a);
+          const dead = { readyState: 1, terminate: vi.fn(), ping: vi.fn() };
+          annexServer._testing.wss!.clients.add(dead as never);
+          annexServer._testing.wsAlive.set(dead as never, false);
+          vi.mocked(annexPeers.getPeer).mockImplementation(() => { throw new Error('peer store unreadable'); });
+          expect(() => tick()).not.toThrow();
+          expect(dead.terminate).toHaveBeenCalled();
+          annexServer._testing.wss!.clients.delete(dead as never);
+        } finally { intervals.mockRestore(); }
+      });
+
       it('caps tombstones per device: one device\'s churn never evicts another\'s', () => {
         const { addShellTombstone, shellTombstones, MAX_SHELL_TOMBSTONES_PER_DEVICE: cap } = annexServer._testing;
         const phone = { fingerprint: PHONE.fingerprint, pin: PHONE.tlsCertificateFingerprint };
