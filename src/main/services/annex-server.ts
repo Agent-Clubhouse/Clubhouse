@@ -3106,9 +3106,29 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
   sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId, policies, project.path)));
 }
 
+/**
+ * Whether `principal` may read terminal `id` over REST. A shell is private, as on
+ * the WebSocket: a desktop terminal to everyone, a controller's shell (attached or
+ * detached) to every device but the one that spawned it, which reads its own to
+ * redraw it.
+ */
+function terminalReadableBy(id: string, principal: AnnexPrincipal | undefined): boolean {
+  if (ptyManager.getShellCwd(id) === undefined) return true;
+  if (!principal) return false;
+  const asker: ShellDevice = { fingerprint: principal.fingerprint, pin: principal.pin };
+  const detached = detachedShells.get(id);
+  if (detached) return sameDevice(detached.device, asker);
+  const owner = shellOwners.get(id);
+  const fingerprint = owner && wsPeerFingerprints.get(owner);
+  return !!owner && !!fingerprint && sameDevice({ fingerprint, pin: wsPeerPins.get(owner) }, asker);
+}
+
 async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const agentId = decodeURIComponent(match[1]);
-  const snapshot = await readBoundedPtyBuffer(agentId, 'pty:buffer');
+  // Someone else's shell is answered exactly as an id with no terminal: no screen, no sign it exists.
+  const snapshot: Awaited<ReturnType<typeof readBoundedPtyBuffer>> = terminalReadableBy(agentId, ctx.principal)
+    ? await readBoundedPtyBuffer(agentId, 'pty:buffer')
+    : await Promise.resolve(ptyManager.unknownBufferSnapshot());
   if (!snapshot) {
     sendJson(ctx.res, 503, { error: TERMINAL_UNAVAILABLE });
     return;

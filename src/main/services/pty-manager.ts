@@ -449,6 +449,15 @@ export async function getSerializedBufferSnapshot(
   return { data, seq, ...size };
 }
 
+/**
+ * What `getSerializedBufferSnapshot` answers for an id with no terminal: nothing,
+ * at the current output high water. A route refusing a private terminal answers
+ * this, so the refusal looks like an unknown id.
+ */
+export function unknownBufferSnapshot(): { data: string; seq: number } {
+  return { data: '', seq: outputSeqHighWater };
+}
+
 /** Check whether an agent has an active PTY session. */
 export function isRunning(agentId: string): boolean {
   return sessions.has(agentId);

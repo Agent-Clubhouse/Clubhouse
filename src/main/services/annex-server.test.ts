@@ -232,6 +232,7 @@ vi.mock('./pty-manager', () => ({
   resize: vi.fn(),
   spawnShell: vi.fn().mockResolvedValue(undefined),
   killShell: vi.fn().mockReturnValue(true),
+  unknownBufferSnapshot: vi.fn().mockReturnValue({ data: '', seq: 0 }),
 }));
 
 // Mock file-service
@@ -2980,6 +2981,51 @@ describe('annex-server', () => {
         ws.emit('message', frame('pty:reattach-shell', { sessionId: 'r' }));
         expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'busy', code: 'busy', op: 'pty:reattach-shell', sessionId: 'r' } }]);
         release();
+      });
+
+      it('SECURITY: the buffer route serves no other device\'s shell or desktop terminal, answering as for an unknown id (R1)', async () => {
+        const shells = fakeShells();
+        // An unknown id's answer as the real pty-manager gives it: nothing, at the output high water.
+        const unknown = () => ({ data: '', seq: 777 });
+        const realSnapshot = vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).getMockImplementation()!;
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockImplementation(async (id, limit) => (shells.procs.has(id) ? realSnapshot(id, limit) : unknown()));
+        vi.mocked(ptyManagerModule.unknownBufferSnapshot).mockImplementation(unknown);
+        const { port, token } = await startAndPair();
+        const read = async (id: string) => {
+          const res = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+            https.get({ hostname: '127.0.0.1', port, ...suiteCredentials(), rejectUnauthorized: false, agent: false, path: `/api/v1/agents/${id}/buffer`, headers: authHeaders(token) }, (r) => {
+              let body = '';
+              r.on('data', (c) => { body += c; });
+              r.on('end', () => resolve({ status: r.statusCode!, headers: r.headers, body }));
+            }).on('error', reject);
+          });
+          const { date: _date, ...headers } = res.headers;
+          return { status: res.status, headers, body: res.body };
+        };
+        // Every REST request here comes from TEST_CONTROLLER (PHONE). The shells belong to OTHER_PHONE.
+        const other = await connectAs(OTHER_PHONE);
+        await spawn(other, { sessionId: 'other-live', projectId: 'p' });
+        const leaving = await connectAs(OTHER_PHONE);
+        await spawn(leaving, { sessionId: 'other-detached', projectId: 'p' });
+        drop(leaving);
+        shells.print('other-detached', 'secret typed while away');
+        shells.procs.set('desk-term', { pid: 9, screen: 'desktop secret', seq: 14, inputs: [], cwd: '/project' });
+        shells.procs.set('agent-pty', { pid: 10, screen: 'agent screen', seq: 12, inputs: [], cwd: '' });
+        vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'agent-pty' ? undefined : shells.procs.get(id)?.cwd));
+
+        const expected = await read('never-existed');
+        expect(expected).toMatchObject({ status: 200, body: '' });
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockClear();
+        for (const id of ['other-live', 'other-detached', 'desk-term']) expect(await read(id)).toEqual(expected);
+        expect(ptyManagerModule.getSerializedBufferSnapshot).not.toHaveBeenCalled();
+        // An agent's terminal is still served.
+        expect(await read('agent-pty')).toMatchObject({ status: 200, body: 'agent screen' });
+        // So is a device's own shell, attached or detached: a desktop controller redraws its remote terminal from it.
+        const mine = await connectAs(PHONE);
+        await spawn(mine, { sessionId: 'mine', projectId: 'p' });
+        expect(await read('mine')).toMatchObject({ status: 200, body: AUTH_PROMPT });
+        drop(mine);
+        expect(await read('mine')).toMatchObject({ status: 200, body: AUTH_PROMPT });
       });
 
       it('every reattach error has message === code, a stable code and the sessionId', async () => {
