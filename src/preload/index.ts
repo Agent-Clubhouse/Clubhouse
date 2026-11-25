@@ -11,7 +11,6 @@ import { skillBundle } from './skillBundle';
 import { managedAgents } from './managedAgents';
 import { legacyDefaults } from './legacyDefaults';
 import { file } from './file';
-import { blueprint } from './blueprint';
 import { plugin } from './plugin';
 import { marketplace } from './marketplace';
 import { pluginMcp } from './pluginMcp';
@@ -66,7 +65,6 @@ export const api = {
   ...managedAgents,
   ...legacyDefaults,
   ...file,
-  ...blueprint,
   ...plugin,
   ...marketplace,
   ...pluginMcp,

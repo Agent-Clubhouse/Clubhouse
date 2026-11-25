@@ -23,7 +23,6 @@ import { registerGroupProjectHandlers } from './group-project-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
-import { registerBlueprintHandlers } from './blueprint-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
 import { registerTelemetrySettingsHandlers } from './telemetry-settings-handlers';
 import { registerFeedbackHandlers } from './feedback-handlers';
@@ -99,7 +98,6 @@ export function registerAllHandlers(): void {
   // After the group-project lifecycle listener is attached, so restored
   // group-project wires post their joins and start polling.
   restorePersistedBindings();
-  registerBlueprintHandlers();
   registerGoobersHandlers();
   registerTelemetrySettingsHandlers();
   registerFeedbackHandlers();

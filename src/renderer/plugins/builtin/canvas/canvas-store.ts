@@ -2,7 +2,7 @@ import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateCanvasName } from '../../../../shared/name-generator';
 import { rendererLog } from '../../renderer-logger';
-import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, DeferredCanvasWire, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
+import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { generateZoneWireId, type ZoneWireDefinition } from './zone-wire-store';
@@ -37,7 +37,6 @@ import {
   recomputeZones,
 } from './canvas-operations';
 import { bindWireDefinition } from './wire-binding';
-import { pruneDeferredWires, resolveDeferredWires } from '../../../features/blueprints/blueprint-wire-plan';
 import { reconcilePersistedWires, REMOVED_CANVAS_VIEW_TYPES } from '../../../../shared/canvas-persistence';
 import { removeGroupProjectCanvasReferences } from '../../../../shared/group-project-canvas-cascade';
 
@@ -284,67 +283,6 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
   };
 }
 
-/**
- * After a view update on the active canvas, create any deferred wires whose
- * ends are now bound (a stub card got an agent, a group-project widget got a
- * project) in the same state update, and keep the rest deferred (#2069).
- */
-function resolveDeferredOnActive(state: CanvasState, update: Partial<CanvasState>): Partial<CanvasState> {
-  const canvases = update.canvases ?? state.canvases;
-  const active = canvases.find((c) => c.id === state.activeCanvasId);
-  if (!active?.deferredWires?.length) return update;
-  const { create, deferred } = resolveDeferredWires(active.deferredWires, active.views);
-  if (create.length === 0 && deferred.length === active.deferredWires.length) return update;
-  const nextCanvases = canvases.map((c) => (c.id === active.id ? { ...c, deferredWires: deferred.length ? deferred : undefined } : c));
-  // Same de-duplication as addWireDefinition.
-  const keys = new Set(state.wireDefinitions.map((w) => `${w.agentId}\0${w.targetId}`));
-  const added = create.filter((w) => {
-    const key = `${w.agentId}\0${w.targetId}`;
-    if (keys.has(key)) return false;
-    keys.add(key);
-    return true;
-  });
-  return {
-    ...update,
-    canvases: nextCanvases,
-    ...(added.length ? { wireDefinitions: [...state.wireDefinitions, ...added] } : {}),
-  };
-}
-
-/** A stored blueprint wire: string refs, and optional fields of the right shape. */
-function isWellFormedWire(wire: unknown): boolean {
-  if (!wire || typeof wire !== 'object') return false;
-  const w = wire as Record<string, unknown>;
-  if (typeof w.sourceRef !== 'string' || typeof w.targetRef !== 'string') return false;
-  if (w.bidirectional !== undefined && typeof w.bidirectional !== 'boolean') return false;
-  if (w.disabledTools !== undefined && !(Array.isArray(w.disabledTools) && w.disabledTools.every((t) => typeof t === 'string'))) return false;
-  if (w.instructions !== undefined) {
-    if (!w.instructions || typeof w.instructions !== 'object' || Array.isArray(w.instructions)) return false;
-    if (!Object.values(w.instructions).every((v) => typeof v === 'string')) return false;
-  }
-  return true;
-}
-
-/** Deferred wires from storage or a satellite: well-formed entries whose views still exist (#2069). */
-function normalizeDeferredWires(
-  raw: unknown,
-  views: CanvasView[],
-  canvasId: string | undefined,
-  issues?: string[],
-): { deferredWires?: DeferredCanvasWire[] } {
-  if (raw === undefined) return {};
-  if (!Array.isArray(raw)) { issues?.push(`canvas ${canvasId}: deferredWires is not an array`); return {}; }
-  const viewIds = new Set(views.map((v) => v.id));
-  const kept = raw.filter((d): d is DeferredCanvasWire => {
-    const ok = !!d && typeof d === 'object'
-      && typeof d.sourceViewId === 'string' && typeof d.targetViewId === 'string'
-      && isWellFormedWire(d.wire);
-    if (!ok) issues?.push(`canvas ${canvasId}: dropped malformed deferred wire`);
-    return ok && viewIds.has(d.sourceViewId) && viewIds.has(d.targetViewId);
-  });
-  return kept.length ? { deferredWires: kept } : {};
-}
-
 function normalizeCanvasInstance(
   raw: unknown,
   /** `issues` collects a note for every record dropped or reset while
@@ -395,7 +333,6 @@ function normalizeCanvasInstance(
       elkAlgorithm: options.existing?.elkAlgorithm ?? s.elkAlgorithm ?? 'layered',
       elkDirection: options.existing?.elkDirection ?? s.elkDirection ?? 'RIGHT',
       layoutCenterId: options.existing?.layoutCenterId ?? s.layoutCenterId ?? null,
-      ...normalizeDeferredWires(s.deferredWires, restoredViews, s.id, options.issues),
     };
   } catch (err) {
     options.issues?.push(`canvas ${s?.id}: ${errorMessage(err)}`);
@@ -845,7 +782,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         elkAlgorithm: c.elkAlgorithm,
         elkDirection: c.elkDirection,
         layoutCenterId: c.layoutCenterId,
-        ...(c.deferredWires?.length ? { deferredWires: c.deferredWires } : {}),
       }));
       // Ordered double-write for crash recovery. Write the backup FIRST, then
       // the primary. A crash can tear at most one of the two files, so the
@@ -1254,7 +1190,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
         // LB-M05: clear layoutCenterId if the removed view was the ELK layout center
         layoutCenterId: canvas.layoutCenterId === viewId ? null : canvas.layoutCenterId,
-        deferredWires: pruneDeferredWires(canvas.deferredWires, [viewId]),
       }));
 
       // LB-M07: remove orphaned wire definitions referencing the removed view
@@ -1330,23 +1265,21 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     updateView: (viewId, updates) => {
-      // Binding a stub card's agent may complete deferred wires.
-      set(resolveDeferredOnActive(get(), updateActiveCanvas(get(), (canvas) => ({
+      set(updateActiveCanvas(get(), (canvas) => ({
         views: canvas.views.map((v) =>
           v.id === viewId ? { ...v, ...updates } as CanvasView : v
         ),
-      }))));
+      })));
     },
 
     updateViewMetadata: (viewId, metadataUpdates) => {
-      // A group-project widget getting its project may complete deferred wires.
-      set(resolveDeferredOnActive(get(), updateActiveCanvas(get(), (canvas) => ({
+      set(updateActiveCanvas(get(), (canvas) => ({
         views: canvas.views.map((v) =>
           v.id === viewId
             ? { ...v, metadata: { ...v.metadata, ...metadataUpdates } } as CanvasView
             : v
         ),
-      }))));
+      })));
     },
 
     queryViews: (filter?) => {
@@ -1370,7 +1303,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         return {
           views: recomputeZones(views),
           selectedViewId: canvas.selectedViewId === zoneId ? null : canvas.selectedViewId,
-          deferredWires: pruneDeferredWires(canvas.deferredWires, removeContents ? [zoneId, ...zone.containedViewIds] : [zoneId]),
         };
       });
 
@@ -1500,8 +1432,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       })));
     },
   }));
-  // Wire definitions can also change while resolving deferred blueprint wires,
-  // removing views, or applying navigation. Track every local mutation centrally.
+  // Wire definitions can also change while removing views, or applying navigation. Track every local mutation centrally.
   store.subscribe((state, previous) => {
     if (state.dataOrigin !== 'local' || previous.dataOrigin !== 'local') return;
     if (state.wireDefinitions !== previous.wireDefinitions) _wiresOrigin = 'local';

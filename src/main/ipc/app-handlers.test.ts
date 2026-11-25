@@ -8,7 +8,7 @@ vi.mock('../services/orchestration-settings', () => ({
 const orchestrationBroadcast = vi.hoisted(() => vi.fn());
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: orchestrationBroadcast }));
 vi.mock('../services/session-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
-vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), blueprintTransfer: vi.fn(), recordToolsList: vi.fn() }));
+vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), recordToolsList: vi.fn() }));
 
 vi.mock('electron', () => ({
   app: {

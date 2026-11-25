@@ -110,10 +110,6 @@ export function popoutOpened(type: 'agent' | 'canvas'): void {
   tel.event('clubhouse.popout.opened', [ATTR.popoutType(type)]);
 }
 
-export function blueprintTransfer(direction: 'exported' | 'imported', ok: boolean): void {
-  tel.event(direction === 'exported' ? 'clubhouse.blueprint.exported' : 'clubhouse.blueprint.imported', [ATTR.outcome(ok ? 'ok' : 'error')]);
-}
-
 /** An agent's MCP tools/list (spec §12 H8): the count bucket and whether it was empty, never tool names. */
 export function recordToolsList(toolCount: number): void {
   tel.event('clubhouse.mcp.tools_list', [ATTR.mcpToolsCount(countBucket(toolCount)), ATTR.mcpToolsEmpty(toolCount === 0)]);

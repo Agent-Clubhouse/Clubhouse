@@ -1871,8 +1871,6 @@ export const EVENTS = {
   /** Attributes: `clubhouse.popout.type`. */
   'clubhouse.popout.opened': { level: 'standard' },
   /** Attributes: `clubhouse.outcome`. */
-  'clubhouse.blueprint.exported': { level: 'standard' },
-  'clubhouse.blueprint.imported': { level: 'standard' },
   /** An agent listed its MCP tools (§12 H8). Attributes: tool-count bucket, empty flag. */
   'clubhouse.mcp.tools_list': { level: 'standard' },
   // appLog bridge (§6.6, Phase 7): opt-in log sites, exported as these events

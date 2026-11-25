@@ -19,9 +19,7 @@ import { useChromeFlagStore } from '../../../chrome/chromeFlag';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
 import { usePluginStore } from '../../plugin-store';
-import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
-import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
 import { rendererLog } from '../../renderer-logger';
 import { bindWireDefinition } from './wire-binding';
 import { createWireReconciler } from './wire-reconcile';
@@ -545,21 +543,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().addCanvas();
   }, [store, remoteForward]);
 
-  const handleAddFromBlueprint = useCallback(() => {
-    if (isAppMode) {
-      useUIStore.getState().openBlueprintGallery({ mode: 'app' });
-      return;
-    }
-    const { projectId, projectPath } = api.context;
-    if (!projectId || !projectPath) {
-      rendererLog('canvas:main', 'error', 'Cannot open blueprint gallery in project mode without a resolved projectId and projectPath', {
-        meta: { projectId, projectPath },
-      });
-      return;
-    }
-    useUIStore.getState().openBlueprintGallery({ mode: 'project', projectId, projectPath });
-  }, [isAppMode, api]);
-
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     remoteForward({ type: 'removeCanvas', canvasId });
     // Unbind all MCP wires and remove wire definitions for views on this canvas
@@ -588,13 +571,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     remoteForward({ type: 'renameCanvas', canvasId, name });
     store.getState().renameCanvas(canvasId, name);
   }, [store, remoteForward]);
-
-  // ── Blueprint export ──────────────────────────────────────────
-  const [exportCanvasId, setExportCanvasId] = useState<string | null>(null);
-
-  const handleExportBlueprint = useCallback((canvasId: string) => {
-    setExportCanvasId(canvasId);
-  }, []);
 
   // ── Workspace callbacks ────────────────────────────────────────
 
@@ -827,11 +803,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       activeCanvasId,
       onSelectCanvas: handleSelectCanvas,
       onAddCanvas: handleAddCanvas,
-      onAddFromBlueprint: handleAddFromBlueprint,
       onRemoveCanvas: handleRemoveCanvas,
       onRenameCanvas: handleRenameCanvas,
       onPopOutCanvas: handlePopOutCanvas,
-      onExportBlueprint: handleExportBlueprint,
     }),
     unsavedRecoveryCopy && !isRemote && !isRemoteApp
       ? React.createElement('div', { role: 'status', className: 'px-3 py-1 text-xs text-ctp-subtext0' }, 'Your unsaved canvas changes were kept as a recovery copy.')
@@ -905,21 +879,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             createBidirectionalWires,
           }),
         ),
-    // Blueprint export dialog
-    exportCanvasId ? React.createElement(ExportBlueprintDialog, {
-      canvas: canvases.find((c) => c.id === exportCanvasId) ?? canvases[0],
-      agents: useAgentStore.getState().agents,
-      projects: Object.fromEntries(useProjectStore.getState().projects.map((p) => [p.id, p])),
-      wireDefinitions,
-      projectId: isAppMode ? undefined : api.context.projectId ?? undefined,
-      projectPath: (() => {
-        const pid = isAppMode ? undefined : api.context.projectId;
-        if (!pid) return undefined;
-        return useProjectStore.getState().projects.find((p) => p.id === pid)?.path;
-      })(),
-      appVersion: undefined, // Populated asynchronously if needed
-      onClose: () => setExportCanvasId(null),
-    }) : null,
   );
 }
 

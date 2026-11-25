@@ -427,89 +427,6 @@ function RefreshIcon() {
   );
 }
 
-function BlueprintBundleSection({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
-  const [showExportDialog, setShowExportDialog] = useState(false);
-
-  return (
-    <>
-      <SettingsSection title="Blueprint bundle">
-        <SettingsField
-          label="Export canvases"
-          help="Every canvas in this project as one bundle, for sharing or backup."
-        >
-          <Button
-            onClick={() => setShowExportDialog(true)}
-            kind="ghost"
-            data-testid="export-bundle-button"
-          >
-            Export…
-          </Button>
-        </SettingsField>
-      </SettingsSection>
-
-      {showExportDialog && (
-        <BlueprintBundleExportDialogLoader
-          projectId={projectId}
-          projectPath={projectPath}
-          projectName={projectName}
-          onClose={() => setShowExportDialog(false)}
-        />
-      )}
-    </>
-  );
-}
-
-/** Lazy-loads stores and renders the ExportBundleDialog. */
-function BlueprintBundleExportDialogLoader({
-  projectId,
-  projectPath,
-  projectName,
-  onClose,
-}: {
-  projectId: string;
-  projectPath: string;
-  projectName: string;
-  onClose: () => void;
-}) {
-  const [DialogComponent, setDialogComponent] = useState<any>(null);
-  const [canvases, setCanvases] = useState<any[]>([]);
-  const [agents, setAgents] = useState<Record<string, any>>({});
-  const [projects, setProjects] = useState<Record<string, any>>({});
-  const [wireDefinitions, setWireDefinitions] = useState<any[]>([]);
-
-  useEffect(() => {
-    // Dynamic imports to avoid circular dependencies
-    Promise.all([
-      import('../blueprints/ExportBundleDialog'),
-      import('../../plugins/builtin/canvas/main'),
-      import('../../stores/agentStore'),
-      import('../../stores/projectStore'),
-    ]).then(([dialogMod, canvasMod, agentMod, projMod]) => {
-      const store = canvasMod.getProjectCanvasStore(projectId);
-      setCanvases(store.getState().canvases);
-      setWireDefinitions(store.getState().wireDefinitions);
-      setAgents(agentMod.useAgentStore.getState().agents);
-      setProjects(Object.fromEntries(projMod.useProjectStore.getState().projects.map((p: any) => [p.id, p])));
-      setDialogComponent(() => dialogMod.ExportBundleDialog);
-    });
-  }, [projectId]);
-
-  if (!DialogComponent) return null;
-
-  return (
-    <DialogComponent
-      canvases={canvases}
-      agents={agents}
-      projects={projects}
-      wireDefinitions={wireDefinitions}
-      projectId={projectId}
-      projectPath={projectPath}
-      projectName={projectName}
-      onClose={onClose}
-    />
-  );
-}
-
 function RemoveProjectSection({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
   const removeProject = useProjectStore((s) => s.removeProject);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
@@ -580,7 +497,6 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
       </div>
       {/* Pending wrapper work belongs to the project where it started. */}
       <LaunchWrapperSection key={project.id} projectId={project.id} projectPath={project.path} />
-      <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={name} />
       <LinkedProjectsSection projectId={project.id} />
       <HandoffTransferSettingsSection key={`transfer-${project.id}`} projectId={project.id} />
       <HandoffSecretSettingsSection key={project.id} projectId={project.id} />

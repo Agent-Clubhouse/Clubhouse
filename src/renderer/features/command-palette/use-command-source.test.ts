@@ -14,7 +14,6 @@ const mockToggleExplorerCollapse = vi.fn();
 const mockToggleAccessoryCollapse = vi.fn();
 const mockSaveAnnexSettings = vi.fn();
 const mockOpenQuickAgentDialog = vi.fn();
-const mockOpenBlueprintGallery = vi.fn();
 const mockPickAndAddProject = vi.fn();
 const mockOpenProjectSettings = vi.fn();
 
@@ -52,7 +51,6 @@ const uiStoreState = {
   toggleHelp: mockToggleHelp,
   openAbout: mockOpenAbout,
   openQuickAgentDialog: mockOpenQuickAgentDialog,
-  openBlueprintGallery: mockOpenBlueprintGallery,
   openProjectSettings: mockOpenProjectSettings,
 };
 
@@ -295,13 +293,6 @@ describe('useCommandSource', () => {
     expect(mockSetSettingsSubPage).toHaveBeenCalledWith('orchestrators');
   });
 
-  it('export project as blueprint bundle opens the active project\'s settings', () => {
-    const { result } = renderHook(() => useCommandSource());
-    findItem(result.current, 'action:export-project-blueprints').execute();
-    expect(mockOpenProjectSettings).toHaveBeenCalledWith('p1');
-    expect(mockSetSettingsContext).not.toHaveBeenCalledWith('project');
-  });
-
   // ── Canvas resolution tests ──────────────────────────
 
   it('all canvas items have the canvas icon and Canvases category', () => {
@@ -505,31 +496,6 @@ describe('useCommandSource', () => {
     } finally {
       pluginStoreState.appEnabled = saved;
     }
-  });
-
-  // ── Blueprint command tests ────────────────────────────────────────
-
-  it('includes import-blueprint action', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const item = findItem(result.current, 'action:import-blueprint');
-    expect(item).toBeDefined();
-    expect(item.label).toBe('Import blueprint');
-    expect(item.category).toBe('Commands');
-  });
-
-  it('import-blueprint calls openBlueprintGallery', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const item = findItem(result.current, 'action:import-blueprint');
-    item.execute();
-    expect(mockOpenBlueprintGallery).toHaveBeenCalled();
-  });
-
-  it('includes export-blueprint action', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const item = findItem(result.current, 'action:export-blueprint');
-    expect(item).toBeDefined();
-    expect(item.label).toBe('Export canvas as blueprint');
-    expect(item.category).toBe('Commands');
   });
 
   // ── The Assistant was removed: no palette entry, even with a stale flag ──

@@ -602,7 +602,6 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.command_palette.executed` | `c.command.prefix` (text before the first `:`, e.g. `toggle-settings`, `project`, `agent`, `plugin-cmd`), `c.command.category` |
 | `c.onboarding.*` | `started`/`cohort_selected` (`new-dev`/`experienced-dev`/`seasoned-dev`)/`completed`/`dismissed` |
 | `c.help.topic_viewed` | `c.help.topic` (static IDs from `help-content.ts`). **Search text is never sent.** |
-| `c.blueprint.*` | `export` (destination enum), `import` (match-status counts), `create_from_builtin` (`small-squad`/`large-squad`) |
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |

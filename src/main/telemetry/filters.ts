@@ -63,8 +63,6 @@ export const USER_ACTIVITY = {
     'clubhouse.helper_auto.refused',
     'clubhouse.helper_auto.cooling',
     'clubhouse.theme.changed',
-    'clubhouse.blueprint.exported',
-    'clubhouse.blueprint.imported',
     // The feedback lifecycle, so the stream shows where a report was sent (#2524).
     'clubhouse.feedback.captured',
     'clubhouse.feedback.submitted',

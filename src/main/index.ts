@@ -39,6 +39,7 @@ import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import { noteRetiredPlugins } from './services/retired-plugin-data';
+import { cleanupRemovedBlueprintData } from './services/removed-blueprints-cleanup';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry } from './telemetry/crash-handlers';
@@ -480,6 +481,17 @@ app.on('ready', async () => {
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin check failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+  // Blueprints were removed: delete each project's saved `.clubhouse/blueprints/`
+  // once. Never throws; logs what it removed.
+  projectStore.list()
+    .then((projects) => cleanupRemovedBlueprintData({
+      projects,
+      markerFile: path.join(app.getPath('home'), '.clubhouse', 'removed-feature-cleanup', 'blueprints.json'),
+    }))
+    .catch((err) => {
+      appLog('core:startup', 'warn', `Blueprint data cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
   // Start stale session sweeps (safety net for leaked sessions)
