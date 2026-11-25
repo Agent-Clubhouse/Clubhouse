@@ -139,12 +139,6 @@ describe.each(['A', 'B'] as const)('one forward opened by %s', (opener) => {
       case 'group-project write':
         expect(result).toMatchObject({ status: 200, body: { results: [{ id: 'probe-write', status: 'applied' }] } });
         break;
-      case 'handoff offer': {
-        expect(result).toHaveProperty('id');
-        const id = (result as { id: string }).id;
-        expect(who === 'A' ? await b.call('hasHandoff', id) : a.hasHandoff(id)).toBe(true);
-        break;
-      }
     }
   }
 

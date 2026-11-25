@@ -235,7 +235,7 @@ describe('reverse direct-dial policy calibration', () => {
     let observed!: () => void;
     const held = new Promise<void>((resolve) => { observed = resolve; });
     const emit = vi.spyOn(net.Socket.prototype, 'emit').mockImplementation(function (this: net.Socket, event, ...args) {
-      if (event === 'connect' && this.remotePort === port) {
+      if ((event as string) === 'connect' && this.remotePort === port) {
         release = () => { Reflect.apply(originalEmit, this, [event, ...args]); };
         observed();
         return true;

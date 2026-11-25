@@ -765,7 +765,7 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
-  describe.each(['A', 'B'] as const)('R09/B %s: binary upload parity on an initialized target; cold-cache acceptance deferred under #3715', (who) => {
+  describe.each(['A', 'B'] as const)('R09/B %s: binary upload parity on an initialized target', (who) => {
     let imageTarget: Awaited<ReturnType<InventoryPeer['prepareImages']>>;
     const upload = (size: number): Promise<WireAnswer> => who === 'A' ? a.imageUpload({ size, ...imageTarget }) : b.call('imageUpload', { size, ...imageTarget });
     const state = (): ReturnType<InventoryPeer['imageState']> => who === 'A' ? b.call('imageState') : a.imageState();
@@ -846,7 +846,7 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect((await inspect()).order).not.toContain(id);
   });
 
-  describe.each(['A', 'B'] as const)('R09 %s: partial, blocked by #3715 for post-edit config state', (who) => {
+  describe.each(['A', 'B'] as const)('R09 %s: a benign config edit keeps a running upload target (#3715, fixed by #3750)', (who) => {
     let answer: WireAnswer;
     const upload = (): Promise<WireAnswer> => who === 'A' ? a.imageUpload(65_535) : b.call('imageUpload', 65_535);
     // Vitest also inverts beforeEach errors; keep the real probe outside that boundary.
@@ -857,13 +857,9 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect(config).toEqual({ cachedBefore: true, unchanged: true, registered: true, running: true });
       expect(await driverOnTarget(who)).toMatchObject({ registered: true, running: true, cached: false });
       answer = await upload();
-      if (answer.status !== 200) {
-        expect(answer.status).toBe(404);
-        expect(json(answer)).toMatchObject({ version: 1, error: 'agent_not_found' });
-      }
     });
-    it.fails('#3715: a config edit must not unregister a running upload target', () => {
-      expect(answer.status).toBe(200);
+    it('a config edit does not unregister a running upload target', () => {
+      expect(answer.status, JSON.stringify(json(answer))).toBe(200);
     });
   });
 
@@ -947,8 +943,9 @@ describe('full-server audit inventory over one A to B forward', () => {
     } finally {
       if (who === 'A') await b.call('releaseProviderSend'); else await a.releaseProviderSend();
     }
+    // The direct adapter rejects with its own abort error (no code); the reverse one keeps the uncertainty explicit.
     expect(outcome).toEqual(who === 'A'
-      ? { code: 'ABORT_ERR', indeterminate: undefined }
+      ? { code: undefined, indeterminate: undefined }
       : { code: 'cancelled', indeterminate: true });
     expect(await chat(who, { type: 'chat.send', text: input.text, delivery: 'prompt' }, input.commandId)).toMatchObject({ status: 'completed' });
     expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);

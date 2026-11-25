@@ -60,7 +60,11 @@ export interface PeerInfo {
   port: number;
 }
 
-export const CONSUMER_FAMILIES = ['history', 'chat send', 'subscription', 'file read', 'terminal', 'git op', 'agent call', 'group-project write', 'handoff offer'] as const;
+/**
+ * Handoffs are not probed here: this lightweight coordinator lacks production's reverse
+ * admission (#3778). R20/R21 in reverse-parity.test.ts run the real handoff host both ways.
+ */
+export const CONSUMER_FAMILIES = ['history', 'chat send', 'subscription', 'file read', 'terminal', 'git op', 'agent call', 'group-project write'] as const;
 export type ConsumerFamily = typeof CONSUMER_FAMILIES[number];
 
 export interface ConfigurePeer {
@@ -253,13 +257,6 @@ export async function createClientPeer(alias: string) {
         case 'group-project write': return client.postToMachine(fingerprint, GROUP_PROJECT_WRITE_PATH, {
           v: 1, writes: [{ id: 'probe-write', groupProjectId: 'fixture-board', author: { label: 'Fixture person' }, queuedAt: new Date().toISOString(), write: { op: 'update', fields: { description: 'fixture-write' } } }],
         });
-        case 'handoff offer': {
-          const record = await handoff.offer({
-            to: { machine: fingerprint, agentId: 'receiver' },
-            task: { title: `Fixture ${randomUUID()}`, brief: 'No model, worktree or transfer is started by this consumer probe.' }, mode: 'worktree',
-          }, { machine: self.fingerprint, agentId: 'sender' });
-          return { id: record.id };
-        }
       }
     },
     hasHandoff(id: string) { return records.has(id); },
