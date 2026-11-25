@@ -198,8 +198,6 @@ describe('annex-client-handlers', () => {
   it('reads and drives a satellite\'s chat agents (#2390)', async () => {
     await handlers.get(IPC.ANNEX_CLIENT.CHAT_PAGE)!({}, 'sat', 'agent', { limit: 20, beforeSeq: 5, other: 1 });
     expect(annexClient.requestChatPage).toHaveBeenCalledWith('sat', 'agent', { limit: 20, beforeSeq: 5 });
-    await handlers.get(IPC.ANNEX_CLIENT.CHAT_SESSIONS)!({}, 'sat', 'agent');
-    expect(annexClient.requestChatSessions).toHaveBeenCalledWith('sat', 'agent');
     await handlers.get(IPC.ANNEX_CLIENT.CHAT_COMMAND)!({}, 'sat', { type: 'chat.send', agentId: 'agent' });
     expect(annexClient.sendChatCommand).toHaveBeenCalledWith('sat', { type: 'chat.send', agentId: 'agent' });
   });

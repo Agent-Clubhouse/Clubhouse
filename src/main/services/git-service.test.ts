@@ -21,7 +21,7 @@ vi.mock('fs', async () => {
 
 import * as fs from 'fs';
 import { execFile } from 'child_process';
-import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop, listWorktrees, getLog, showCommit, getCommitFileDiff, getHeadSha, getDiffNumstat, parseNumstatZ, countUntrackedLines } from './git-service';
+import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, stash, stashPop, listWorktrees, getLog, showCommit, getCommitFileDiff, getHeadSha, getDiffNumstat, parseNumstatZ, countUntrackedLines } from './git-service';
 
 // No longer need to mock pathExists — git repo detection uses git rev-parse via execFile
 
@@ -468,31 +468,6 @@ describe('discardFile', () => {
   });
 });
 
-describe('createBranch', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('creates and checks out new branch', async () => {
-    mockGitExec(() => 'Switched to a new branch\n');
-    const result = await createBranch(DIR, 'feature/new-thing');
-    expect(result.ok).toBe(true);
-    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
-      'git',
-      ['checkout', '-b', 'feature/new-thing'],
-      expect.objectContaining({ cwd: DIR }),
-      expect.any(Function)
-    );
-  });
-
-  it('returns error if branch already exists', async () => {
-    mockGitExecError("fatal: a branch named 'feature/new-thing' already exists");
-    const result = await createBranch(DIR, 'feature/new-thing');
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain('already exists');
-  });
-});
-
 describe('stash/stashPop', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -820,12 +795,10 @@ describe('security — input validation', () => {
   describe('branch name validation', () => {
     it('rejects branch names starting with -', async () => {
       await expect(checkout(DIR, '--track')).rejects.toThrow("must not start with '-'");
-      await expect(createBranch(DIR, '-evil')).rejects.toThrow("must not start with '-'");
     });
 
     it('rejects branch names with null bytes', async () => {
       await expect(checkout(DIR, 'main\0evil')).rejects.toThrow('null bytes');
-      await expect(createBranch(DIR, 'branch\0name')).rejects.toThrow('null bytes');
     });
 
     it('allows valid branch names with slashes and dots', async () => {

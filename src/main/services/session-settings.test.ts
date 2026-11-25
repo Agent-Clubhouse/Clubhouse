@@ -20,7 +20,7 @@ vi.mock('fs', async () => {
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, saveSettings, shouldPromptForName } from './session-settings';
+import { getSettings, saveSettings } from './session-settings';
 
 describe('session-settings', () => {
   beforeEach(() => {
@@ -103,112 +103,6 @@ describe('session-settings', () => {
       await saveSettings(settings);
       const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
       expect(written.projectOverrides).toEqual({ '/project': true });
-    });
-  });
-
-  describe('shouldPromptForName', () => {
-    it('returns default (false) when no file exists and no project path', async () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(shouldPromptForName()).toBe(false);
-    });
-
-    it('returns global setting when no project path given', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({ promptForName: true }),
-      );
-      expect(shouldPromptForName()).toBe(true);
-    });
-
-    it('returns global setting when project path has no override', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({ promptForName: true }),
-      );
-      expect(shouldPromptForName('/some/unknown/project')).toBe(true);
-    });
-
-    it('returns project override when it exists (true overrides false default)', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          promptForName: false,
-          projectOverrides: { '/my/project': true },
-        }),
-      );
-      expect(shouldPromptForName('/my/project')).toBe(true);
-    });
-
-    it('returns project override when it exists (false overrides true default)', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          promptForName: true,
-          projectOverrides: { '/my/project': false },
-        }),
-      );
-      expect(shouldPromptForName('/my/project')).toBe(false);
-    });
-
-    it('returns global setting when projectOverrides is undefined', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({ promptForName: true }),
-      );
-      expect(shouldPromptForName('/any/project')).toBe(true);
-    });
-
-    it('returns global setting when projectOverrides is empty', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({ promptForName: true, projectOverrides: {} }),
-      );
-      expect(shouldPromptForName('/any/project')).toBe(true);
-    });
-
-    it('matches exact project path only', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          promptForName: false,
-          projectOverrides: { '/my/project': true },
-        }),
-      );
-      // Exact match
-      expect(shouldPromptForName('/my/project')).toBe(true);
-      // Subpath should NOT match — falls back to global
-      expect(shouldPromptForName('/my/project/sub')).toBe(false);
-      // Parent should NOT match — falls back to global
-      expect(shouldPromptForName('/my')).toBe(false);
-    });
-
-    it('handles undefined project path with overrides present', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          promptForName: true,
-          projectOverrides: { '/my/project': false },
-        }),
-      );
-      expect(shouldPromptForName(undefined)).toBe(true);
-    });
-
-    it('handles empty string project path (falsy) by returning global setting', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          promptForName: true,
-          projectOverrides: { '': false },
-        }),
-      );
-      // Empty string is falsy, so it should skip override lookup and return global
-      expect(shouldPromptForName('')).toBe(true);
-    });
-
-    it('differentiates between multiple project overrides', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          promptForName: false,
-          projectOverrides: {
-            '/project-a': true,
-            '/project-b': false,
-          },
-        }),
-      );
-      expect(shouldPromptForName('/project-a')).toBe(true);
-      expect(shouldPromptForName('/project-b')).toBe(false);
-      expect(shouldPromptForName('/project-c')).toBe(false); // global default
     });
   });
 });

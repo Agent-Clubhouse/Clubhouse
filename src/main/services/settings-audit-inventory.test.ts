@@ -48,7 +48,6 @@ const NOT_SETTINGS = new Set([
   'project-state.json',
   // Pin and Mark inactive of linked copies: the shared form of project-state.json.
   'network-linked-project-state.json',
-  'chat-cli-denylist.json',
   // Auto's last fair-tie choice is internal scheduling history, not a person's setting.
   'helper-auto-rotation.json',
   'helper-model-catalogs.json',

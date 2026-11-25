@@ -48,9 +48,7 @@ import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 import * as helperRouting from '../services/helper-routing';
 import type { HelperRoutingReadOptions, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../../shared/helper-routing';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
-
-/** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
-const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
+import { OPEN_EXTERNAL_ALLOWED_PROTOCOLS } from '../navigation-guard';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(

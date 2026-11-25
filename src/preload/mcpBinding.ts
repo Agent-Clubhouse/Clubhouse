@@ -12,7 +12,6 @@ export const mcpBinding = {
   mcpBinding: {
   listCardTargets: (agentId: string): Promise<ConnectionPickerDirectory> => ipcRenderer.invoke(IPC.MCP_BINDING.LIST_CARD_TARGETS, agentId),
   addCardConnection: (request: AddCardConnection): Promise<void> => ipcRenderer.invoke(IPC.MCP_BINDING.ADD_CARD_CONNECTION, request),
-  removeCardConnection: (from: string, to: string): Promise<void> => ipcRenderer.invoke(IPC.MCP_BINDING.REMOVE_CARD_CONNECTION, from, to),
   removeRemoteSource: (agentId: string, address: string, kind: 'user_link' | 'card_link' | 'tool_link'): Promise<void> => ipcRenderer.invoke(IPC.MCP_BINDING.REMOVE_REMOTE_SOURCE, agentId, address, kind),
   getBindings: () =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_BINDINGS),
@@ -59,9 +58,6 @@ export const mcpBinding = {
   /** Connect an agent here with one on another machine (`agentId@machine`), one way or both (#3064). */
   connectAcrossMachines: (agentId: string, address: string, options: { twoWay?: boolean; name?: string }): Promise<void> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.CONNECT_ACROSS_MACHINES, agentId, address, options),
-  /** Remove the user's links between an agent here and one on another machine, both ways (#3064). */
-  disconnectAcrossMachines: (agentId: string, address: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.MCP_BINDING.DISCONNECT_ACROSS_MACHINES, agentId, address),
   /** Set the tools turned off on one direction with an agent on another machine: `outgoing` from this agent (#3064). */
   setToolsAcrossMachines: (agentId: string, address: string, outgoing: boolean, disabledTools: string[]): Promise<void> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_TOOLS_ACROSS_MACHINES, agentId, address, outgoing, disabledTools),

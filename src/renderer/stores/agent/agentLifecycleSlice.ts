@@ -8,6 +8,7 @@ import { findLocalProject, isDispatcherAgent } from '../../features/dispatcher/d
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
 import { creatingPlaceholderId, omitRecordKey } from './agentUtils';
 import { parentLinkFields } from './parentLink';
+import { clearResumeEntries } from '../../services/resume-entries';
 
 export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): AgentLifecycleSlice {
   return {
@@ -15,16 +16,22 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
     resumingAgents: {},
     resumeAgentNames: {},
+    resumeErrors: {},
 
-    setResumeStatus: (agentId, status, name) => {
+    setResumeStatus: (agentId, status, name, error) => {
       set((s) => ({
         resumingAgents: { ...s.resumingAgents, [agentId]: status },
         ...(name ? { resumeAgentNames: { ...s.resumeAgentNames, [agentId]: name } } : {}),
+        // A new status replaces the last failure's message.
+        resumeErrors: error
+          ? { ...s.resumeErrors, [agentId]: error }
+          : omitRecordKey(s.resumeErrors, agentId),
       }));
     },
 
     clearResumingAgents: () => {
-      set({ resumingAgents: {}, resumeAgentNames: {} });
+      clearResumeEntries();
+      set({ resumingAgents: {}, resumeAgentNames: {}, resumeErrors: {} });
     },
 
     spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, accessRequest, pluginMetadata, cwdOverride, options) => {

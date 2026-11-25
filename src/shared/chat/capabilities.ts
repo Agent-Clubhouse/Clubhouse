@@ -10,8 +10,7 @@
 
 /**
  * Concrete chat transports. Also the `c.chat.driver` telemetry values. A value at
- * runtime so scripts/ci/cli-denylist.test.ts can hold the kill switch's publish
- * validation to it.
+ * runtime so settings and history can check a saved id against it.
  */
 export const CHAT_DRIVER_IDS = [
   'claude_agent_sdk',
