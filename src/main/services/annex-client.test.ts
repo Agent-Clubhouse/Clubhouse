@@ -512,6 +512,16 @@ describe('annex-client', () => {
         expect(await observed).toMatchObject({ code: 'cancelled', indeterminate: true });
       });
 
+      it('reports a completed response after a peer trust change as authorization_revoked', async () => {
+        let complete!: (result: annexControl.ControlResult) => void;
+        vi.mocked(annexControl.request).mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+        const observed = annexClient.postToMachine(fingerprint, '/api/v1/network/test', {}).catch((error: unknown) => error);
+        peer = { ...peer, pairingId: 'repaired' };
+        complete({ status: 200, headers: {}, body: Buffer.from('{}') });
+        expect(await observed).toMatchObject({ code: 'authorization_revoked', indeterminate: true });
+        expect(annexControl.request).toHaveBeenCalledOnce();
+      });
+
       it('reports a completed response from a replaced link as transport_unavailable, not revoked', async () => {
         let complete!: (result: annexControl.ControlResult) => void;
         vi.mocked(annexControl.request).mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
