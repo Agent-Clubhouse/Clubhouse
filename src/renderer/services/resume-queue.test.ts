@@ -54,7 +54,7 @@ Object.defineProperty(globalThis, 'window', {
   writable: true,
 });
 
-import { processResumeQueue } from './resume-queue';
+import { processResumeQueue, resumeFromBanner } from './resume-queue';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID, type DispatcherState } from '../../shared/dispatcher-types';
 import { useAgentStore } from '../stores/agentStore';
@@ -369,7 +369,7 @@ describe('resume-queue', () => {
       await processResumeQueue(makeState([entry]));
 
       expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
-      expect(mockSetResumeStatus).toHaveBeenCalledWith('double-fail-agent', 'failed');
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('double-fail-agent', 'failed', undefined, 'second failure');
     });
 
     it('sets status to failed when spawnAgent fails and there is no sessionId to fall back from', async () => {
@@ -385,7 +385,7 @@ describe('resume-queue', () => {
 
       // No fallback attempt since there was no sessionId
       expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
-      expect(mockSetResumeStatus).toHaveBeenCalledWith('no-session-fail-agent', 'failed');
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('no-session-fail-agent', 'failed', undefined, 'spawn error');
     });
   });
 
@@ -889,6 +889,50 @@ describe('resume-queue', () => {
         }),
       );
       expect(mockSpawnAgent.mock.calls[1][0]).not.toHaveProperty('structuredMode');
+    });
+  });
+
+  describe('resumeFromBanner (the banner\'s Resume and Retry buttons)', () => {
+    it('resumes a manual session through the same spawn the auto path uses', async () => {
+      const entry = makeEntry({ agentId: 'manual-agent', resumeStrategy: 'manual', sessionId: 'sess-9' });
+      await processResumeQueue(makeState([entry]));
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+
+      await resumeFromBanner('manual-agent');
+
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: 'manual-agent', resume: true, sessionId: 'sess-9' }),
+      );
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('manual-agent', 'resuming');
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('manual-agent', 'resumed');
+    });
+
+    it('shows the failure on the row, and a second click retries the resume', async () => {
+      const entry = makeEntry({ agentId: 'retry-agent', resumeStrategy: 'manual', sessionId: 'sess-1' });
+      await processResumeQueue(makeState([entry]));
+      mockSpawnAgent.mockRejectedValueOnce(new Error('CLI not installed'));
+
+      await resumeFromBanner('retry-agent');
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('retry-agent', 'failed', undefined, 'CLI not installed');
+
+      await resumeFromBanner('retry-agent');
+      expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('retry-agent', 'resumed');
+    });
+
+    it('reports a failed auto resume\'s final error, not just the first attempt\'s', async () => {
+      const entry = makeEntry({ agentId: 'auto-fail', resumeStrategy: 'auto', sessionId: 'sess-2' });
+      mockSpawnAgent
+        .mockRejectedValueOnce(new Error('session not found'))
+        .mockRejectedValueOnce(new Error('nothing to continue'));
+      await processResumeQueue(makeState([entry]));
+      expect(mockSetResumeStatus).toHaveBeenLastCalledWith('auto-fail', 'failed', undefined, 'nothing to continue');
+    });
+
+    it('says so when there is no saved session for that agent', async () => {
+      await resumeFromBanner('never-captured');
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('never-captured', 'failed', undefined, 'No saved session to resume');
     });
   });
 });

@@ -10,6 +10,13 @@ import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { parentLinkFields } from '../stores/agent/parentLink';
 
 /**
+ * The entries of this update's resume, kept so the banner's Resume and Retry
+ * buttons can run the same resume for one session. The main process hands the
+ * state over once (read-once), so this is the only copy after startup.
+ */
+const resumeEntries = new Map<string, RestartSessionEntry>();
+
+/**
  * Process pending resume entries after an update restart.
  * Sequential per workspace, parallel across workspaces.
  */
@@ -18,6 +25,9 @@ export async function processResumeQueue(state: RestartSessionState): Promise<vo
 
   // Filter out assistant agents — they are ephemeral and should not be resumed
   const sessions = state.sessions.filter((e) => !isAssistantAgent(e.agentId));
+
+  resumeEntries.clear();
+  for (const entry of sessions) resumeEntries.set(entry.agentId, entry);
 
   // Group by projectPath for sequential processing
   const byProject = new Map<string, RestartSessionEntry[]>();
@@ -188,6 +198,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
     });
     useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
   } catch (err) {
+    let failure: unknown = err;
     // If we had a specific sessionId and it failed, try --continue fallback
     if (entry.sessionId && entry.resumeStrategy === 'auto') {
       try {
@@ -228,7 +239,9 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
         });
         useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
         return;
-      } catch { /* fall through to failure */ }
+      } catch (fallbackErr) {
+        failure = fallbackErr;
+      }
     }
     // Clear resuming flag on failure too
     useAgentStore.setState((s) => {
@@ -236,11 +249,27 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       if (!agent) return s;
       return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
     });
-    useAgentStore.getState().setResumeStatus(entry.agentId, 'failed');
-    console.error(`Failed to resume agent ${entry.agentId}:`, err instanceof Error ? err.message : String(err));
+    const message = failure instanceof Error ? failure.message : String(failure);
+    useAgentStore.getState().setResumeStatus(entry.agentId, 'failed', undefined, message || 'Could not resume');
+    console.error(`Failed to resume agent ${entry.agentId}:`, message);
   }
 }
 
 export async function resumeManualAgent(agentId: string, entry: RestartSessionEntry): Promise<void> {
   await resumeAgent(entry);
+}
+
+/**
+ * The resume banner's Resume and Retry buttons: run the resume for one session
+ * from this update's state, the same path the automatic resume takes. A failure
+ * is shown on that session's row; an entry that is gone (state already
+ * consumed, or never held) is reported there too instead of doing nothing.
+ */
+export async function resumeFromBanner(agentId: string): Promise<void> {
+  const entry = resumeEntries.get(agentId);
+  if (!entry) {
+    useAgentStore.getState().setResumeStatus(agentId, 'failed', undefined, 'No saved session to resume');
+    return;
+  }
+  await resumeManualAgent(agentId, entry);
 }
