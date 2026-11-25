@@ -45,6 +45,9 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   // Agent SDK 0.3.316 ships with Claude Code 2.1.316. Tested 2026-11-01 on that
   // pair by handshake and a fake-model round trip through the MCP bridge
   // (send_message, read_output, a wire added mid-session, resume), no live prompt.
+  // The SDK is now 0.3.332 (Claude Code 2.1.332), which passed a credential-free
+  // initialize handshake on 2026-11-25 but no bridge round trip: the fake-model
+  // smoke is broken for every CLI version, so testedMax stays at 2.1.316.
   // Last live-tested on Claude Code 2.1.302 on 2026-10-18 (chat-itest-2026-10-18).
   claude_agent_sdk: { testedMax: '2.1.316' },
   claude_stream_json: { testedMax: '2.1.316' },

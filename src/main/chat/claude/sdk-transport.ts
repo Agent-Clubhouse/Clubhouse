@@ -83,7 +83,12 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
       model: opts.model,
       effort: opts.effort,
       ...(opts.autocompact && { extraArgs: { autocompact: opts.autocompact } }),
+      // Top-level only: the Clubhouse bridge is a stdio server, never an in-process SDK server
+      // or one inside an agent definition (SDK 0.3.327 ignores those). Delivery is pinned to the
+      // command line, today's default: the SDK plans to default to 'initialize', which a user's
+      // Claude Code older than the SDK's bundled one can't read, so the session would fail to start.
       mcpServers: opts.mcpServers as Options['mcpServers'],
+      mcpServersDelivery: 'argv',
       resume: opts.resume,
       forkSession: opts.forkSession,
       resumeSessionAt: opts.resumeSessionAt,
