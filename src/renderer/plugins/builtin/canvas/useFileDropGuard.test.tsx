@@ -1,12 +1,12 @@
 import React, { useRef } from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { useFileDropGuard } from './useFileDropGuard';
 
-function Guarded() {
+function Guarded({ children }: { children?: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useFileDropGuard(ref);
-  return <div ref={ref} data-testid="guarded"><span data-testid="child" /></div>;
+  return <div ref={ref} data-testid="guarded"><span data-testid="child" />{children}</div>;
 }
 
 /** A cancelable drag event whose dataTransfer carries the given types. */
@@ -46,5 +46,30 @@ describe('useFileDropGuard', () => {
     const event = dragEvent('drop', ['Files']);
     el.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('still lets a drop target inside the canvas (a terminal or chat card) accept a file', () => {
+    const onDrop = vi.fn((e: React.DragEvent) => { e.preventDefault(); });
+    render(
+      <Guarded>
+        <div
+          data-testid="card-drop-target"
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDrop={onDrop}
+        />
+      </Guarded>,
+    );
+    const target = screen.getByTestId('card-drop-target');
+
+    const over = dragEvent('dragover', ['Files']);
+    target.dispatchEvent(over);
+    // The card's handler has the last word on the cursor: the guard doesn't block it.
+    expect(over.dataTransfer!.dropEffect).toBe('copy');
+    expect(over.defaultPrevented).toBe(true);
+
+    const drop = dragEvent('drop', ['Files']);
+    target.dispatchEvent(drop);
+    expect(onDrop).toHaveBeenCalledTimes(1);
+    expect(drop.defaultPrevented).toBe(true);
   });
 });
