@@ -255,6 +255,15 @@ function canRequestSatellite(fingerprint: string): boolean {
   return directSatelliteReady(fingerprint) || reverseControllerReadReady(fingerprint);
 }
 
+/**
+ * Why a request's lease was retired (#3613): its peer's trust changed (removed,
+ * re-pinned, re-paired, role or pending state) is a revocation; anything else,
+ * such as the route or link going, is the transport.
+ */
+function leaseRetirement(lease: SatelliteRequestLease): 'authorization_revoked' | 'transport_unavailable' {
+  return lease.trust !== controllerReadTrust(lease.fingerprint) ? 'authorization_revoked' : 'transport_unavailable';
+}
+
 function satelliteRequestCurrent(lease: SatelliteRequestLease): boolean {
   if (lease.controller.signal.aborted || lease.trust !== controllerReadTrust(lease.fingerprint)) return false;
   if (lease.via === 'reverse') return reverseControllerReadReady(lease.fingerprint)
@@ -2737,7 +2746,13 @@ async function requestSatelliteRaw(fingerprint: string, input: SatelliteRequest)
   satelliteRequests.add(lease);
   try {
     const response = route.via === 'reverse'
-      ? await annexControl.request(key, input, { signal, requestId, timeoutMs: input.timeoutMs, maxResponseBytes: input.maxResponseBytes })
+      ? await annexControl.request(key, input, { signal, requestId, timeoutMs: input.timeoutMs, maxResponseBytes: input.maxResponseBytes }).catch((error: unknown) => {
+        // Retiring the lease aborts the request locally; that is the route or its authority going, not a caller's cancel.
+        if (error instanceof annexControl.ControlRequestError && error.code === 'cancelled' && !input.signal?.aborted && lease.controller.signal.aborted) {
+          throw new annexControl.ControlRequestError(leaseRetirement(lease), error.indeterminate, error.requestId);
+        }
+        throw error;
+      })
       : await new Promise<SatelliteResponse>((resolve, reject) => {
         let settled = false;
         const onAbort = () => fail(new Error('Annex request aborted.'));
@@ -2785,7 +2800,7 @@ async function requestSatelliteRaw(fingerprint: string, input: SatelliteRequest)
       });
     if (signal.aborted || !satelliteRequestCurrent(lease)) {
       if (route.via === 'reverse') throw new annexControl.ControlRequestError(
-        signal.aborted ? 'cancelled' : 'authorization_revoked', !['GET', 'HEAD'].includes(input.method), requestId,
+        input.signal?.aborted ? 'cancelled' : leaseRetirement(lease), !['GET', 'HEAD'].includes(input.method), requestId,
       );
       throw new Error('Annex request aborted.');
     }
