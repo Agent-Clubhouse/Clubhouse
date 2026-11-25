@@ -238,17 +238,17 @@ interface OpenTurn {
   outstanding: number;
 }
 
-/** Thrown when setup fails for want of a login, in words isLoginRequiredError recognises. */
 /** The requested model isn't one the session offers this account. */
 export class AcpModelUnavailableError extends Error {
   /** A start error code (chat-spawn): the account, not the driver, so no driver-health failure. */
   readonly code = 'model_unavailable';
-  constructor(readonly model: string) {
-    super(`${model} is not available for this account. Choose another model and start again.`);
+  constructor(readonly model: string, detail?: string) {
+    super(`${model} is not available for this account${detail ? ` (${detail})` : ''}. Choose another model and start again.`);
     this.name = 'AcpModelUnavailableError';
   }
 }
 
+/** Thrown when setup fails for want of a login, in words isLoginRequiredError recognises. */
 export class AcpAuthRequiredError extends Error {
   readonly needsLogin = true;
   constructor(readonly loginHint: string, detail: string) {
@@ -467,7 +467,14 @@ class AcpDriverSession implements ChatDriverSession {
       && !configChoices(this.facts.configOptions).models.some((m) => m.id === opts.model)) {
       throw new AcpModelUnavailableError(opts.model);
     }
-    if (opts.model) {
+    if (opts.model && this.spec.unofferedModel === 'refuse') {
+      // Under 'refuse' the requested model is applied or the start fails: never
+      // a session quietly running on a model the person didn't choose.
+      await this.setConfig('model', opts.model).catch((err: Error) => {
+        this.log('warn', 'Requested model not applied; refusing the start', { error: err.message });
+        throw new AcpModelUnavailableError(opts.model!, err.message);
+      });
+    } else if (opts.model) {
       await this.setConfig('model', opts.model).catch((err: Error) => this.notApplied('model', opts.model!, err));
     }
     if (opts.effort) {

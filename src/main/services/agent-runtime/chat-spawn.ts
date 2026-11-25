@@ -385,10 +385,9 @@ export async function tryStartChatAgent(
   const unavailablePreference = resolved.driver && candidates[0]?.id !== resolved.driver
     ? `${DRIVER_LABELS[resolved.driver] ?? resolved.driver} is not registered for ${cliLabel(provider.id)}`
     : undefined;
-  if (candidates.length === 0 && chatFailsExplicitly(provider.id)) {
-    facts.reason = 'no_driver';
-    return chatStartFailed(facts, provider.id, unavailablePreference ?? 'no chat driver is available for it');
-  }
+  // With no driver registered (Antigravity before its registration gates pass),
+  // there is no chat to fail: the agent opens in the CLI view as before. The
+  // explicit, no-fallback failure below applies once a driver exists and its start fails.
   if (candidates.length === 0) {
     if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` }, params);
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {

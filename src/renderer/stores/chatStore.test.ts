@@ -380,6 +380,13 @@ describe('reduceChatEvent', () => {
       expect(s.effort).toBe('high');
     });
 
+    it('a null effort from session_info leaves whether the effort is the default as it was', () => {
+      let s = fold([sessionStarted(ev), ev('model_changed', { modelId: 'm', effort: 'low', effortIsDefault: true })]);
+      expect(s.effortIsDefault).toBe(true);
+      s = fold([ev('session_info', { effort: null })], s);
+      expect(s).toMatchObject({ effort: null, effortIsDefault: true });
+    });
+
     it('waits for model_changed before treating the effort as known', () => {
       let s = fold([sessionStarted(ev), ev('session_info', { efforts: ['low', 'high'] })]);
       expect(s.effortReported).toBe(false);

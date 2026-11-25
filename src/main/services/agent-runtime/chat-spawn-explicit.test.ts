@@ -143,11 +143,19 @@ describe('explicit chat start failure (Antigravity)', () => {
     expect(pipeline.restoreForAgent).toHaveBeenCalledWith('agent-1');
   });
 
-  it('no registered driver or no binary is a failure too, never the terminal', async () => {
-    expect(await tryStartChatAgent(params, agy, undefined, null)).toBe('failed');
+  it('while no Antigravity driver is registered, it opens in the CLI view, with no failure', async () => {
+    const facts: ChatStartFacts = { attempts: [] };
+    expect(await tryStartChatAgent(params, agy, undefined, null, undefined, facts)).toBe('terminal');
+    expect(facts.reason).toBe('no_driver');
+    expect(facts.failure).toBeUndefined();
+  });
+
+  it('once a driver is registered, a start it can\'t make (no binary) fails explicitly, never the terminal', async () => {
     driver();
     const missing = { ...agy, getBinaryPath: () => { throw new Error('not found'); } } as unknown as OrchestratorProvider;
-    expect(await tryStartChatAgent(params, missing, undefined, null)).toBe('failed');
+    const facts: ChatStartFacts = { attempts: [] };
+    expect(await tryStartChatAgent(params, missing, undefined, null, undefined, facts)).toBe('failed');
+    expect(facts.failure).toMatch(/wasn't found/);
   });
 
   it('announces the failure as unsent, or as maybe sent after the session started', () => {

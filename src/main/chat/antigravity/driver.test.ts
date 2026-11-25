@@ -142,6 +142,13 @@ describe('capabilities', () => {
     expect(agent.received.some((r) => r.method === 'session/set_config_option')).toBe(false);
   });
 
+  it('an offered model the agent then fails to set also refuses the start', async () => {
+    const agent = new ScriptedAcpAgent({ modes: MODES, configOptions: OPTIONS, setConfigError: { code: -32603, message: 'quota' } });
+    const driver = createAntigravityAcpDriver({ mcp: fakeMcp().mcp, logDir: '/logs', clientVersion: '1.2.3', connect: () => agent.connector });
+    const err = await driver.start({ ...START, model: 'model-b' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'model_unavailable', message: expect.stringContaining('model-b is not available for this account') });
+  });
+
   it('switches model and thinking level live', async () => {
     const { session, agent } = await open();
     await session.setModel('model-b', 'high');

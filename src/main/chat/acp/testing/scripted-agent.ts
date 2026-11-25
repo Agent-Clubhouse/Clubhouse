@@ -37,6 +37,8 @@ export interface ScriptedAgentOptions {
   beforeNewReply?: SessionUpdate[];
   /** Session modes sent with every setup answer; `session/set_mode` switches among them. */
   modes?: SessionModeState;
+  /** Answer `session/set_config_option` with this error instead. */
+  setConfigError?: { code: number; message: string };
 }
 
 export interface ScriptedPrompt {
@@ -238,6 +240,7 @@ export class ScriptedAcpAgent {
       case ACP_AGENT_METHODS.sessionClose:
         return this.reply(id, {});
       case ACP_AGENT_METHODS.sessionSetConfigOption: {
+        if (this.opts.setConfigError) return this.replyError(id, this.opts.setConfigError.code, this.opts.setConfigError.message);
         const option = this.configOptions.find((o) => o.id === params.configId);
         if (!option || option.type !== 'select') return this.replyError(id, ACP_ERROR_CODES.invalidParams, 'Unknown config option');
         this.configOptions = this.configOptions.map((o) => (o.id === option.id ? { ...option, currentValue: params.value as string } : o));

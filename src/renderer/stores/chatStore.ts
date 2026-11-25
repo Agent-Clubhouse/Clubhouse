@@ -656,7 +656,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         models: d.models ?? state.models,
         efforts: d.efforts ?? state.efforts,
         // Effort reported without a model id (an agent with no model choice).
-        ...(d.effort !== undefined && { effort: d.effort, effortIsDefault: false, effortReported: true }),
+        // A reported effort is a chosen one; null (none reported) leaves whether it's the default as it was.
+        ...(d.effort !== undefined && { effort: d.effort, ...(d.effort !== null && { effortIsDefault: false }), effortReported: true }),
         levelNames: d.levelNames ?? state.levelNames,
         mcpServers: d.mcpServers ?? state.mcpServers,
         providerSkills: d.providerSkills !== undefined
