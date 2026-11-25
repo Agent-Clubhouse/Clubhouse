@@ -1,10 +1,10 @@
 // Written by scripts/generate-codex-app-server-types.mjs. Do not edit by hand.
 
 /** Codex CLI version the vendored app-server bindings in ./generated came from. */
-export const CODEX_APP_SERVER_SCHEMA_VERSION = '0.166.0';
+export const CODEX_APP_SERVER_SCHEMA_VERSION = '0.172.0';
 
 /** Command that produced ./generated (stable surface; no --experimental). */
-export const CODEX_APP_SERVER_GENERATE_COMMAND = 'npx -y @openai/codex@0.166.0 app-server generate-ts --out <dir>';
+export const CODEX_APP_SERVER_GENERATE_COMMAND = 'npx -y @openai/codex@0.172.0 app-server generate-ts --out <dir>';
 
 /** Runtime list of `ServerNotification` methods (the generated bindings are type-only). */
 export const CODEX_SERVER_NOTIFICATION_METHODS = [
@@ -19,6 +19,7 @@ export const CODEX_SERVER_NOTIFICATION_METHODS = [
   'thread/reverted',
   'skills/changed',
   'thread/name/updated',
+  'thread/section/changed',
   'thread/attachment/updated',
   'thread/goal/updated',
   'thread/prediction/updated',
@@ -47,6 +48,7 @@ export const CODEX_SERVER_NOTIFICATION_METHODS = [
   'item/plan/delta',
   'command/exec/outputDelta',
   'process/outputDelta',
+  'thread/search/partial',
   'process/exited',
   'item/commandExecution/outputDelta',
   'item/commandExecution/terminalInteraction',
