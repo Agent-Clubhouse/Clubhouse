@@ -6,7 +6,7 @@ vi.mock('../plugin-manifest-registry', () => ({
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
 import { getAttributeSpec } from '../../../shared/telemetry/attributes';
-import { buildToolName, dispatcherToolActions, grantToolMap, listToolGrants, setTargetToolTemplates, _resetForTesting } from './tool-registry';
+import { buildToolName, dispatcherToolActions, grantToolMap, listToolGrants, registerToolTemplate, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { defaultGrants } from '../../../shared/default-grants';
 import { mcpAdapter } from './mcp-adapter';
@@ -112,7 +112,7 @@ describe('tool grant declarations (#2967)', () => {
   });
 
   it('plugin tools are marked as plugin tools, with no action', () => {
-    setTargetToolTemplates('plugin', 'acme', [{ nameSuffix: 'lookup', definition: { description: 'Look up', inputSchema: { type: 'object', properties: {} } }, handler: async () => ({ content: [] }), grant: 'plugin' }]);
+    registerToolTemplate('plugin', 'lookup', { description: 'Look up', inputSchema: { type: 'object', properties: {} } }, async () => ({ content: [] }), { grant: 'plugin' });
     expect(listToolGrants()).toEqual([{
       kind: 'plugin', name: 'lookup', grant: 'plugin',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },

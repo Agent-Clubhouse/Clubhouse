@@ -7,7 +7,9 @@ import { appLog } from './log-service';
  * git repo at `~/.clubhouse/plugin-workspaces/<pluginId>` (the path the removed
  * companion-workspace service used). This deletes that folder, and logs what it held.
  * No built-in or Workshop plugin ever used companions, so on almost every
- * machine there is nothing to remove.
+ * machine there is nothing to remove. Deleting work an agent committed in a
+ * companion workspace is intended: the maintainer cleared full data removal
+ * (2026-11-25). A symlink there is kept and logged, a plain file left alone.
  */
 export function companionWorkspacesDir(home: string): string {
   return path.join(home, '.clubhouse', 'plugin-workspaces');
@@ -18,7 +20,13 @@ export async function removeCompanionState(home: string): Promise<string | null>
   const dir = companionWorkspacesDir(home);
   let workspaces: string[];
   try {
-    if (!(await fsp.lstat(dir)).isDirectory()) return null;
+    const stat = await fsp.lstat(dir);
+    if (stat.isSymbolicLink()) {
+      // Never follow it: the folder it points at isn't Clubhouse's to delete.
+      appLog('core:plugins', 'info', 'Kept the plugin companion workspaces link; delete it if you don\'t need it', { meta: { dir } });
+      return null;
+    }
+    if (!stat.isDirectory()) return null;
     workspaces = await fsp.readdir(dir);
   } catch { // telemetry-exempt: no folder is the usual answer
     return null;

@@ -296,13 +296,6 @@ vi.stubGlobal('clubhouse', {
   process: {
     exec: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
   },
-  pluginMcp: {
-    contributeTools: asyncNoop,
-    removeTools: asyncNoop,
-    listTools: async () => [],
-    onToolCall: () => noop,
-    sendToolResult: noop,
-  },
   app: {
     getAppUpdateRequest: async () => null,
     cancelAppUpdateRequest: asyncNoop,

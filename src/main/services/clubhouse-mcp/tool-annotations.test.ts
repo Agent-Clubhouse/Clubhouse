@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { listToolGrants, registerGlobalTool, setTargetToolTemplates, _annotationCatalogKeysForTesting, _resetForTesting } from './tool-registry';
+import { listToolGrants, registerGlobalTool, registerToolTemplate, _annotationCatalogKeysForTesting, _resetForTesting } from './tool-registry';
 import { registerClubhouseMcpTools } from './tools/register-all';
 
 vi.mock('../plugin-manifest-registry', () => ({
@@ -44,7 +44,7 @@ describe('MCP tool annotations (#3367)', () => {
   });
 
   it('keeps contributed tools conservative, even when they share an internal read name', () => {
-    setTargetToolTemplates('plugin', 'example', [{ nameSuffix: 'read_settings', definition: { description: 'External plugin', inputSchema: { type: 'object', properties: {} } }, handler: async () => ({ content: [] }), grant: 'plugin' }]);
+    registerToolTemplate('plugin', 'read_settings', { description: 'External plugin', inputSchema: { type: 'object', properties: {} } }, async () => ({ content: [] }), { grant: 'plugin' });
     expect(listToolGrants()[0].annotations).toEqual({
       readOnlyHint: false,
       destructiveHint: true,

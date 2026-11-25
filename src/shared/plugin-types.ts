@@ -474,6 +474,7 @@ export interface PluginOrchestratorInfo {
 export interface AgentInfo {
   id: string;
   name: string;
+  /** 'companion' was removed with companion agents in Clubhouse 1.0. */
   kind: 'durable' | 'quick';
   status: 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';
   color: string;
