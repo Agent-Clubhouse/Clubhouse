@@ -33,6 +33,8 @@ const W = vi.hoisted(() => ({
   projects: [] as Array<Record<string, unknown>>,
   durables: {} as Record<string, Array<Record<string, any>>>,
   running: new Set<string>(),
+  /** Shells' folders, by session id, for the reattach fixtures (#3843). */
+  shellCwds: new Map<string, string>(),
   revert: new Set<string>(),
   transcripts: {} as Record<string, unknown[]>,
   sessions: {} as Record<string, unknown[]>,
@@ -463,7 +465,7 @@ vi.mock('./pty-manager', () => ({
   getSerializedBufferSnapshot: async () => ({ data: '\u001b[1mready\u001b[0m\r\n$ ', seq: 42, cols: 120, rows: 40 }),
   isRunning: (id: string) => W.running.has(id),
   isStopping: () => false,
-  getShellCwd: () => undefined,
+  getShellCwd: (id: string) => W.shellCwds.get(id),
   write: () => {},
   resize: () => {},
   spawnShell: async () => { if (W.spawnShellError) throw new Error(W.spawnShellError); },
@@ -1825,6 +1827,49 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await step('attach: agent_not_found', ws, { type: 'pty:attach', payload: {} });
     await step('bearer connection refused', bearer, { type: 'pty:spawn-shell', payload: { sessionId: 'shell_b', projectId: 'proj_app' } });
     fixtures.set('pty.json', { cases });
+  });
+
+  it('terminal shell reattach (#3843)', async () => {
+    W.shellCwds.clear();
+    const cases: Array<{ name: string; request?: object; replies: unknown[] }> = [];
+    const step = async (name: string, socket: FakeWs, frame: object) => { cases.push({ name, request: frame, replies: await roundTrip(socket, frame) }); };
+    const started = async (socket: FakeWs, sessionId: string) => {
+      await roundTrip(socket, { type: 'pty:spawn-shell', payload: { sessionId, projectId: 'proj_app' } });
+      W.running.add(sessionId);
+      W.shellCwds.set(sessionId, '/work/app');
+    };
+    const drop = (socket: FakeWs) => { socket.readyState = 3; socket.emit('close', 1006, Buffer.from('')); };
+
+    // The phone backgrounds (its connection drops) and comes back to the same shell.
+    const before = await connect();
+    await started(before, 'shell_r1');
+    drop(before);
+    const back = await connect();
+    await step('reattach', back, { type: 'pty:reattach-shell', payload: { sessionId: 'shell_r1', cols: 80, rows: 40 } });
+    // A later reattach from the same device wins; the socket holding it is told.
+    await started(back, 'shell_r2');
+    const later = await connect();
+    back.send.mockClear();
+    await step('reattach over a socket still holding it', later, { type: 'pty:reattach-shell', payload: { sessionId: 'shell_r2' } });
+    cases.push({ name: 'superseded socket: session_in_use', replies: frames(back) });
+    await step('reattach: session_not_found', later, { type: 'pty:reattach-shell', payload: { sessionId: 'shell_never' } });
+    await step('reattach: invalid_session_id', later, { type: 'pty:reattach-shell', payload: { sessionId: '' } });
+    // The shell exits while the phone is away.
+    await started(later, 'shell_r3');
+    drop(later);
+    W.ptyExit.at(-1)!('shell_r3', 130);
+    const third = await connect();
+    await step('reattach: session_exited', third, { type: 'pty:reattach-shell', payload: { sessionId: 'shell_r3' } });
+    // The phone stays away past the grace.
+    await started(third, 'shell_r4');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      drop(third);
+      vi.advanceTimersByTime(annexServer._testing.SHELL_REATTACH_GRACE_MS);
+    } finally { vi.useRealTimers(); }
+    const fourth = await connect();
+    await step('reattach: session_expired', fourth, { type: 'pty:reattach-shell', payload: { sessionId: 'shell_r4' } });
+    fixtures.set('pty-reattach.json', { cases });
   });
 
   it('replay', async () => {

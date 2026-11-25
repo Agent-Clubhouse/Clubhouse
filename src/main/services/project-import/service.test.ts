@@ -277,7 +277,16 @@ afterAll(() => {
   fs.rmSync(temp.root, { recursive: true, force: true });
 });
 
-describe('bounded import user flow using isolated real Git fixtures', () => {
+/**
+ * Budget for the tests in a describe that drive real Git (ls-remote, init, fetch,
+ * checkout) plus guarded registration. Process creation is the cost, and a
+ * loaded hosted Windows runner took over the 5s default for these (preview,
+ * cancel, receipts). It is set on those describes only; a test with its own
+ * longer budget keeps it. Locally each takes well under a second or two.
+ */
+const REAL_GIT_FLOW_BUDGET_MS = 20_000;
+
+describe('bounded import user flow using isolated real Git fixtures', { timeout: REAL_GIT_FLOW_BUDGET_MS }, () => {
   let f: ReturnType<typeof fixture>;
   beforeEach(() => { f = fixture(environment, seedRefs); });
   it('previews actual trunk/tip without a checkout, reuses the same preview and requires a real approval decision', async () => {
@@ -362,7 +371,7 @@ describe('bounded import user flow using isolated real Git fixtures', () => {
   }, 10_000); // Complete real Git checkout and guarded registration.
 });
 
-describe('approval and placement change invalidation', () => {
+describe('approval and placement change invalidation', { timeout: REAL_GIT_FLOW_BUDGET_MS }, () => {
   it('refuses model-changed destination and another caller before approval', async () => {
     const f = fixture();
     const plan = await preview(f);

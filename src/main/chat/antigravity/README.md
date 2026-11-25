@@ -2,9 +2,11 @@
 
 Native chat for Antigravity CLI over `agy acp` (#3797). It runs the
 provider-neutral ACP driver (`../acp`) with Antigravity's launch spec. It
-isn't registered here; the provider integration registers it once the gates
-in `../acp/README.md` close. Driver id `antigravity_acp`, `optIn` until the
-real-login checks (#3802) pass.
+is registered at startup only when the Antigravity provider is (its
+experimental flag on), by `registerBuiltinChatDrivers`. Driver id
+`antigravity_acp`, not opt-in: chat is Antigravity's primary runtime (#3786),
+with the CLI view as the person's choice. The real-login checks (#3802) are
+still open.
 
 Sources, read 2026-11-23: https://antigravity.google/docs/ide/extensions/acp/,
 https://antigravity.google/docs/cli/acp/ and https://antigravity.google/docs/cli/reference/.

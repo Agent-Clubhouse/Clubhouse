@@ -11,7 +11,7 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 | **Claude Code** | Anthropic's CLI for Claude. Most complete Clubhouse integration. | Stable |
 | **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Stable |
 | **Codex CLI** | OpenAI's Codex CLI. Sandbox-based permissions, `--full-auto` mode. | Beta |
-| **Antigravity CLI** | Google's `agy` CLI. Terminal only for now (chat is not offered yet), no headless mode. See **Antigravity CLI**. | Experimental |
+| **Antigravity CLI** | Google's `agy` CLI. Chat and terminal, no headless mode. See **Antigravity CLI**. | Experimental |
 
 ## Setup
 

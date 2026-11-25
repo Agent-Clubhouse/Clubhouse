@@ -97,7 +97,9 @@ describe('launch', () => {
 
   it('is an opt-in driver for the Antigravity provider, identifying as Clubhouse', async () => {
     const { driver, agent, commands } = await open();
-    expect(driver).toMatchObject({ id: ANTIGRAVITY_CHAT_DRIVER_ID, provider: ANTIGRAVITY_PROVIDER_ID, optIn: true });
+    expect(driver).toMatchObject({ id: ANTIGRAVITY_CHAT_DRIVER_ID, provider: ANTIGRAVITY_PROVIDER_ID });
+    // Chat is the primary runtime (#3786): the driver is chosen without a saved preference.
+    expect(driver.optIn).toBeFalsy();
     const [init] = agent.sentRequests('initialize') as InitializeRequest[];
     expect(init.clientInfo).toEqual({ name: 'clubhouse', title: 'Clubhouse', version: '1.2.3' });
     expect(commands[0].binary).toBe('/home/me/.local/bin/agy');

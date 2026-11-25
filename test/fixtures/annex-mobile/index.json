@@ -90,6 +90,7 @@
     "pairing.json",
     "project-links.json",
     "provider-control-v2.json",
+    "pty-reattach.json",
     "pty.json",
     "queued-bursts.json",
     "replay.json",

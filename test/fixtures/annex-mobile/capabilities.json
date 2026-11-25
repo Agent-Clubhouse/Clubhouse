@@ -380,6 +380,10 @@
         ],
         "port": 7432
       },
+      "shellReattach": {
+        "graceSeconds": 300,
+        "version": 1
+      },
       "slashCommands": {
         "event": "commands_available",
         "maxCommands": 200,

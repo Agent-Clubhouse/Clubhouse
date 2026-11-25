@@ -2112,10 +2112,10 @@ const MAX_LIFECYCLE_IN_FLIGHT = 16;
 const lifecycleInFlight = new WeakMap<WebSocket, number>();
 
 /** Runs `work` for `ws` if it has a lifecycle slot free, holding it until the work settles. */
-function withLifecycleSlot(ws: WebSocket, op: string, work: () => Promise<unknown>): void {
+function withLifecycleSlot(ws: WebSocket, op: string, work: () => Promise<unknown>, refusal: Record<string, unknown> = {}): void {
   const running = lifecycleInFlight.get(ws) ?? 0;
   if (running >= MAX_LIFECYCLE_IN_FLIGHT) {
-    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'busy', op } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'busy', op, ...refusal } }));
     return;
   }
   lifecycleInFlight.set(ws, running + 1);
@@ -2128,26 +2128,274 @@ function withLifecycleSlot(ws: WebSocket, op: string, work: () => Promise<unknow
   });
 }
 
-/** A shell another controller spawned: private to it, like its output. */
+/**
+ * A shell another controller spawned: private to it, like its output. A
+ * detached shell (#3843) is nobody's until its device reattaches.
+ */
 function isOtherControllersShell(ws: WebSocket, id: string): boolean {
+  if (detachedShells.has(id)) return true;
   const owner = shellOwners.get(id);
   return owner !== undefined && owner !== ws;
 }
 
-function shellCountFor(ws: WebSocket): number {
-  let count = 0;
-  for (const owner of shellOwners.values()) if (owner === ws) count++;
-  return count;
+/** The paired device a control socket speaks for: its certificate fingerprint and pin. */
+interface ShellDevice { fingerprint: string; pin: string | undefined }
+
+function deviceOf(ws: WebSocket): ShellDevice | null {
+  if (reverseSockets.has(ws) || wsAuthTypes.get(ws) !== 'mtls') return null;
+  const fingerprint = wsPeerFingerprints.get(ws);
+  return fingerprint ? { fingerprint, pin: wsPeerPins.get(ws) } : null;
 }
 
-/** End every shell `ws` spawned; on disconnect nobody is left to read them. */
-function closeShellsFor(ws: WebSocket): void {
+/**
+ * The same device, pairing and certificate alike: a session id alone never is (#3843).
+ * Both sides must name a certificate: two unknown pins are not a match.
+ */
+function sameDevice(a: ShellDevice | null, b: ShellDevice | null): boolean {
+  return !!a && !!b && !!a.fingerprint && !!a.pin && !!b.pin && a.fingerprint === b.fingerprint && a.pin === b.pin;
+}
+
+/**
+ * A controller's shell whose connection dropped (#3843): kept running, private,
+ * with its output going only to the PTY's own bounded buffer, for
+ * SHELL_REATTACH_GRACE_MS. Only `pty:reattach-shell` from the same paired device
+ * takes it back.
+ */
+interface DetachedShell { device: ShellDevice; deadline: number; timer: ReturnType<typeof setTimeout> }
+const detachedShells = new Map<string, DetachedShell>();
+/** How long a detached shell waits for its device. Advertised as `shellReattach.graceSeconds`. */
+const SHELL_REATTACH_GRACE_MS = 5 * 60_000;
+/** Why a device's detached shell ended, so its reattach is told rather than answered not found. Bounded and short-lived. */
+interface ShellTombstone { device: ShellDevice; code: 'session_expired' | 'session_exited'; exitCode?: number; at: number }
+const shellTombstones = new Map<string, ShellTombstone>();
+const SHELL_TOMBSTONE_MS = 60 * 60_000;
+/** Per device, so one device's churn never turns another's expiry into not found; the total is bounded too. */
+const MAX_SHELL_TOMBSTONES_PER_DEVICE = 256;
+const MAX_SHELL_TOMBSTONES = 4096;
+const tombstoneKey = (fingerprint: string, sessionId: string) => `${fingerprint}\n${sessionId}`;
+
+function addShellTombstone(sessionId: string, tombstone: ShellTombstone): void {
+  const key = tombstoneKey(tombstone.device.fingerprint, sessionId);
+  shellTombstones.delete(key);
+  shellTombstones.set(key, tombstone);
+  // Oldest first: past their hour, then this device's beyond its share, then any beyond the total.
+  let own = 0;
+  for (const t of shellTombstones.values()) if (t.device.fingerprint === tombstone.device.fingerprint) own++;
+  for (const [k, t] of shellTombstones) {
+    const expired = tombstone.at - t.at >= SHELL_TOMBSTONE_MS;
+    const overOwn = t.device.fingerprint === tombstone.device.fingerprint && own > MAX_SHELL_TOMBSTONES_PER_DEVICE;
+    if (!expired && !overOwn && shellTombstones.size <= MAX_SHELL_TOMBSTONES) continue;
+    shellTombstones.delete(k);
+    if (t.device.fingerprint === tombstone.device.fingerprint) own--;
+  }
+}
+
+function takeShellTombstone(device: ShellDevice, sessionId: string): ShellTombstone | undefined {
+  const key = tombstoneKey(device.fingerprint, sessionId);
+  const tombstone = shellTombstones.get(key);
+  if (!tombstone) return undefined;
+  if (!sameDevice(tombstone.device, device) || Date.now() - tombstone.at >= SHELL_TOMBSTONE_MS) {
+    if (Date.now() - tombstone.at >= SHELL_TOMBSTONE_MS) shellTombstones.delete(key);
+    return undefined;
+  }
+  return tombstone;
+}
+
+/** Holds a shell for `device` until `deadline`; at most MAX_SHELLS_PER_CONNECTION per device, the oldest ending first. */
+function detachShell(sessionId: string, device: ShellDevice, deadline = Date.now() + SHELL_REATTACH_GRACE_MS): void {
+  const own = [...detachedShells].filter(([, d]) => d.device.fingerprint === device.fingerprint);
+  for (const [id, evicted] of own.slice(0, Math.max(0, own.length - MAX_SHELLS_PER_CONNECTION + 1))) {
+    endDetachedShell(id);
+    addShellTombstone(id, { device: evicted.device, code: 'session_expired', at: Date.now() });
+  }
+  const timer = setTimeout(() => {
+    if (detachedShells.get(sessionId)?.timer !== timer) return;
+    endDetachedShell(sessionId);
+    addShellTombstone(sessionId, { device, code: 'session_expired', at: Date.now() });
+  }, Math.max(0, deadline - Date.now()));
+  timer.unref?.();
+  detachedShells.set(sessionId, { device, deadline, timer });
+}
+
+/** Takes a shell out of detachment, leaving it running. */
+function undetachShell(sessionId: string): DetachedShell | undefined {
+  const detached = detachedShells.get(sessionId);
+  if (!detached) return undefined;
+  clearTimeout(detached.timer);
+  detachedShells.delete(sessionId);
+  return detached;
+}
+
+function endDetachedShell(sessionId: string): void {
+  if (undetachShell(sessionId)) ptyManager.killShell(sessionId);
+}
+
+/** Every shell of a device whose pairing ended or was cut from the desktop, attached or detached: none waits for it (#3843). */
+function endShellsOfPeer(fingerprint: string): void {
+  for (const [sessionId, detached] of [...detachedShells]) {
+    if (detached.device.fingerprint === fingerprint) endDetachedShell(sessionId);
+  }
   for (const [sessionId, owner] of [...shellOwners]) {
-    if (owner !== ws) continue;
+    if (deviceOf(owner)?.fingerprint !== fingerprint) continue;
     shellOwners.delete(sessionId);
     shellReservations.delete(sessionId);
     ptyManager.killShell(sessionId);
   }
+  for (const [key, tombstone] of [...shellTombstones]) {
+    if (tombstone.device.fingerprint === fingerprint) shellTombstones.delete(key);
+  }
+}
+
+/**
+ * Detached shells whose device is no longer allowed here (a #3613 fence or role
+ * change with no revoke or close to end them), ended on the heartbeat rather
+ * than left to their grace (#3843). Such a device can't send a frame to reattach.
+ */
+function endUnauthorizedDetachedShells(): void {
+  for (const [sessionId, { device }] of [...detachedShells]) {
+    if (!authorize({ fingerprint: device.fingerprint, pin: device.pin, via: 'direct' }, authorizerDeps).ok) endDetachedShell(sessionId);
+  }
+}
+
+/** A socket's shells, counting its device's detached ones: they come back to it on reattach. */
+function shellCountFor(ws: WebSocket, except?: string): number {
+  let count = 0;
+  for (const [id, owner] of shellOwners) if (owner === ws && id !== except) count++;
+  const device = deviceOf(ws);
+  if (device) for (const [id, d] of detachedShells) if (id !== except && d.device.fingerprint === device.fingerprint) count++;
+  return count;
+}
+
+/**
+ * On disconnect, a paired controller's shells detach for SHELL_REATTACH_GRACE_MS
+ * (#3843). They end now when the socket was closed for a removed pairing, or
+ * its device is no longer allowed, or Annex is stopping.
+ */
+function detachShellsFor(ws: WebSocket, code?: number): void {
+  const device = deviceOf(ws);
+  const keep = !!device && !!wss && code !== PEER_REVOKED_CLOSE_CODE && controlStillAllowed(ws);
+  for (const [sessionId, owner] of [...shellOwners]) {
+    if (owner !== ws) continue;
+    shellOwners.delete(sessionId);
+    shellReservations.delete(sessionId);
+    if (keep && ptyManager.isRunning(sessionId)) detachShell(sessionId, device!);
+    else ptyManager.killShell(sessionId);
+  }
+}
+
+/** A claim made by `pty:reattach-shell`, still waiting for its snapshot. */
+interface ShellClaim { reattach: true }
+const isReattachClaim = (claim: object | undefined): claim is ShellClaim => !!claim && (claim as Partial<ShellClaim>).reattach === true;
+
+function sendReattachError(ws: WebSocket, code: string, sessionId: string | undefined, extra: Record<string, unknown> = {}): void {
+  safeSend(ws, JSON.stringify({ type: 'error', payload: { message: code, code, op: 'pty:reattach-shell', ...(sessionId !== undefined && { sessionId }), ...extra } }));
+}
+
+const isTerminalDimension = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0 && n <= 10_000;
+
+/**
+ * `pty:reattach-shell` (#3843): the same device takes back its own shell, the
+ * same PTY and process, with its screen as `pty:attach` serves one. It never
+ * starts a shell. Only a device proven to be the shell's own hears anything
+ * but `session_not_found`.
+ *
+ * Linearization: the claim is a synchronous ownership swap with a fresh token.
+ * After the snapshot await the token must still be current and the device still
+ * allowed; otherwise no ack. The later claim wins, and an earlier socket that
+ * held it is told `session_in_use` and gets no more of its output.
+ */
+async function handleReattachShellWs(ws: WebSocket, payload: Record<string, unknown>): Promise<void> {
+  const raw = payload.sessionId;
+  if (typeof raw !== 'string' || !raw || raw.length > MAX_SHELL_SESSION_ID_LENGTH) {
+    // Echoed when it's a string at all: the phone routes errors by it.
+    sendReattachError(ws, 'invalid_session_id', typeof raw === 'string' ? raw : undefined);
+    return;
+  }
+  const sessionId = raw;
+  const device = deviceOf(ws);
+  if (!device || !controlStillAllowed(ws)) {
+    // A device no longer allowed loses this shell now, rather than leaving it to its grace (#3843).
+    if (device) {
+      const held = shellOwners.get(sessionId);
+      if (sameDevice(detachedShells.get(sessionId)?.device ?? null, device)) endDetachedShell(sessionId);
+      else if (held && sameDevice(deviceOf(held), device)) {
+        shellOwners.delete(sessionId);
+        shellReservations.delete(sessionId);
+        ptyManager.killShell(sessionId);
+      }
+    }
+    sendReattachError(ws, 'authorization_revoked', sessionId);
+    return;
+  }
+  const owner = shellOwners.get(sessionId);
+  const detached = detachedShells.get(sessionId);
+  const ownDevice = owner !== undefined ? sameDevice(deviceOf(owner), device) : !!detached && sameDevice(detached.device, device);
+  if (!ownDevice || !ptyManager.isRunning(sessionId)) {
+    // Another device's shell, a desktop terminal or an agent all look like nothing here.
+    const tombstone = owner === undefined && !detached ? takeShellTombstone(device, sessionId) : undefined;
+    if (tombstone) sendReattachError(ws, tombstone.code, sessionId, tombstone.exitCode !== undefined ? { exitCode: tombstone.exitCode } : {});
+    else sendReattachError(ws, 'session_not_found', sessionId);
+    return;
+  }
+  if (owner !== ws && shellCountFor(ws, sessionId) >= MAX_SHELLS_PER_CONNECTION) {
+    sendReattachError(ws, 'too_many_shells', sessionId);
+    return;
+  }
+
+  // The claim: synchronous, so of two the later one holds it.
+  const previousOwner = owner;
+  const previousClaim = shellReservations.get(sessionId);
+  const deadline = undetachShell(sessionId)?.deadline ?? Date.now() + SHELL_REATTACH_GRACE_MS;
+  const claim: ShellClaim = { reattach: true };
+  shellOwners.set(sessionId, ws);
+  shellReservations.set(sessionId, claim);
+  // An attached socket of the same device loses it now; one still reattaching hears after its own await.
+  if (previousOwner && previousOwner !== ws && !isReattachClaim(previousClaim)) sendReattachError(previousOwner, 'session_in_use', sessionId);
+  if (isTerminalDimension(payload.cols) && isTerminalDimension(payload.rows)) ptyManager.resize(sessionId, payload.cols, payload.rows);
+
+  let snapshot: Awaited<ReturnType<typeof readBoundedPtyBuffer>> = null;
+  let failure = TERMINAL_UNAVAILABLE;
+  try {
+    snapshot = await readBoundedPtyBuffer(sessionId, 'pty:reattach-shell:ack');
+  } catch (err) {
+    appLog('core:annex', 'error', 'pty:reattach-shell snapshot failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    tel.exception(Object.assign(new Error('annex_shell_reattach_snapshot_failed'), { stack: undefined }), { origin: 'main', handled: true });
+    failure = 'internal_error';
+  }
+
+  const current = shellOwners.get(sessionId) === ws && shellReservations.get(sessionId) === claim;
+  if (!controlStillAllowed(ws)) {
+    // Revoked after the claim: the shell ends, as every shell of a removed pairing does.
+    if (current) {
+      shellOwners.delete(sessionId);
+      shellReservations.delete(sessionId);
+      ptyManager.killShell(sessionId);
+    }
+    sendReattachError(ws, 'authorization_revoked', sessionId);
+    return;
+  }
+  if (!current) {
+    // Superseded by a later claim, or the shell ended (its pty:exit already went to this socket).
+    sendReattachError(ws, ptyManager.isRunning(sessionId) ? 'session_in_use' : 'session_exited', sessionId);
+    return;
+  }
+  // Disconnected meanwhile: its close handler already detached the shell.
+  if (ws.readyState !== WebSocket.OPEN) return;
+  if (!snapshot) {
+    // Back to waiting for its device, with the time it had left.
+    shellOwners.delete(sessionId);
+    shellReservations.delete(sessionId);
+    detachShell(sessionId, device, deadline);
+    sendReattachError(ws, failure, sessionId);
+    return;
+  }
+  shellReservations.set(sessionId, {});
+  const { data, seq, cols, rows, scrollbackLines } = snapshot;
+  safeSend(ws, JSON.stringify({ type: 'pty:reattach-shell:ack', payload: {
+    sessionId, cwd: ptyManager.getShellCwd(sessionId), buffer: data, outputSeq: seq,
+    ...(cols !== undefined && rows !== undefined && { cols, rows }),
+    ...(scrollbackLines !== undefined && { scrollbackLines }),
+  } }));
 }
 
 async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown>): Promise<void> {
@@ -2159,6 +2407,12 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
   }
   const projectId = payload.projectId;
   const agentId = typeof payload.agentId === 'string' && payload.agentId ? payload.agentId : undefined;
+  // A spawn is never a reattach (#3843): over its own device's detached shell it replaces it, as over its own
+  // attached one, so a phone that doesn't reattach still gets a shell. Another device's stays in use.
+  const detached = detachedShells.get(sessionId);
+  const device = deviceOf(ws);
+  if (detached && sameDevice(detached.device, device)) endDetachedShell(sessionId);
+  if (device) shellTombstones.delete(tombstoneKey(device.fingerprint, sessionId));
   const owner = shellOwners.get(sessionId);
   // Spawning over a live session kills it, so only a controller's own shell may be replaced.
   if (owner ? owner !== ws : ptyManager.isRunning(sessionId)) {
@@ -2226,6 +2480,8 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
     if (current === undefined || current === ws) {
       shellOwners.delete(sessionId);
       shellReservations.delete(sessionId);
+      // Its close handler may have detached it: never acked, it isn't the phone's to reattach.
+      undetachShell(sessionId);
       ptyManager.killShell(sessionId);
     }
     return;
@@ -2235,6 +2491,12 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
 
 function handleCloseShellWs(ws: WebSocket, payload: Record<string, unknown>): void {
   const sessionId = payload.sessionId;
+  // Its own device's detached shell can be closed without reattaching first (#3843).
+  if (typeof sessionId === 'string' && sameDevice(detachedShells.get(sessionId)?.device ?? null, deviceOf(ws))) {
+    endDetachedShell(sessionId);
+    safeSend(ws, JSON.stringify({ type: 'pty:close:ack', payload: { sessionId } }));
+    return;
+  }
   if (typeof sessionId !== 'string' || shellOwners.get(sessionId) !== ws) {
     sendPtyError(ws, 'pty:close', 'session_not_found', typeof sessionId === 'string' ? { sessionId } : {});
     return;
@@ -2876,9 +3138,31 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
   sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId, policies, project.path)));
 }
 
+/**
+ * Whether `principal` may read terminal `id` over REST. A controller's shell
+ * (attached or detached) is private to the device that spawned it, as on the
+ * WebSocket, and that device reads its own to redraw it. Agent terminals and
+ * desktop terminals stay readable: every controller already gets their output as
+ * broadcast `pty:data` and may type into them, and a desktop controller redraws a
+ * remote desktop terminal from this route.
+ */
+function terminalReadableBy(id: string, principal: AnnexPrincipal | undefined): boolean {
+  if (!shellOwners.has(id) && !detachedShells.has(id)) return true;
+  if (!principal) return false;
+  const asker: ShellDevice = { fingerprint: principal.fingerprint, pin: principal.pin };
+  const detached = detachedShells.get(id);
+  if (detached) return sameDevice(detached.device, asker);
+  const owner = shellOwners.get(id);
+  const fingerprint = owner && wsPeerFingerprints.get(owner);
+  return !!owner && !!fingerprint && sameDevice({ fingerprint, pin: wsPeerPins.get(owner) }, asker);
+}
+
 async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const agentId = decodeURIComponent(match[1]);
-  const snapshot = await readBoundedPtyBuffer(agentId, 'pty:buffer');
+  // Someone else's shell is answered exactly as an id with no terminal: no screen, no sign it exists.
+  const snapshot: Awaited<ReturnType<typeof readBoundedPtyBuffer>> = terminalReadableBy(agentId, ctx.principal)
+    ? await readBoundedPtyBuffer(agentId, 'pty:buffer')
+    : await Promise.resolve(ptyManager.unknownBufferSnapshot());
   if (!snapshot) {
     sendJson(ctx.res, 503, { error: TERMINAL_UNAVAILABLE });
     return;
@@ -3997,6 +4281,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
     terminal: { version: 1, projectShell: true, agentShell: true, agentAttach: true,
       maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
+    // A dropped connection's shells wait this long for `pty:reattach-shell` from the same device (#3843).
+    shellReattach: { version: 1, graceSeconds: SHELL_REATTACH_GRACE_MS / 1000 },
     // The app-wide Dispatcher (#2533): the snapshot's `dispatcher`, dispatcher:changed and dispatcher.setEnabled.
     dispatcher: dispatcherCapability(dispatcherAgentView),
     // App-wide helper presets (#2671). It lists only what works now.
@@ -5426,7 +5712,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'pty:close' || type === 'pty:attach' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image' || type === 'canvas:mutation')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'pty:reattach-shell' || type === 'pty:close' || type === 'pty:attach' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image' || type === 'canvas:mutation')) {
     recordControlDenied('ws');
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
@@ -5499,6 +5785,16 @@ function handleWsMessage(ws: WebSocket, data: string): void {
 
     case 'pty:close': {
       handleCloseShellWs(ws, payload);
+      break;
+    }
+
+    case 'pty:reattach-shell': {
+      withLifecycleSlot(ws, 'pty:reattach-shell', () => handleReattachShellWs(ws, payload).catch((err) => {
+        appLog('core:annex', 'error', 'pty:reattach-shell failed', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+        sendReattachError(ws, 'internal_error', typeof payload.sessionId === 'string' ? payload.sessionId : undefined);
+      }), { code: 'busy', ...(typeof payload.sessionId === 'string' && { sessionId: payload.sessionId }) });
       break;
     }
 
@@ -5646,18 +5942,16 @@ async function stopAgentForAnnex(agentId: string, projectPath: string, orchestra
 }
 
 async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> {
-  // Another controller's shell is private: it can't be stopped from here, as it can't be typed into (#3613).
-  if (isOtherControllersShell(ws, agentId)) {
-    sendPtyError(ws, 'agent:kill', 'session_not_found', { agentId });
-    return;
-  }
+  // Another controller's shell is private: it can't be stopped from here, as it can't be typed into (#3613),
+  // and it's answered after the same lookup, exactly as an unknown id, so the answer doesn't say it exists (#3843).
+  const foreign = isOtherControllersShell(ws, agentId);
   try {
     const info = await findAgentAcrossProjects(agentId);
     // Quick agents have no durable config; their running registration carries
     // the same project/provider identity used by the main-process stop path.
     const registration = agentRegistry.get(agentId);
     const shellCwd = ptyManager.getShellCwd(agentId);
-    const projectPath = info?.project.path || registration?.projectPath || shellCwd;
+    const projectPath = foreign ? undefined : info?.project.path || registration?.projectPath || shellCwd;
     if (!projectPath) {
       safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
       return;
@@ -6045,7 +6339,7 @@ function startServer(strict = false): Promise<void> {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
       reportClientCounts();
-      closeShellsFor(ws);
+      detachShellsFor(ws, code);
       if (lockingSockets.has(ws)) {
         // Check if any other locking connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
@@ -6081,6 +6375,8 @@ function startServer(strict = false): Promise<void> {
 
   unsubPtyData = annexEventBus.onPtyData((agentId, data, outputSeq) => {
     // A controller's shell is private: only it reads the output, and replay keeps none (#2476).
+    // A detached shell's output stays in its PTY buffer for the reattach snapshot (#3843).
+    if (detachedShells.has(agentId)) return;
     const shellOwner = shellOwners.get(agentId);
     if (shellOwner) {
       safeSend(shellOwner, JSON.stringify({ type: 'pty:data', payload: { agentId, data, ...(outputSeq !== undefined && { outputSeq }) } }));
@@ -6108,6 +6404,11 @@ function startServer(strict = false): Promise<void> {
   });
 
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {
+    const detached = undetachShell(agentId);
+    if (detached) {
+      addShellTombstone(agentId, { device: detached.device, code: 'session_exited', exitCode, at: Date.now() });
+      return;
+    }
     const shellOwner = shellOwners.get(agentId);
     if (shellOwner) {
       shellOwners.delete(agentId);
@@ -6282,6 +6583,11 @@ function startServer(strict = false): Promise<void> {
   // that would otherwise leave the "connected (paused)" badge stuck forever.
   heartbeatInterval = setInterval(() => {
     if (!wss) return;
+    // Never at the cost of this tick's dead-client sweep below.
+    try { endUnauthorizedDetachedShells(); } catch (err) {
+      appLog('core:annex', 'error', 'Ending unauthorized detached shells failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      tel.exception(Object.assign(new Error('annex_detached_shell_sweep_failed'), { stack: undefined }), { origin: 'main', handled: true });
+    }
     for (const client of wss.clients) {
       if (wsAlive.get(client) === false) {
         appLog('core:annex', 'info', 'Heartbeat: terminating unresponsive WebSocket client');
@@ -6556,7 +6862,9 @@ export function stop(): void {
 
   annexEventBus.setActive(false);
 
-  // Controllers' shells end with their connections, which end here.
+  // Controllers' shells end with their connections, which end here, and none waits detached (#3843).
+  for (const sessionId of [...detachedShells.keys()]) endDetachedShell(sessionId);
+  shellTombstones.clear();
   for (const sessionId of [...shellOwners.keys()]) {
     shellOwners.delete(sessionId);
     shellReservations.delete(sessionId);
@@ -7171,6 +7479,8 @@ export function disconnectPeer(fingerprint: string): void {
     mobileSessionPeers.delete(fingerprint);
     devicesChanged();
   }
+  // Cut from the desktop on purpose: its shells end rather than wait for it (#3843).
+  endShellsOfPeer(fingerprint);
   closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
   networkChannel.closeFor(fingerprint, 'in');
 }
@@ -7194,6 +7504,7 @@ export function revokePeer(fingerprint: string): boolean {
   loggedRefusals.delete(fingerprint);
   // What it fetched whole was for this pairing: pairing again starts over (#2731).
   forgetReviewedBy(fingerprint);
+  endShellsOfPeer(fingerprint);
   closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
   networkChannel.closeFor(fingerprint);
   appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
@@ -7208,6 +7519,7 @@ export function closeSocketsUnlessController(fingerprint: string): void {
   const peer = findPairedPeer(fingerprint);
   if (annexPeers.controlsThisMachine(peer) && peer!.tlsCertificateFingerprint) return;
   awaitingFirstConnection.delete(fingerprint);
+  endShellsOfPeer(fingerprint);
   closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
 }
 
@@ -7219,6 +7531,7 @@ export function revokeAllPeers(): void {
   awaitingFirstConnection.clear();
   loggedRefusals.clear();
   for (const fingerprint of fingerprints) {
+    endShellsOfPeer(fingerprint);
     closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
     networkChannel.closeFor(fingerprint);
   }
@@ -7288,6 +7601,13 @@ export const _testing = {
   socketStillPaired,
   subscribeReverse,
   shellOwners,
+  detachedShells,
+  shellTombstones,
+  addShellTombstone,
+  endUnauthorizedDetachedShells,
+  sameDevice,
+  MAX_SHELL_TOMBSTONES_PER_DEVICE,
+  SHELL_REATTACH_GRACE_MS,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },

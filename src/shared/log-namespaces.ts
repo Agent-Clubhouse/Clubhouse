@@ -24,6 +24,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:blueprint',
   'core:canvas-index',
   'core:chat',
+  'core:chat:antigravity',
   'core:chat:codex',
   'core:chat:copilot',
   'core:companion',
