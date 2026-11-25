@@ -65,6 +65,11 @@ process reads them from the local log through the same aggregator
 - **Tokens used.** One row per provider. A row has turns, input (with
   cached), output and reasoning. A figure no turn reported reads "unknown".
   A provider with no lines reads "No usage logged".
+  Turns whose line had no turn id are named too ("N turns had no id and
+  may be counted twice"), since a repeat of one can't be detected.
+- **Cost.** The page reads only files written during the period and parses
+  only lines stamped within it. It makes one pass for the provider and role
+  rows.
 - **By role.** Turns by role, covering the Dispatcher, orchestrators,
   helpers, quick agents and other agents.
 - **No lines for the period.** The page says so, and says whether the

@@ -33,15 +33,26 @@ function emptyTotals() {
   return t;
 }
 
+const dimensionsOf = (list) => list.filter((d) => USAGE_ROLLUP_DIMENSIONS.includes(d));
+
+function sortRows(rows, groupBy) {
+  return [...rows.values()].sort((a, b) => {
+    for (const d of groupBy) if (a[d] !== b[d]) return a[d] < b[d] ? -1 : 1;
+    return 0;
+  });
+}
+
 /**
  * Add up `core:usage` turn lines. `records` are parsed log lines (any other
  * line is skipped). `groupBy` picks the dimensions rows are split by (default:
- * day, provider, role, agentId). `since`/`until` are inclusive UTC days.
+ * day, provider, role, agentId). `alsoGroupBy` asks for more groupings from the
+ * same single pass, returned in `also` in order. `since`/`until` are inclusive UTC days.
  */
 export function rollupUsage(records, options = {}) {
-  const groupBy = (options.groupBy ?? ['day', 'provider', 'role', 'agentId']).filter((d) => USAGE_ROLLUP_DIMENSIONS.includes(d));
+  const groupBy = dimensionsOf(options.groupBy ?? ['day', 'provider', 'role', 'agentId']);
+  const groupings = [groupBy, ...(options.alsoGroupBy ?? []).map(dimensionsOf)];
   const { since, until } = options;
-  const rows = new Map();
+  const rowMaps = groupings.map(() => new Map());
   const seen = new Set();
   const totals = emptyTotals();
   let sessionTotalsSkipped = 0;
@@ -85,23 +96,25 @@ export function rollupUsage(records, options = {}) {
       parentAgentId: text(m.parentAgentId, 'none'),
       source: text(m.source, 'unknown'),
     };
-    const key = JSON.stringify(groupBy.map((d) => dims[d]));
-    let row = rows.get(key);
-    if (!row) {
-      row = { ...Object.fromEntries(groupBy.map((d) => [d, dims[d]])), ...emptyTotals() };
-      rows.set(key, row);
-    }
-    for (const t of [row, totals]) {
+    const targets = [totals];
+    groupings.forEach((dimsList, i) => {
+      const key = JSON.stringify(dimsList.map((d) => dims[d]));
+      let row = rowMaps[i].get(key);
+      if (!row) {
+        row = { ...Object.fromEntries(dimsList.map((d) => [d, dims[d]])), ...emptyTotals() };
+        rowMaps[i].set(key, row);
+      }
+      targets.push(row);
+    });
+    for (const t of targets) {
       add(t, m, dims.source);
       if (!hasId) t.turnsWithoutId++;
     }
   }
-  for (const t of [...rows.values(), totals]) finish(t);
-  const sorted = [...rows.values()].sort((a, b) => {
-    for (const d of groupBy) if (a[d] !== b[d]) return a[d] < b[d] ? -1 : 1;
-    return 0;
-  });
-  return { groupBy, rows: sorted, totals, noLines: totals.turns === 0, sessionTotalsSkipped, repeats, malformed };
+  for (const map of rowMaps) for (const t of map.values()) finish(t);
+  finish(totals);
+  const [rows, ...also] = rowMaps.map((map, i) => sortRows(map, groupings[i]));
+  return { groupBy, rows, also, totals, noLines: totals.turns === 0, sessionTotalsSkipped, repeats, malformed };
 }
 
 function add(t, m, source) {

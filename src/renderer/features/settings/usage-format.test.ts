@@ -30,6 +30,11 @@ describe('usageText', () => {
     expect(usageText(totals({ input: null, cachedInput: null, output: 0, turnsWithoutUsage: 1 }))).toBe('2 turns, unknown input, 0 output, unknown reasoning. 1 reported no usage');
   });
 
+  it('says when turns had no id, since a repeat of one can’t be told apart', () => {
+    expect(usageText(totals({ turnsWithoutId: 1 }))).toBe('2 turns, 1.2M input (1.1M cached), 40K output, unknown reasoning. 1 turn had no id and may be counted twice');
+    expect(usageText(totals({ turnsWithoutUsage: 1, turnsWithoutId: 2 }))).toMatch(/1 reported no usage\. 2 turns had no id and may be counted twice$/);
+  });
+
   it('says no usage was logged rather than 0', () => {
     expect(usageText(undefined)).toBe('No usage logged');
     expect(usageText(totals({ turns: 0 }))).toBe('No usage logged');

@@ -8,7 +8,7 @@ vi.mock('./log-settings', () => ({ getSettings: () => ({ enabled: true, namespac
 vi.mock('./provider-quota', () => ({ readProviderQuota: vi.fn() }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
-import { readUsageSummary } from './usage-summary';
+import { readUsageRecords, readUsageSummary } from './usage-summary';
 
 const NOW = Date.parse('2026-11-24T12:00:00.000Z');
 let dir: string;
@@ -54,5 +54,21 @@ describe('readUsageSummary', () => {
   it('a quota read that fails leaves the limit unknown', async () => {
     const summary = await readUsageSummary(1, { dir, now: NOW, readQuota: vi.fn(async () => { throw new Error('boom'); }), linesRecorded: true });
     expect(summary.providers.find((p) => p.id === 'claude-code')?.quota).toBeUndefined();
+  });
+
+  it('skips files last written before the period and lines stamped before it', async () => {
+    const old = path.join(dir, 'telemetry-old.jsonl');
+    fs.writeFileSync(old, line({ agentId: 'x', sessionId: 's', turnId: 't', provider: 'codex-cli', role: 'agent', input: 7 }) + '\n');
+    const before = new Date(Date.parse('2026-11-20T00:00:00.000Z'));
+    fs.utimesSync(old, before, before);
+    fs.writeFileSync(path.join(dir, 'telemetry-new.jsonl'), [
+      // Before the period and broken: never parsed, so not even counted as malformed.
+      '{"t":"diag","ts":"2026-11-23T10:00:00.000Z","ns":"core:usage" broken',
+      line({ agentId: 'a', sessionId: 's', turnId: 't1', provider: 'codex-cli', role: 'helper', input: 3, output: 1 }),
+    ].join('\n') + '\n');
+    const summary = await readUsageSummary(1, { dir, now: NOW, readQuota: vi.fn(async () => quota), linesRecorded: true });
+    expect(summary.providers.find((p) => p.id === 'codex-cli')?.usage).toMatchObject({ turns: 1, input: 3 });
+    expect(summary.roles).toEqual([expect.objectContaining({ role: 'helper', turns: 1 })]);
+    expect(await readUsageRecords(dir, '2026-11-24')).toHaveLength(1);
   });
 });
