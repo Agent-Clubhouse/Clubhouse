@@ -8,13 +8,8 @@ import { findProjectByPath, sameProjectPath } from '../utils/project-path';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { parentLinkFields } from '../stores/agent/parentLink';
-
-/**
- * The entries of this update's resume, kept so the banner's Resume and Retry
- * buttons can run the same resume for one session. The main process hands the
- * state over once (read-once), so this is the only copy after startup.
- */
-const resumeEntries = new Map<string, RestartSessionEntry>();
+import { ipcErrorMessage } from '../utils/ipc-error';
+import { deleteResumeEntry, getResumeEntry, setResumeEntries } from './resume-entries';
 
 /**
  * Process pending resume entries after an update restart.
@@ -26,8 +21,7 @@ export async function processResumeQueue(state: RestartSessionState): Promise<vo
   // Filter out assistant agents — they are ephemeral and should not be resumed
   const sessions = state.sessions.filter((e) => !isAssistantAgent(e.agentId));
 
-  resumeEntries.clear();
-  for (const entry of sessions) resumeEntries.set(entry.agentId, entry);
+  setResumeEntries(sessions);
 
   // Group by projectPath for sequential processing
   const byProject = new Map<string, RestartSessionEntry[]>();
@@ -197,6 +191,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
     });
     useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
+    deleteResumeEntry(entry.agentId);
   } catch (err) {
     let failure: unknown = err;
     // If we had a specific sessionId and it failed, try --continue fallback
@@ -238,6 +233,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
         });
         useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
+        deleteResumeEntry(entry.agentId);
         return;
       } catch (fallbackErr) {
         failure = fallbackErr;
@@ -249,7 +245,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       if (!agent) return s;
       return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
     });
-    const message = failure instanceof Error ? failure.message : String(failure);
+    const message = ipcErrorMessage(failure);
     useAgentStore.getState().setResumeStatus(entry.agentId, 'failed', undefined, message || 'Could not resume');
     console.error(`Failed to resume agent ${entry.agentId}:`, message);
   }
@@ -259,17 +255,51 @@ export async function resumeManualAgent(agentId: string, entry: RestartSessionEn
   await resumeAgent(entry);
 }
 
+const bannerResumesInFlight = new Set<string>();
+
 /**
  * The resume banner's Resume and Retry buttons: run the resume for one session
  * from this update's state, the same path the automatic resume takes. A failure
- * is shown on that session's row; an entry that is gone (state already
- * consumed, or never held) is reported there too instead of doing nothing.
+ * is shown on that session's row.
+ *
+ * Does nothing, and writes nothing to the store, when the session's row is gone
+ * (the agent was deleted or the banner dismissed) or a resume for it is already
+ * running. An agent that is already running (woken from the sidebar or chat
+ * since the failure) is not spawned over: its row is marked resumed.
  */
 export async function resumeFromBanner(agentId: string): Promise<void> {
-  const entry = resumeEntries.get(agentId);
-  if (!entry) {
-    useAgentStore.getState().setResumeStatus(agentId, 'failed', undefined, 'No saved session to resume');
+  const store = useAgentStore.getState();
+  if (!(agentId in store.resumingAgents)) {
+    deleteResumeEntry(agentId);
     return;
   }
-  await resumeManualAgent(agentId, entry);
+  if (bannerResumesInFlight.has(agentId)) return;
+  bannerResumesInFlight.add(agentId);
+  try {
+    const entry = getResumeEntry(agentId);
+    if (!entry) {
+      store.setResumeStatus(agentId, 'failed', undefined, 'No saved session to resume');
+      return;
+    }
+    let running: string[];
+    try {
+      running = await window.clubhouse.agent.getRunningStatuses([agentId]);
+    } catch (err) {
+      useAgentStore.getState().setResumeStatus(agentId, 'failed', undefined, ipcErrorMessage(err));
+      return;
+    }
+    // The row may have gone while the status was fetched.
+    if (!(agentId in useAgentStore.getState().resumingAgents)) {
+      deleteResumeEntry(agentId);
+      return;
+    }
+    if (running.includes(agentId)) {
+      useAgentStore.getState().setResumeStatus(agentId, 'resumed');
+      deleteResumeEntry(agentId);
+      return;
+    }
+    await resumeManualAgent(agentId, entry);
+  } finally {
+    bannerResumesInFlight.delete(agentId);
+  }
 }

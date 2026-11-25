@@ -84,9 +84,7 @@ const CARD_STATUS: Record<ResumeStatus, [NoticeTone, string]> = {
 };
 
 export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'bar' }: ResumeBannerProps) {
-  if (sessions.length === 0) return null;
-
-  const allSucceeded = sessions.every((s) => s.status === 'resumed');
+  const allSucceeded = sessions.length > 0 && sessions.every((s) => s.status === 'resumed');
 
   // Auto-dismiss 3 seconds after ALL sessions resumed successfully.
   // If any failed or timed out, keep the banner visible so the user can see.
@@ -95,6 +93,8 @@ export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'b
     const timer = setTimeout(onDismiss, 3000);
     return () => clearTimeout(timer);
   }, [allSucceeded, onDismiss]);
+
+  if (sessions.length === 0) return null;
 
   if (variant === 'card') {
     const anyFailed = sessions.some((s) => s.status === 'failed');

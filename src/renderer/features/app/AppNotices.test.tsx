@@ -6,7 +6,8 @@ import { useChromeStore } from '../../chrome/chromeStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { DISPATCHER_OFF } from '../../../shared/dispatcher-types';
-import { processResumeQueue } from '../../services/resume-queue';
+import { processResumeQueue, resumeFromBanner } from '../../services/resume-queue';
+import { removeAgentsFromState } from '../../stores/agent/agentUtils';
 import type { RestartSessionEntry } from '../../../shared/types';
 
 const violation = { pluginId: 'p', pluginName: 'Bad Plugin', permission: 'git', apiName: 'git', timestamp: 1 };
@@ -62,6 +63,7 @@ describe('AppNotices', () => {
 
   describe('Resume and Retry buttons run the real resume', () => {
     const spawnAgent = vi.fn();
+    const getRunningStatuses = vi.fn();
     const entry: RestartSessionEntry = {
       agentId: 'zesty-lynx',
       agentName: 'zesty-lynx',
@@ -74,10 +76,11 @@ describe('AppNotices', () => {
 
     beforeEach(() => {
       spawnAgent.mockReset().mockResolvedValue(undefined);
+      getRunningStatuses.mockReset().mockResolvedValue([]);
       Object.assign(window, {
         clubhouse: {
           ...(window as unknown as { clubhouse: object }).clubhouse,
-          agent: { spawnAgent, getDurableConfig: vi.fn().mockResolvedValue(null), readIcon: vi.fn().mockResolvedValue(null) },
+          agent: { spawnAgent, getDurableConfig: vi.fn().mockResolvedValue(null), readIcon: vi.fn().mockResolvedValue(null), getRunningStatuses },
           pty: { kill: vi.fn() },
         },
       });
@@ -124,6 +127,70 @@ describe('AppNotices', () => {
 
       await waitFor(() => expect(spawnAgent).toHaveBeenCalledTimes(1));
       expect(useAgentStore.getState().resumingAgents['zesty-lynx']).toBe('resumed');
+    });
+
+    it('shows an IPC rejection without Electron\'s prefix', async () => {
+      await queue();
+      render(<AppNotices variant="card" />);
+      spawnAgent.mockRejectedValueOnce(new Error("Error invoking remote method 'agent:spawn': Error: Cannot verify the saved execution policy"));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+
+      expect(await screen.findByText('Cannot verify the saved execution policy')).toBeDefined();
+      expect(screen.getByTestId('resume-banner')).not.toHaveTextContent('Error invoking');
+    });
+
+    it('a deleted agent drops its row, and its stale button cannot bring it back', async () => {
+      await queue();
+      render(<AppNotices variant="card" />);
+      spawnAgent.mockRejectedValueOnce(new Error('CLI not installed'));
+      fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+      await screen.findByText('CLI not installed');
+      const retry = screen.getByRole('button', { name: 'Retry' });
+      spawnAgent.mockClear();
+
+      useAgentStore.setState((s) => removeAgentsFromState(s, ['zesty-lynx']));
+      const state = useAgentStore.getState();
+      expect(state.resumingAgents).toEqual({});
+      expect(state.resumeErrors).toEqual({});
+      await waitFor(() => expect(screen.queryByTestId('resume-banner')).toBeNull());
+
+      // A click that was already in flight, or a later caller, still does nothing.
+      fireEvent.click(retry);
+      await resumeFromBanner('zesty-lynx');
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(useAgentStore.getState().agents['zesty-lynx']).toBeUndefined();
+      expect(useAgentStore.getState().resumingAgents).toEqual({});
+    });
+
+    it('Retry does not spawn over an agent that was woken another way; the row is marked resumed', async () => {
+      await queue();
+      render(<AppNotices variant="card" />);
+      spawnAgent.mockRejectedValueOnce(new Error('CLI not installed'));
+      fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+      await screen.findByText('CLI not installed');
+      spawnAgent.mockClear();
+      getRunningStatuses.mockResolvedValue(['zesty-lynx']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+      await waitFor(() => expect(useAgentStore.getState().resumingAgents['zesty-lynx']).toBe('resumed'));
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(useAgentStore.getState().resumeErrors).toEqual({});
+    });
+
+    it('two overlapping calls for one agent spawn once', async () => {
+      await queue();
+      await Promise.all([resumeFromBanner('zesty-lynx'), resumeFromBanner('zesty-lynx')]);
+      expect(spawnAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it('Dismiss drops the saved sessions, so a later call does nothing', async () => {
+      await queue();
+      useAgentStore.getState().clearResumingAgents();
+      await resumeFromBanner('zesty-lynx');
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(useAgentStore.getState().resumingAgents).toEqual({});
     });
   });
 });

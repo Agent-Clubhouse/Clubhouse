@@ -108,3 +108,15 @@ describe('ResumeBanner Retry buttons', () => {
     expect(onManualResume.mock.calls).toEqual([['t'], ['f']]);
   });
 });
+
+describe('ResumeBanner hook order', () => {
+  it('survives going from no sessions to some and back (hooks run before the empty return)', () => {
+    const props = { onManualResume: vi.fn(), onDismiss: vi.fn() };
+    const { rerender, container } = render(<ResumeBanner sessions={[]} {...props} />);
+    expect(container.firstChild).toBeNull();
+    rerender(<ResumeBanner sessions={[{ agentId: 'a', agentName: 'x', status: 'manual' }]} {...props} />);
+    expect(screen.getByText('x')).toBeDefined();
+    rerender(<ResumeBanner sessions={[]} {...props} />);
+    expect(container.firstChild).toBeNull();
+  });
+});

@@ -8,6 +8,7 @@ import { findLocalProject, isDispatcherAgent } from '../../features/dispatcher/d
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
 import { creatingPlaceholderId, omitRecordKey } from './agentUtils';
 import { parentLinkFields } from './parentLink';
+import { clearResumeEntries } from '../../services/resume-entries';
 
 export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): AgentLifecycleSlice {
   return {
@@ -29,6 +30,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
     },
 
     clearResumingAgents: () => {
+      clearResumeEntries();
       set({ resumingAgents: {}, resumeAgentNames: {}, resumeErrors: {} });
     },
 
