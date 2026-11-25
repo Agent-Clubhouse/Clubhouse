@@ -5,6 +5,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 
+// Real fs/promises, made spyable (Node's ESM namespace can't be redefined).
+vi.mock('fs/promises', async (importOriginal) => ({
+  ...await importOriginal<typeof import('fs/promises')>(),
+}));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import { appLog } from './log-service';
