@@ -41,7 +41,9 @@ export type KeptReason =
   /** An install folder holding a git checkout. */
   | 'git-checkout'
   /** A folder named like a retired plugin whose manifest declares another plugin, or none. */
-  | 'not-retired-plugin';
+  | 'not-retired-plugin'
+  /** Reached through a symlink: a linked install without the marketplace marker, or a project's `.clubhouse` (or a folder in it) that links elsewhere. */
+  | 'linked';
 
 export interface RetiredPluginCleanupResult {
   /** Every path that was deleted. */
@@ -105,6 +107,38 @@ async function manifestId(dir: string): Promise<string | undefined> {
   }
 }
 
+interface InstallEntry {
+  name: string;
+  dir: string;
+  isLink: boolean;
+  /** The id its manifest declares; never read for a link. */
+  declared?: string;
+}
+
+/**
+ * True when every folder between `projectPath` and `relativeDir`'s last part
+ * is a real directory (not a symlink), and `.clubhouse` resolves to the
+ * project's own `.clubhouse`. Otherwise a delete could land outside the project.
+ */
+async function parentsAreRealDirs(projectPath: string, relativeDir: string): Promise<boolean> {
+  const parts = relativeDir.split(path.sep).slice(0, -1);
+  try {
+    let current = projectPath;
+    for (const part of parts) {
+      current = path.join(current, part);
+      const stat = await fsp.lstat(current);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
+    }
+    if (parts.length > 0) {
+      const clubhouse = path.join(projectPath, parts[0]);
+      if (await fsp.realpath(clubhouse) !== path.join(await fsp.realpath(projectPath), parts[0])) return false;
+    }
+    return true;
+  } catch { // telemetry-exempt: unreadable means not proven safe; the caller keeps the folder
+    return false;
+  }
+}
+
 class Cleanup {
   readonly result: RetiredPluginCleanupResult = { removed: [], kept: [] };
   private readonly keptMarkerFile: string;
@@ -143,14 +177,23 @@ class Cleanup {
       unknown: 'couldn\'t check whether the project\'s repository tracks it.',
       'git-checkout': 'it holds a git checkout. Delete it if you don\'t need it.',
       'not-retired-plugin': 'its manifest doesn\'t declare the retired plugin.',
+      linked: 'it is reached through a symlink, so what it points at isn\'t Clubhouse\'s to delete.',
     };
     appLog('core:plugins', 'info', `Kept ${dir}: ${why[reason]}`, { meta: { pluginId, dir, reason } });
   }
 
-  /** A folder inside a project: deleted only when git tracks nothing in it (or the project isn't a repository). */
+  /**
+   * A folder inside a project: deleted only when git tracks nothing in it (or
+   * the project isn't a repository), and only when every folder on the way to
+   * it is a real folder inside the project (`.clubhouse` not a link elsewhere).
+   */
   async removeProjectFolder(pluginId: string, projectPath: string, relativeDir: string): Promise<void> {
     const dir = path.join(projectPath, relativeDir);
     if (!(await exists(dir))) return;
+    if (!(await parentsAreRealDirs(projectPath, relativeDir))) {
+      this.keep(dir, 'linked', pluginId);
+      return;
+    }
     const state = await gitTrackedState(projectPath, relativeDir.split(path.sep).join('/'));
     if (state === 'untracked') await removeIfPresent(dir, this.result.removed);
     else this.keep(dir, state, pluginId);
@@ -174,34 +217,60 @@ class Cleanup {
     }
   }
 
-  /**
-   * Installed copies of retired Workshop plugins, found by what their manifest
-   * declares, in whatever folder they sit. A folder is removed when its
-   * manifest declares a retired id, or, with no readable manifest, when it is a
-   * marketplace install (`.marketplace`) named for one. A real folder holding
-   * `.git` is never removed. A symlinked install loses the link only.
-   */
-  async removeInstalls(): Promise<void> {
-    let entries: string[];
+  /** What is installed under the community plugins folder, read once. */
+  installs: InstallEntry[] = [];
+
+  async scanInstalls(): Promise<void> {
+    let names: string[];
     try {
-      entries = await fsp.readdir(this.opts.communityPluginsDir);
+      names = await fsp.readdir(this.opts.communityPluginsDir);
     } catch { // telemetry-exempt: no plugins folder, nothing installed
       return;
     }
-    for (const name of entries) {
+    for (const name of names) {
       const dir = path.join(this.opts.communityPluginsDir, name);
       try {
-        const declared = await manifestId(dir);
+        const isLink = (await fsp.lstat(dir)).isSymbolicLink();
+        // A link is never read through for its manifest: it's judged by its name and marker.
+        this.installs.push({ name, dir, isLink, declared: isLink ? undefined : await manifestId(dir) });
+      } catch (err) { // telemetry-exempt: logged; best effort, retried next launch
+        appLog('core:plugins', 'warn', `Failed to check installed plugin folder "${name}"`, {
+          meta: { dir, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+  }
+
+  /** True when an installed community plugin uses `pluginId`, by folder name or by the id its manifest declares. */
+  isInstalled(pluginId: string): boolean {
+    return this.installs.some((i) => i.name === pluginId || i.declared === pluginId);
+  }
+
+  /**
+   * Installed copies of retired Workshop plugins. A real folder is removed
+   * when its manifest declares a retired id, or, with no readable manifest,
+   * when it is a marketplace install (`.marketplace`) named for one; one
+   * holding `.git` is never removed. A symlink is removed (the link only)
+   * when it is named for a retired id and carries the marker; otherwise kept.
+   */
+  async removeInstalls(): Promise<void> {
+    for (const { name, dir, isLink, declared } of this.installs) {
+      try {
         const namedRetired = RETIRED_WORKSHOP_PLUGIN_IDS.includes(name);
+        const marked = namedRetired && await exists(path.join(dir, '.marketplace'));
+        if (isLink) {
+          if (namedRetired && marked) await removeIfPresent(dir, this.result.removed);
+          else if (namedRetired) this.keep(dir, 'linked', name);
+          continue;
+        }
         const retiredId = declared !== undefined
           ? (RETIRED_WORKSHOP_PLUGIN_IDS.includes(declared) ? declared : undefined)
-          : (namedRetired && await exists(path.join(dir, '.marketplace')) ? name : undefined);
+          : (marked ? name : undefined);
         if (!retiredId) {
           if (namedRetired) this.keep(dir, 'not-retired-plugin', name);
           continue;
         }
-        const isLink = (await fsp.lstat(dir)).isSymbolicLink();
-        if (!isLink && await exists(path.join(dir, '.git'))) {
+        if (await exists(path.join(dir, '.git'))) {
           this.keep(dir, 'git-checkout', retiredId);
           continue;
         }
@@ -222,7 +291,8 @@ class Cleanup {
  * - the plugin's global storage dir (`plugin-data/<id>`)
  * - its persisted settings (`plugin-data/_system/kv/settings-{app|<projectId>}-<id>.json[.bak]`)
  * - its per-project local storage (`<project>/.clubhouse/plugin-data-local/<id>`)
- * An id is skipped entirely when a community plugin with the same id is installed.
+ * An id is skipped entirely when a community plugin uses it: a folder with that
+ * name, or a manifest declaring it.
  *
  * Retired Workshop plugins (Lounge, KanBoss, Bug Report): the same, plus
  * installed copies (see Cleanup.removeInstalls) and project storage
@@ -237,10 +307,11 @@ class Cleanup {
 export async function cleanupRetiredPluginData(opts: RetiredPluginCleanupOptions): Promise<RetiredPluginCleanupResult> {
   const cleanup = new Cleanup(opts);
   await cleanup.loadKeptMarker();
+  await cleanup.scanInstalls();
 
   for (const pluginId of RETIRED_BUILTIN_PLUGIN_IDS) {
     try {
-      if (await exists(path.join(opts.communityPluginsDir, pluginId))) continue;
+      if (cleanup.isInstalled(pluginId)) continue;
       await cleanup.removePluginStorage(pluginId);
     } catch (err) { // telemetry-exempt: logged; best effort, retried next launch
       appLog('core:plugins', 'warn', `Failed to clean up data for retired plugin "${pluginId}"`, {

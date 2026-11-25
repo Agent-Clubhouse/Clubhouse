@@ -81,6 +81,16 @@ describe('cleanupRetiredPluginData', () => {
     expect(fs.existsSync(path.join(kvDir, 'settings-app-hub.json'))).toBe(true);
   });
 
+  it('leaves data alone when a community plugin in another folder declares the id hub', async () => {
+    touch(path.join(communityDir, 'hub-fork', 'manifest.json'), JSON.stringify({ id: 'hub' }));
+    touch(path.join(globalDir, 'hub', 'kv', 'state.json'));
+    touch(path.join(kvDir, 'settings-app-hub.json'));
+
+    expect(await run()).toEqual([]);
+    expect(fs.existsSync(path.join(globalDir, 'hub'))).toBe(true);
+    expect(fs.existsSync(path.join(kvDir, 'settings-app-hub.json'))).toBe(true);
+  });
+
   it('removes Sessions and Agent Queue plugin storage', async () => {
     touch(path.join(globalDir, 'agent-queue', 'kv', 'x.json'));
     touch(path.join(kvDir, 'settings-proj_1-sessions.json'));
@@ -191,6 +201,7 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
   });
 
   const manifest = (id: string) => JSON.stringify({ id, name: id, version: '1.0.0' });
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir';
   const keptLogs = () => logs.filter((l) => l.msg.startsWith('Kept '));
 
   it('removes installed copies, their storage, settings and per-project local data, keeping other plugins', async () => {
@@ -280,12 +291,13 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
     expect(fs.existsSync(path.join(communityDir, 'bug-report', 'notes.txt'))).toBe(true);
   });
 
-  it('removes a symlinked install without touching what it points at', async () => {
+  it('removes a symlinked install named for a retired plugin with the marketplace marker, as a link only', async () => {
     const source = path.join(root, 'dev', 'kanboss');
     touch(path.join(source, 'manifest.json'), manifest('kanboss'));
+    touch(path.join(source, '.marketplace'), '');
     touch(path.join(source, '.git', 'HEAD'), 'ref: refs/heads/main\n');
     fs.mkdirSync(communityDir, { recursive: true });
-    fs.symlinkSync(source, path.join(communityDir, 'kanboss'), process.platform === 'win32' ? 'junction' : 'dir');
+    fs.symlinkSync(source, path.join(communityDir, 'kanboss'), linkType);
 
     expect((await run()).removed).toEqual([path.join(communityDir, 'kanboss')]);
     expect(fs.existsSync(path.join(communityDir, 'kanboss'))).toBe(false);
@@ -293,11 +305,55 @@ describe('retired Workshop plugins (Lounge, KanBoss, Bug Report)', () => {
     expect(fs.existsSync(path.join(source, '.git', 'HEAD'))).toBe(true);
   });
 
+  it('keeps any other symlinked install, without reading its manifest through the link', async () => {
+    const source = path.join(root, 'dev', 'lounge');
+    touch(path.join(source, 'manifest.json'), manifest('lounge'));
+    const elsewhere = path.join(root, 'dev', 'other');
+    touch(path.join(elsewhere, 'manifest.json'), manifest('kanboss'));
+    fs.mkdirSync(communityDir, { recursive: true });
+    fs.symlinkSync(source, path.join(communityDir, 'lounge'), linkType);
+    fs.symlinkSync(elsewhere, path.join(communityDir, 'my-link'), linkType);
+
+    const { removed, kept } = await run();
+
+    expect(removed).toEqual([]);
+    expect(kept).toEqual([{ path: path.join(communityDir, 'lounge'), reason: 'linked' }]);
+    expect(fs.lstatSync(path.join(communityDir, 'lounge')).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(path.join(communityDir, 'my-link')).isSymbolicLink()).toBe(true);
+  });
+
+  it('keeps project storage reached through a symlinked .clubhouse, leaving the link target untouched', async () => {
+    const outside = path.join(root, 'shared-clubhouse');
+    touch(path.join(outside, 'plugin-data', 'kanboss', 'board.json'));
+    touch(path.join(outside, 'plugin-data-local', 'lounge', 'state.json'));
+    fs.symlinkSync(outside, path.join(projectPath, '.clubhouse'), linkType);
+
+    const { removed, kept } = await run();
+
+    expect(removed).toEqual([]);
+    expect(kept).toEqual(expect.arrayContaining([
+      { path: boardDir(), reason: 'linked' },
+      { path: path.join(projectPath, '.clubhouse', 'plugin-data-local', 'lounge'), reason: 'linked' },
+    ]));
+    expect(kept).toHaveLength(2);
+    expect(fs.existsSync(path.join(outside, 'plugin-data', 'kanboss', 'board.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outside, 'plugin-data-local', 'lounge', 'state.json'))).toBe(true);
+  });
+
+  it('keeps project storage under a symlinked plugin-data folder', async () => {
+    const outside = path.join(root, 'shared-plugin-data');
+    touch(path.join(outside, 'kanboss', 'board.json'));
+    fs.mkdirSync(path.join(projectPath, '.clubhouse'), { recursive: true });
+    fs.symlinkSync(outside, path.join(projectPath, '.clubhouse', 'plugin-data'), linkType);
+
+    expect(await run()).toEqual({ removed: [], kept: [{ path: boardDir(), reason: 'linked' }] });
+    expect(fs.existsSync(path.join(outside, 'kanboss', 'board.json'))).toBe(true);
+  });
+
   it('removes symlinked data folders as links, leaving their targets', async () => {
     const elsewhere = path.join(root, 'elsewhere');
     touch(path.join(elsewhere, 'global', 'keep.json'));
     touch(path.join(elsewhere, 'boards', 'keep.json'));
-    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
     fs.mkdirSync(globalDir, { recursive: true });
     fs.symlinkSync(path.join(elsewhere, 'global'), path.join(globalDir, 'lounge'), linkType);
     fs.mkdirSync(path.dirname(boardDir()), { recursive: true });
