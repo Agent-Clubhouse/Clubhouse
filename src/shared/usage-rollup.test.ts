@@ -72,4 +72,14 @@ describe('rollupUsage', () => {
     expect(out.totals.input).toBe(2);
     expect(out.malformed).toBe(1);
   });
+
+  it('gives more groupings from the same pass, each with its own null rules', () => {
+    const out = rollupUsage([
+      turn({ ...base, turnId: 't1', role: 'helper', input: 1, output: 1 }),
+      turn({ ...base, turnId: 't2', role: 'dispatcher', provider: 'claude-code', input: 2, output: 2, reasoning: 1 }),
+    ], { groupBy: ['provider'], alsoGroupBy: [['role']] });
+    expect(out.rows.map((r) => [r.provider, r.input])).toEqual([['claude-code', 2], ['codex', 1]]);
+    expect(out.also[0].map((r) => [r.role, r.input, r.reasoning])).toEqual([['dispatcher', 2, 1], ['helper', 1, null]]);
+    expect(rollupUsage([]).also).toEqual([]);
+  });
 });

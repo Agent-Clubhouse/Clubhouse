@@ -37,7 +37,8 @@ export function usageText(t: UsageRollupTotals | undefined): string {
     `${tokens(t.reasoning)} reasoning`,
   ];
   const none = t.turnsWithoutUsage > 0 ? `. ${t.turnsWithoutUsage} reported no usage` : '';
-  return `${turns}, ${parts.join(', ')}${none}`;
+  const noId = t.turnsWithoutId > 0 ? `. ${t.turnsWithoutId === 1 ? '1 turn' : `${t.turnsWithoutId} turns`} had no id and may be counted twice` : '';
+  return `${turns}, ${parts.join(', ')}${none}${noId}`;
 }
 
 const ROLE_NAMES: Record<string, string> = {
