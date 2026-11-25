@@ -13,7 +13,7 @@ import { withAgentTransition } from '../services/agent-transition';
 import { peekDurableConfigs, getDurableConfig } from '../services/agent-config';
 import { getProjectConfigBreakdown, removePluginInjectionItem, saveProjectUserDefaults } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
-import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
 /**
  * Resolve orchestrator conventions for a project path.
@@ -115,27 +115,6 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATES, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, projectPath) => {
-      return agentSettings.listAgentTemplates(worktreePath, await getConventions(projectPath));
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.CREATE_SKILL, withValidatedArgs(
-    [stringArg(), stringArg(), booleanArg(), stringArg({ optional: true })],
-    async (_event, basePath, name, isSource, projectPath) => {
-      return agentSettings.createSkillDir(basePath, name, isSource, await getConventions(projectPath));
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.CREATE_AGENT_TEMPLATE, withValidatedArgs(
-    [stringArg(), stringArg(), booleanArg(), stringArg({ optional: true })],
-    async (_event, basePath, name, isSource, projectPath) => {
-      return agentSettings.createAgentTemplateDir(basePath, name, isSource, await getConventions(projectPath));
-    },
-  ));
-
   ipcMain.handle(IPC.AGENT.READ_PERMISSIONS, withValidatedArgs(
     [stringArg(), stringArg({ optional: true })],
     async (_event, worktreePath, projectPath) => {
@@ -171,36 +150,6 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
     async (_event, worktreePath, skillName, projectPath, agentId) => {
       return withSkillTarget(worktreePath, projectPath, agentId, true, (conventions) => agentSettings.deleteSkill(worktreePath, skillName, conventions));
-    },
-  ));
-
-  // --- Agent template content CRUD ---
-
-  ipcMain.handle(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, agentName, projectPath) => {
-      return agentSettings.readAgentTemplateContent(worktreePath, agentName, await getConventions(projectPath));
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
-    async (_event, worktreePath, agentName, content, projectPath) => {
-      await agentSettings.writeAgentTemplateContent(worktreePath, agentName, content, await getConventions(projectPath));
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_AGENT_TEMPLATE, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, agentName, projectPath) => {
-      await agentSettings.deleteAgentTemplate(worktreePath, agentName, await getConventions(projectPath));
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, projectPath) => {
-      return agentSettings.listAgentTemplateFiles(worktreePath, await getConventions(projectPath));
     },
   ));
 
@@ -274,21 +223,6 @@ export function registerAgentSettingsHandlers(): void {
       if (!isValidPluginId(pluginId)) throw new Error('Not a plugin id.');
       const { readPluginManagedParts } = await import('../services/plugin-parts');
       return readPluginManagedParts(projectPath, pluginId);
-    },
-  ));
-
-  // --- Orchestrator conventions ---
-
-  ipcMain.handle(IPC.AGENT.GET_CONVENTIONS, withValidatedArgs(
-    [stringArg()],
-    async (_event, projectPath) => {
-      try {
-        const provider = await resolveOrchestrator(projectPath);
-        return provider.conventions;
-      } catch (err) {
-        appLog('core:agent-settings', 'warn', `Failed to get conventions for ${projectPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-        return null;
-      }
     },
   ));
 

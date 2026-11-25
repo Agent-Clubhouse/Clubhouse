@@ -51,11 +51,32 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     process.env.COPILOT_SDK_DEFAULT_CONNECTION = 'inprocess';
     try {
       const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'installed-copilot', level: 'ask' });
-      expect(fake.clients).toEqual([{ runtime: { kind: 'tcp', host: '127.0.0.1', port: 12345 }, mode: 'coding-agent', observability: { logLevel: 'error' } }]);
+      expect(fake.clients).toEqual([{ runtime: { kind: 'tcp', host: '127.0.0.1', port: 12345 }, mode: 'coding-agent' }]);
       await session.close();
     } finally {
       if (prior === undefined) delete process.env.COPILOT_SDK_DEFAULT_CONNECTION;
       else process.env.COPILOT_SDK_DEFAULT_CONNECTION = prior;
+    }
+  });
+
+  it('passes no runtime startup option the SDK refuses on an attached (TCP) runtime', async () => {
+    // @microsoft/copilot-sdk 2.0.2 throws "Cannot configure runtime startup options for an
+    // attached runtime" for any of these; observability.logLevel broke every start once.
+    const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'installed-copilot', level: 'ask' });
+    await session.close();
+    expect(fake.clients.length).toBeGreaterThan(0);
+    for (const options of fake.clients as Array<Record<string, any>>) {
+      expect(options.runtime?.kind).toBe('tcp');
+      const forbidden = {
+        'runtime.baseDirectory': options.runtime?.baseDirectory,
+        'runtime.sessionIdleTimeoutSeconds': options.runtime?.sessionIdleTimeoutSeconds,
+        'github.token': options.github?.token,
+        'github.useLoggedInUser': options.github?.useLoggedInUser,
+        'observability.logLevel': options.observability?.logLevel,
+        'observability.telemetry': options.observability?.telemetry,
+        internalTestOptions: options.internalTestOptions,
+      };
+      expect(Object.entries(forbidden).filter(([, value]) => value !== undefined).map(([key]) => key)).toEqual([]);
     }
   });
 

@@ -2,7 +2,7 @@
  * App Initializer — one-time startup logic extracted from App.tsx.
  *
  * Loads settings, initializes the plugin system, sets up update/annex/
- * plugin-update listeners, and handles onboarding & "What's New" checks.
+ * plugin-update listeners, and handles the "What's New" check.
  *
  * All store access goes through `getState()` so none of these operations
  * create Zustand subscriptions in the React render cycle.
@@ -24,8 +24,7 @@ import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
 import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
-import { useOnboardingStore } from './stores/onboardingStore';
-import { isNewChromeEnabled } from './chrome/chromeFlag';
+import { cleanupRemovedOnboardingState } from './removed-onboarding-cleanup';
 import { initializePluginSystem } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
 import { showRemovedProfilesNotice } from './profiles-removed-notice';
@@ -116,18 +115,8 @@ export async function initApp(): Promise<() => void> {
   }, 1000);
   cleanups.push(() => clearTimeout(whatsNewTimer));
 
-  // 6. Show onboarding on first launch (delayed). The new shell has no
-  // onboarding modal: its first-run page is the welcome (#2024), so it counts
-  // as done there, and turning the new shell off later doesn't bring the
-  // modal up over an existing workspace.
-  if (!useOnboardingStore.getState().completed && isNewChromeEnabled()) {
-    useOnboardingStore.getState().dismissOnboarding();
-  } else if (!useOnboardingStore.getState().completed) {
-    const onboardingTimer = setTimeout(() => {
-      useOnboardingStore.getState().startOnboarding();
-    }, 500);
-    cleanups.push(() => clearTimeout(onboardingTimer));
-  }
+  // 6. The classic onboarding modal was removed: delete its saved state.
+  cleanupRemovedOnboardingState();
 
   // 7. Check for pending session resumes after an update restart
   window.clubhouse.app.getPendingResumes().then((state: unknown) => {

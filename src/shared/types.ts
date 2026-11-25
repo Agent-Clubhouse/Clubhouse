@@ -367,7 +367,11 @@ export interface DurableAgentConfig extends ExecutionPolicy {
    * old Dispatcher's `persona: 'dispatcher'` means nothing.
    */
   persona?: string;
-  /** Mission ID overriding the project default. Resolved to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  /**
+   * @deprecated Clubhouse Mode was retired (#2901). The mission id overriding
+   * the project default; only the switch to managed (managed-agents/legacy-migration)
+   * reads it, with `.clubhouse/missions/<id>.md`, to fill @@Mission.
+   */
   mission?: string;
   /** Per-agent override for @@BuildCommand (falls back to project default when unset). */
   buildCommand?: string;

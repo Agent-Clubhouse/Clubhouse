@@ -5,7 +5,7 @@ export function isCopilotProtocolMismatch(message: string): boolean {
 
 export function copilotProtocolRecovery(message: string): string | undefined {
   if (!isCopilotProtocolMismatch(message)) return undefined;
-  const pair = 'Copilot chat requires @microsoft/copilot-sdk 2.0.0 (protocol 4) with Copilot CLI 1.0.113 or a newer protocol-4 release.';
+  const pair = 'Copilot chat requires @microsoft/copilot-sdk 2.0.2 (protocol 4) with Copilot CLI 1.0.113 or a newer protocol-4 release.';
   if (/supports versions 3-3.*server reports version 4/i.test(message)) {
     return `${pair} Update Clubhouse to a build with that embedded SDK. Installing an SDK globally does not change Clubhouse's SDK. You can keep using the CLI view.`;
   }
