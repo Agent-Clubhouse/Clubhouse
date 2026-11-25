@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { skipFsync } from '../../../test/skip-fsync';
 import type { ManagedTemplate } from '../../shared/managed-agents-types';
 import type { DurableAgentConfig } from '../../shared/types';
 
@@ -862,6 +863,8 @@ it('mobile and desktop create identical managed configs using the real library, 
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-11-15T20:00:00.000Z'));
   const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+  // Parts and the library are written for real; only the per-write fsync (several ms each on hosted Windows) is skipped.
+  const fsync = await skipFsync();
   try {
     const service = createManagedAgentsService({
       catalog: createAssetCatalogStore({ dir: path.join(dir, 'catalog') }),
@@ -891,6 +894,7 @@ it('mobile and desktop create identical managed configs using the real library, 
     }
     expect(startDurableCreation).not.toHaveBeenCalled();
   } finally {
+    fsync.restore();
     vi.useRealTimers();
     managedTest.service = null;
     await fs.rm(dir, { recursive: true, force: true });

@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 
@@ -23,6 +23,7 @@ vi.mock('./state-store', async (importOriginal) => ({
   managedStateDir: () => h.stateDir,
 }));
 
+import { BUILTINS_SEED_BUDGET_MS, buildBuiltinsSeed, copyBuiltinsSeed, removeBuiltinsSeed } from '../../../../test/managed-builtins-seed';
 import { createAssetCatalogStore } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
@@ -74,6 +75,10 @@ async function switchedToManaged(): Promise<void> {
   fs.writeFileSync(path.join(wt, '.mcp.json'), JSON.stringify(mcp, null, 2));
 }
 
+let seed: string;
+beforeAll(async () => { seed = await buildBuiltinsSeed('managed-plain'); }, BUILTINS_SEED_BUDGET_MS);
+afterAll(() => { removeBuiltinsSeed(seed); });
+
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-plain-'));
   h.stateDir = path.join(root, 'app-data', 'managed-agents');
@@ -81,6 +86,7 @@ beforeEach(async () => {
   wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
   fs.mkdirSync(wt, { recursive: true });
   _resetSettingsAuditForTesting(false);
+  copyBuiltinsSeed(seed, root);
   unmanaged = 0;
   h.failMcpRename = false;
   service = createManagedAgentsService({

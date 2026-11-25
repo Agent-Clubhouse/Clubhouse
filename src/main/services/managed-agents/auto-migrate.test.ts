@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { skipFsyncInThisFile } from '../../../../test/skip-fsync';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
@@ -133,6 +134,8 @@ function agent(projectPath: string, id: string, over: Partial<DurableAgentConfig
 }
 const get = (projectPath: string, id: string) => h.projects.get(projectPath)!.get(id)!;
 
+// These tests are about what is written, not durability: skip the per-write fsync, which is several ms each on hosted Windows.
+skipFsyncInThisFile();
 // A switch installs every built-in first, which writes each part to disk and
 // ran past the test timeout on a loaded Windows runner (#3122). Install them
 // once per file and copy the result in for each test; ensureBuiltins then finds
