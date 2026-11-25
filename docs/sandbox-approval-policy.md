@@ -4,7 +4,7 @@
 
 Research date: 2026-11-17, macOS arm64. Clean-home/no-network version probes reported installed Claude Code 2.1.312 and Copilot CLI 1.0.112 at /opt/homebrew/bin/copilot (reconfirmed after the Copilot v2 rebase; the installed CLI was not changed). Read #3686, #1535 and its comments, closed #3366 and #1716 in full. The parity epic's July 0.144.1 argv is historical; the removed `--full-auto` and `--continue` flags are not used.
 
-The installed `/opt/homebrew/bin/codex` reports **codex-cli 0.163.0**. Its stable `app-server generate-json-schema` output was generated with a temporary empty HOME/CODEX_HOME, an allowlisted environment, and `sandbox-exec` denying all network. No model turns, credentials, login or paid inference. [The provenance manifest](sandbox-approval-provenance.json) records schema hashes, properties and enum evidence. Repository generated TypeScript bindings are pinned to **0.166.0**, not the installed binary. This distinction matters: newer documentation does not establish installed support.
+The installed `/opt/homebrew/bin/codex` reports **codex-cli 0.163.0**. Its stable `app-server generate-json-schema` output was generated with a temporary empty HOME/CODEX_HOME, an allowlisted environment, and `sandbox-exec` denying all network. No model turns, credentials, login or paid inference. [The provenance manifest](sandbox-approval-provenance.json) records schema hashes, properties and enum evidence. Repository generated TypeScript bindings are pinned to **0.172.0** (0.166.0 when this research was done; moved 2026-11-25), not the installed binary. This distinction matters: newer documentation does not establish installed support.
 
 Current official references, retrieved on the research date:
 

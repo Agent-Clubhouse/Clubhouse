@@ -4,12 +4,6 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }));
 
-vi.mock('../services/clubhouse-mcp/plugin-tool-registry', () => ({
-  removePluginTools: vi.fn(),
-}));
-vi.mock('../services/clubhouse-mcp/plugin-mcp-tokens', () => ({
-  revokePluginTokens: vi.fn(),
-}));
 
 vi.mock('../services/plugin-storage', () => ({
   readKey: vi.fn(async () => 'value'),
@@ -62,8 +56,6 @@ vi.mock('../services/plugin-manifest-registry', () => ({
   getManifest: vi.fn(),
 }));
 
-import { removePluginTools } from '../services/clubhouse-mcp/plugin-tool-registry';
-import { revokePluginTokens } from '../services/clubhouse-mcp/plugin-mcp-tokens';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerPluginHandlers } from './plugin-handlers';
@@ -388,10 +380,6 @@ describe('plugin-handlers', () => {
     await handler({}, 'p1');
     expect(pluginDiscovery.uninstallPlugin).toHaveBeenCalledWith('p1');
     expect(pluginManifestRegistry.unregisterManifest).toHaveBeenCalledWith('p1');
-    // Its MCP tools go too, or agents keep calling a tool nobody answers,
-    // and so do its MCP tokens.
-    expect(removePluginTools).toHaveBeenCalledWith('p1');
-    expect(revokePluginTokens).toHaveBeenCalledWith('p1');
   });
 
   it('REFRESH_MANIFEST_FROM_DISK uses the gated main registry', async () => {

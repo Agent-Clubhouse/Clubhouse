@@ -9,13 +9,13 @@ runtime: `../protocol.ts` hand-writes the subset Clubhouse speaks, and
 | Field | Value |
 |---|---|
 | Package | `@agentclientprotocol/sdk` |
-| Version | `2.9.1` |
-| Source repository | https://github.com/agentclientprotocol/typescript-sdk, tag `v2.9.1` (`ab16fb07b4e7e5dd8e55633b42930857223c4cd0`, the package's `gitHead`) |
-| Tarball | `https://registry.npmjs.org/@agentclientprotocol/sdk/-/sdk-2.9.1.tgz` |
-| Tarball sha1 (registry `dist.shasum`) | `dbfc3b7182def3d6df0678db634726023fd33527` |
-| Tarball integrity (registry `dist.integrity`) | `sha512-8iJdxGa3SunLfzqLLb3RfQFmr4hnmWeAyeAK6MbkJiXJbrRlMRgKsVnDl/7Hu48yu/30gAlytNDzh5W77rv5SA==` |
+| Version | `2.12.0` |
+| Source repository | https://github.com/agentclientprotocol/typescript-sdk, tag `v2.12.0` (`6b84c6da9430a1e4aba9c87c0b45f8b43a6aea9a`, the package's `gitHead`) |
+| Tarball | `https://registry.npmjs.org/@agentclientprotocol/sdk/-/sdk-2.12.0.tgz` |
+| Tarball sha1 (registry `dist.shasum`) | `6df251c1884006efd1da35c7a807df84151e513a` |
+| Tarball integrity (registry `dist.integrity`) | `sha512-nSkamfY4Lw9/AVBU5G5V9p82ScXhANDMBybQwcPH/9+euUtZm04/VFUMaLj4gLFEXxQEy+QP1VQiKgSRbYVIPg==` |
 | File in tarball | `package/schema/v1/schema.json` → `schema.v1.json` |
-| `schema.v1.json` sha256 | `79fbeccc5cb5668259ee35ff7440ffd79eaf813742366ac06f707b98bbf789db` |
+| `schema.v1.json` sha256 | `d3ddaefbee593abf74beeda91bdf57b58ef99bf90219dc1cb4ae90be3ba18518` |
 | `LICENSE` sha256 | `6ed4f049cce59e05197d585bdf8a39980b45d546d6ea718ee344555f3a867c3a` |
 | Protocol docs | https://agentclientprotocol.com/protocol/v1/overview |
 

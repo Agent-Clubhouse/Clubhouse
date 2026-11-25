@@ -117,7 +117,7 @@ Clubhouse instances on the same local network can pair for remote control. One i
 
 Plugins extend Clubhouse with custom tabs, commands, themes, sounds, and agent configuration. The plugin API is permission-gated — plugins declare what they need (files, git, agents, terminal, etc.) and users approve at install time.
 
-Current supported API versions: `0.5`, `0.6`, `0.7`, `0.8`. See [PRINCIPLES.md](PRINCIPLES.md) for the versioning contract.
+Current supported API versions: `0.7`, `0.8`, `0.9`. Plugins on `0.5` or `0.6` are refused. See [docs/sdk-versioning.md](docs/sdk-versioning.md) for each version's status and [PRINCIPLES.md](PRINCIPLES.md) for the versioning contract.
 
 Built-in plugins: Files (Monaco editor + file browser), Terminal, Canvas (visual wiring workspace), Git, Browser, Review, Group Project, Sticky Note.
 

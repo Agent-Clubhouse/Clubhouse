@@ -287,6 +287,8 @@ export type ChatErrorCode =
   /** A billing or account problem (account on hold, payment): logging in again won't fix it. */
   | 'account_issue'
   | 'rate_limited'
+  /** A hook the user or their organization configured declined the request: a setting, nothing about the session itself. */
+  | 'hook_denied'
   /** The provider is down, overloaded or unreachable (a 5xx, a dropped connection): nothing about the session itself. */
   | 'service_unavailable'
   /** The chosen model isn't offered: a setting to change, nothing about the session itself. */

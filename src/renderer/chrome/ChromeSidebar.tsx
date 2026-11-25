@@ -531,7 +531,7 @@ export function ChromeSidebar() {
     const map: Record<string, Agent[]> = {};
     for (const agent of Object.values(treeAgents)) {
       const groupId = groupOf.get(agent.projectId);
-      if (!groupId || agent.kind === 'companion') continue;
+      if (!groupId) continue;
       (map[groupId] ??= []).push(agent);
     }
     return map;

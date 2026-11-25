@@ -64,11 +64,10 @@ export function createProjectsAPI(): ProjectsAPI {
       // In the new sidebar's order (#2447), so a canvas card's picker matches it: pinned first,
       // idle last. The classic layout shows store order, so it keeps that.
       const projectState = useProjectStore.getState();
-      const agents = Object.values(useAgentStore.getState().agents).filter((a) => a.kind !== 'companion');
+      const agents = Object.values(useAgentStore.getState().agents);
       const agentsByProject: Record<string, Agent[]> = {};
       for (const agent of agents) (agentsByProject[agent.projectId] ??= []).push(agent);
       const ordered = isNewChromeEnabled() ? sidebarProjectOrder(projectState.projects, useChromeStore.getState(), {
-        // Companions don't keep a project out of the idle row in the sidebar either.
         runningIds: new Set(agents.filter((a) => a.status === 'running').map((a) => a.projectId)),
         // Pickers open in app views (the canvas), where the sidebar exempts no selected project.
         activeProjectId: null,

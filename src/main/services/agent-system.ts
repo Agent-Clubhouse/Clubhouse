@@ -107,7 +107,7 @@ export interface SpawnAgentParams extends ExecutionPolicy {
   agentId: string;
   projectPath: string;
   cwd: string;
-  kind: 'durable' | 'quick' | 'companion';
+  kind: 'durable' | 'quick';
   name?: string;
   parentAgentId?: string;
   /** Main-process launch provenance, set before a process can emit events. */
@@ -143,10 +143,6 @@ export interface SpawnAgentParams extends ExecutionPolicy {
   onRuntimeCreated?: (identity: string) => void;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
-  /** Plugin ID that owns this companion agent (required when kind === 'companion'). @since 0.9 */
-  pluginOwner?: string;
-  /** Path to companion workspace (auto-set for companion agents). @since 0.9 */
-  companionWorkspace?: string;
   /** Permission mode override for resume (preserves pre-restart mode) */
   permissionMode?: FreeAgentPermissionMode;
   /**

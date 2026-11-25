@@ -119,9 +119,6 @@ vi.stubGlobal('clubhouse', {
     updateDurableConfig: asyncNoop,
     spawnAgent: asyncNoop,
     killAgent: asyncNoop,
-    spawnCompanion: async () => 'companion-test',
-    getCompanionStatus: async () => 'none',
-    getCompanionWorkspace: async () => '/tmp/test-workspace',
     getModelOptions: async () => [],
     getContextWindowOptions: async () => ({ configurable: false, state: 'unsupported', label: 'Context', reason: 'No context setting.' }),
     checkOrchestrator: async () => ({ available: true }),
@@ -284,13 +281,6 @@ vi.stubGlobal('clubhouse', {
   },
   process: {
     exec: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
-  },
-  pluginMcp: {
-    contributeTools: asyncNoop,
-    removeTools: asyncNoop,
-    listTools: async () => [],
-    onToolCall: () => noop,
-    sendToolResult: noop,
   },
   app: {
     getAppUpdateRequest: async () => null,
