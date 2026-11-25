@@ -23,7 +23,7 @@
 export const ACP_PROTOCOL_VERSION = 1;
 
 /** Package and version the vendored schema came from (schema/PROVENANCE.md). */
-export const ACP_SCHEMA_SOURCE = { package: '@agentclientprotocol/sdk', version: '2.9.1', file: 'schema/v1/schema.json' } as const;
+export const ACP_SCHEMA_SOURCE = { package: '@agentclientprotocol/sdk', version: '2.12.0', file: 'schema/v1/schema.json' } as const;
 
 export const ACP_AGENT_METHODS = {
   initialize: 'initialize',
