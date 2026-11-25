@@ -6,7 +6,6 @@ import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcri
 import { sweepHandoffQuarantines } from './services/handoff-quarantine';
 import { scheduleChatMediaPrune } from './services/agent-runtime/chat-media-retention';
 import { registerAllHandlers } from './ipc';
-import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
 import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
@@ -15,6 +14,7 @@ import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
+import { removeCompanionState } from './services/companion-state-cleanup';
 import { startMainStallMonitor } from './services/main-stall-monitor';
 import { installProcessErrorHandlers } from './process-error-handlers';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
@@ -40,6 +40,7 @@ import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import { noteRetiredPlugins } from './services/retired-plugin-data';
 import { cleanupRemovedBlueprintData } from './services/removed-blueprints-cleanup';
+import { removeSavedChatCliDenylist } from './services/retired-chat-cli-denylist';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry } from './telemetry/crash-handlers';
@@ -272,11 +273,6 @@ app.on('ready', async () => {
 
   markStartup('register_ipc_start');
   registerAllHandlers();
-  // Only the main window's app page may mint plugin MCP tokens.
-  configurePluginMcpHost({
-    getMainWebContentsId: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined),
-    entryUrl: MAIN_WINDOW_WEBPACK_ENTRY,
-  });
   markStartup('register_ipc_end');
   // E2E only: a no-op unless unpackaged and asked for (#2490).
   installHelperDeliverySeam();
@@ -458,6 +454,9 @@ app.on('ready', async () => {
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
 
+  // Plugin companion agents were removed in Clubhouse 1.0: delete their workspaces.
+  void removeCompanionState(app.getPath('home'));
+
   // Delete plugin data left behind by removed built-in plugins (Hub, Sessions,
   // Agent Queue).
   projectStore.list()
@@ -493,6 +492,9 @@ app.on('ready', async () => {
     .catch((err) => {
       appLog('core:startup', 'warn', `Blueprint data cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
     });
+
+  // The remote chat CLI kill switch is gone (#3515): drop the list older builds saved.
+  void removeSavedChatCliDenylist(app.getPath('userData'));
 
   // Start stale session sweeps (safety net for leaked sessions)
   // Logs main-process stalls of a second or more with what was running (#3230).

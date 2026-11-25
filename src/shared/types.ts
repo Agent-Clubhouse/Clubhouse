@@ -75,7 +75,7 @@ export interface Project {
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';
-export type AgentKind = 'durable' | 'quick' | 'companion';
+export type AgentKind = 'durable' | 'quick';
 
 /**
  * Why an agent last went to sleep, and when (#2104). `idle`: the chat idle
@@ -139,10 +139,6 @@ export interface Agent extends ExecutionPolicy {
   resuming?: boolean;
   /** Plugin-supplied metadata for correlating agents to domain objects (e.g. boardId, cardId). */
   pluginMetadata?: Record<string, string>;
-  /** Plugin ID that owns this companion agent (v0.9+). */
-  pluginOwner?: string;
-  /** Path to companion workspace directory (v0.9+). */
-  companionWorkspace?: string;
   /** Quick agents: the directory the run was spawned in. */
   runCwd?: string;
   /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */
@@ -371,7 +367,11 @@ export interface DurableAgentConfig extends ExecutionPolicy {
    * old Dispatcher's `persona: 'dispatcher'` means nothing.
    */
   persona?: string;
-  /** Mission ID overriding the project default. Resolved to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  /**
+   * @deprecated Clubhouse Mode was retired (#2901). The mission id overriding
+   * the project default; only the switch to managed (managed-agents/legacy-migration)
+   * reads it, with `.clubhouse/missions/<id>.md`, to fill @@Mission.
+   */
   mission?: string;
   /** Per-agent override for @@BuildCommand (falls back to project default when unset). */
   buildCommand?: string;
@@ -1481,12 +1481,6 @@ export interface UpdateManifest {
   releaseMessage?: string;
   mandatory?: boolean;
   artifacts: Record<string, UpdateArtifact>;
-  /**
-   * Known-bad chat CLI versions (remote kill switch). Entries look like
-   * `{ driver?, provider?, versions?, range?: { from?, to? }, reason }` and
-   * are validated on receipt (chat-version-policy.ts).
-   */
-  chatCliDenylist?: unknown;
 }
 
 export interface UpdateStatus {

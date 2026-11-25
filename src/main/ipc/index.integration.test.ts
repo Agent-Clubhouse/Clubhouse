@@ -310,11 +310,6 @@ vi.mock('../services/agent-settings-service', () => ({
   readSkillContent: vi.fn(() => ''),
   writeSkillContent: vi.fn(),
   deleteSkill: vi.fn(),
-  listAgentTemplates: vi.fn(() => []),
-  readAgentTemplateContent: vi.fn(() => ''),
-  writeAgentTemplateContent: vi.fn(),
-  deleteAgentTemplate: vi.fn(),
-  listAgentTemplateFiles: vi.fn(() => []),
   listSourceSkills: vi.fn(() => []),
   readSourceSkillContent: vi.fn(() => ''),
   writeSourceSkillContent: vi.fn(),
@@ -649,12 +644,5 @@ describe('preload ↔ main composition', () => {
     for (const ch of MCP_BINDING_INVOKES) expect(preloadInvoked.has(ch)).toBe(true);
     const missing = [...MCP_BINDING_INVOKES].filter((ch) => !everHandled.has(ch));
     expect(missing).toEqual([]);
-  });
-
-  it('the plugin MCP channels are registered (#2054)', () => {
-    expect(handleHandlers.has(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS)).toBe(true);
-    expect(handleHandlers.has(IPC.PLUGIN_MCP.REMOVE_TOOLS)).toBe(true);
-    expect(handleHandlers.has(IPC.PLUGIN_MCP.LIST_TOOLS)).toBe(true);
-    expect(onHandlers.has(IPC.PLUGIN_MCP.TOOL_RESULT)).toBe(true);
   });
 });

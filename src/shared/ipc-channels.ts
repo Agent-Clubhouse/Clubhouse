@@ -190,9 +190,6 @@ export const IPC = {
     LIST_GRANT_REQUESTS: 'agent:list-grant-requests',
     ANSWER_GRANT_REQUEST: 'agent:answer-grant-request',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
-    LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
-    CREATE_SKILL: 'agent:create-skill',
-    CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
     AGENT_WAKING: 'agent:agent-waking',
@@ -202,9 +199,6 @@ export const IPC = {
     AGENT_SLEEPING: 'agent:agent-sleeping',
     /** (agentId, AgentSleepInfo): why an agent just went to sleep (#2104). */
     AGENT_SLEEP_REASON: 'agent:agent-sleep-reason',
-    SPAWN_COMPANION: 'agent:spawn-companion',
-    GET_COMPANION_STATUS: 'agent:get-companion-status',
-    GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
     GET_CONTEXT_WINDOW_OPTIONS: 'agent:get-context-window-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
@@ -224,10 +218,6 @@ export const IPC = {
     READ_SKILL_CONTENT: 'agent:read-skill-content',
     WRITE_SKILL_CONTENT: 'agent:write-skill-content',
     DELETE_SKILL: 'agent:delete-skill',
-    READ_AGENT_TEMPLATE_CONTENT: 'agent:read-agent-template-content',
-    WRITE_AGENT_TEMPLATE_CONTENT: 'agent:write-agent-template-content',
-    DELETE_AGENT_TEMPLATE: 'agent:delete-agent-template',
-    LIST_AGENT_TEMPLATE_FILES: 'agent:list-agent-template-files',
     READ_MCP_RAW_JSON: 'agent:read-mcp-raw-json',
     GET_MCP_SHADOW_WARNING: 'agent:get-mcp-shadow-warning',
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
@@ -237,7 +227,6 @@ export const IPC = {
     /** A plugin's instructions and MCP servers as Managed Agent parts (#3245). */
     SET_PLUGIN_MANAGED_PARTS: 'agent:set-plugin-managed-parts',
     READ_PLUGIN_MANAGED_PARTS: 'agent:read-plugin-managed-parts',
-    GET_CONVENTIONS: 'agent:get-conventions',
     // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
     DELETE_SOURCE_SKILL: 'agent:delete-source-skill',
@@ -723,22 +712,6 @@ export const IPC = {
     GET_TARGET_CANVASES: 'canvas-cmd:get-target-canvases',
     READ_FOR_NAVIGATION: 'canvas-cmd:read-for-navigation',
     RESOLVE_AGENT_TARGET: 'canvas-cmd:resolve-agent-target',
-  },
-  PLUGIN_MCP: {
-    /** Plugin host only, once per page load: the secret that issues tokens. */
-    CLAIM_ISSUER: 'plugin-mcp:claim-issuer',
-    ISSUE_TOKEN: 'plugin-mcp:issue-token',
-    REVOKE_TOKEN: 'plugin-mcp:revoke-token',
-    CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
-    REMOVE_TOOLS: 'plugin-mcp:remove-tools',
-    LIST_TOOLS: 'plugin-mcp:list-tools',
-    /** Main→renderer push: delivers tool call to plugin handler. Not an ipcMain.handle channel. */
-    TOOL_CALL: 'plugin-mcp:tool-call',
-    TOOL_RESULT: 'plugin-mcp:tool-result',
-    /** Plugin host only: may the agent behind a call the plugin is answering do this (D126, #3168)? */
-    CHECK_CALLER: 'plugin-mcp:check-caller',
-    /** Main→renderer push: main settled a call without the plugin's answer (timeout, tools removed). */
-    CALL_ENDED: 'plugin-mcp:call-ended',
   },
   /** Actions (#2918): workflows that run on a schedule, on events, or once. */
   ACTIONS: {

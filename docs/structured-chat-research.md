@@ -499,7 +499,7 @@ The embedded terminal stays first-class. Chat is never the only way to run an ag
 - **Per-provider setting, with a per-agent override.** If a Codex release breaks app-server, Codex alone flips to Terminal.
 - **Same session in either view.** The chat captures the native session id, and the terminal resumes it with `claude --resume`, `codex resume` or `copilot --resume`. The Chat / Terminal switch hands the session over instead of starting a new one.
 - **Automatic fallback, on real failures only.** If the handshake fails, a required capability is missing, the CLI is below the minimum version, or the version is on the known-bad list, the agent opens in the next mode down. A CLI newer than the tested range keeps chat and shows a quiet "untested version" note, because these CLIs release daily. The fallback order is SDK, then stream-json, then terminal for Claude, and chat, then terminal for the others. A one-line notice says why.
-- **Remote kill switch.** A small denylist of known-bad CLI versions, shipped with the update metadata, can force a lower mode without an app release.
+- **Remote kill switch (not built).** The idea was a small denylist of known-bad CLI versions in the update metadata. It shipped and was removed in #3515: a bad CLI release is answered with an app release, using the minimum versions in `chat-version-policy.ts`.
 
 ### 7.2 The agent runtime seam
 

@@ -46,7 +46,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
 
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { FEDERATION_TOOLS, FEDERATION_DISABLED_TOOLS, setFederationLookup } from '../dispatcher-federation-policy';
-import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getConnectionToolCatalog, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, getConnectionToolCatalog, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { MCP_CALLER_UNKNOWN_MESSAGE } from '../../../shared/orchestration-policy';
 import { registerBuiltinProviders } from '../../orchestrators';
@@ -1104,23 +1104,10 @@ describe('ToolRegistry', () => {
       await updateAgentGrantChanges('agent-1', () => undefined);
     });
 
-    it('scopes contributed templates to their target and explicitly reports an unloaded plugin', () => {
-      registerToolTemplate('plugin', 'generic', definition, vi.fn(), { grant: 'plugin' });
-      expect(getConnectionToolCatalog('agent-1', 'missing', 'plugin')).toEqual({
+    it('reports a plugin wire as having no tools (plugin MCP tools were removed)', () => {
+      expect(getConnectionToolCatalog('agent-1', 'acme', 'plugin')).toEqual({
         state: 'unavailable', reason: 'tools_not_registered', tools: [],
       });
-      setTargetToolTemplates('plugin', 'registered', [{
-        nameSuffix: 'lookup', definition, handler: vi.fn(), grant: 'plugin',
-      }]);
-      expect(getConnectionToolCatalog('agent-1', 'registered', 'plugin')).toEqual({
-        state: 'available',
-        tools: [{ suffix: 'lookup', description: definition.description, available: true }],
-      });
-      expect(getConnectionToolCatalog('agent-1', 'missing', 'plugin')).toEqual({
-        state: 'unavailable', reason: 'tools_not_registered', tools: [],
-      });
-      setTargetToolTemplates('plugin', 'empty', []);
-      expect(getConnectionToolCatalog('agent-1', 'empty', 'plugin')).toEqual({ state: 'available', tools: [] });
     });
   });
 
@@ -1222,22 +1209,6 @@ describe('ToolRegistry', () => {
       expect(handler).not.toHaveBeenCalled();
 
       expect((await callTool('agent-1', name('other_tool'), { text: 'x' })).content[0].text).toBe('ran');
-    });
-
-    it('refuses it on a plugin wire', async () => {
-      const handler = vi.fn().mockResolvedValue(result);
-      setTargetToolTemplates('plugin', 'acme', [
-        { nameSuffix: 'do-thing', definition: def, handler },
-        { nameSuffix: 'other_tool', definition: def, handler },
-      ]);
-      bindingManager.bind('agent-1', { targetId: 'acme', targetKind: 'plugin', label: 'Acme' });
-      bindingManager.setDisabledTools('agent-1', 'acme', ['do-thing']);
-
-      const refused = await callTool('agent-1', 'plugin__acme__do-thing', { text: 'x' });
-      expect(refused.content[0].text).toBe('do-thing is turned off on this wire.');
-      expect(refusalReasonOf(refused)).toBe('tool_denied');
-      expect(handler).not.toHaveBeenCalled();
-      expect((await callTool('agent-1', 'plugin__acme__other_tool', { text: 'x' })).content[0].text).toBe('ran');
     });
 
     it('takes effect at once, and lifts when the tool is turned back on', async () => {

@@ -4,7 +4,6 @@ import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors, ThemeFon
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI, computeWorkspaceRoot } from './plugin-api-factory';
-import { claimPluginMcpIssuer } from './plugin-mcp-host';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds, type ExperimentalFlags } from './builtin';
@@ -246,10 +245,6 @@ export function getBuiltinProjectPluginIds(experimentalFlags: ExperimentalFlags 
 
 export async function initializePluginSystem(): Promise<void> {
   const store = usePluginStore.getState();
-
-  // Before any plugin code loads: the issuer can be claimed once per page,
-  // and whoever claims it can mint every plugin's MCP token.
-  claimPluginMcpIssuer();
 
   // Main decides safe mode at startup (crash-loop dialog or --safe-mode).
   if (await window.clubhouse.plugin.isSafeModeActive()) {
@@ -756,7 +751,7 @@ async function activatePluginNow(
         );
       }
 
-      // Auto-register manifest-declared command hotkeys (v0.6+)
+      // Auto-register manifest-declared command hotkeys
       const commands = entry.manifest.contributes?.commands;
       if (commands) {
         for (const cmd of commands) {

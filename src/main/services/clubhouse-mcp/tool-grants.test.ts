@@ -6,12 +6,11 @@ vi.mock('../plugin-manifest-registry', () => ({
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
 import { getAttributeSpec } from '../../../shared/telemetry/attributes';
-import { buildToolName, dispatcherToolActions, grantToolMap, listToolGrants, _resetForTesting } from './tool-registry';
+import { buildToolName, dispatcherToolActions, grantToolMap, listToolGrants, registerToolTemplate, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { defaultGrants } from '../../../shared/default-grants';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { registerPluginTools, _resetForTesting as resetPluginTools } from './plugin-tool-registry';
 import { describeToolGrant, isToolGrantPassThrough, toolGrantDeclarations, TOOL_GRANT_TARGETS } from './tool-grants';
 
 /** Registers every tool the way the app does at startup (mcp-binding-handlers). */
@@ -25,7 +24,6 @@ function registerAll() {
 describe('tool grant declarations (#2967)', () => {
   beforeEach(() => {
     _resetForTesting();
-    resetPluginTools();
   });
 
   it('every tool the app registers declares its grant', () => {
@@ -114,7 +112,7 @@ describe('tool grant declarations (#2967)', () => {
   });
 
   it('plugin tools are marked as plugin tools, with no action', () => {
-    registerPluginTools('acme', [{ name: 'lookup', description: 'Look up', inputSchema: {} }]);
+    registerToolTemplate('plugin', 'lookup', { description: 'Look up', inputSchema: { type: 'object', properties: {} } }, async () => ({ content: [] }), { grant: 'plugin' });
     expect(listToolGrants()).toEqual([{
       kind: 'plugin', name: 'lookup', grant: 'plugin',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },

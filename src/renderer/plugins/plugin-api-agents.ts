@@ -9,9 +9,9 @@ import type {
   ModelOption,
   Disposable,
 } from '../../shared/plugin-types';
-import { ACCESS_LEVELS, accessLabel, isAccessLevel, isLegacyFreeAgent, type AccessLevel } from '../../shared/agent-access';
+import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from '../../shared/agent-access';
 import { hasPermission } from './plugin-api-shared';
-import { pluginAnsweringLevel } from './plugin-mcp-host';
+import { rejectRemovedPluginFeature } from './plugin-api-removed';
 import { useAgentStore } from '../stores/agentStore';
 import { getAgentStatus, onChatStatusChange } from '../features/agents/agent-status-store';
 import { useProjectStore } from '../stores/projectStore';
@@ -19,17 +19,6 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
 import { useRemoteProjectStore, parseNamespacedId } from '../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../stores/annexClientStore';
-
-/**
- * While the plugin answers an agent's tool call, an agent it starts stays at or below that
- * agent's running level (D126, #3161). `ceiling` is pluginAnsweringLevel, read once before
- * anything awaits. Null when it may, else the refusal. Outside a call the plugin acts for the
- * person, with what its manifest allows.
- */
-function answeringRefusal(pluginId: string, ceiling: AccessLevel | undefined, level: AccessLevel, why: string, fix: (ceiling: string) => string): string | null {
-  if (!ceiling || ACCESS_LEVELS.indexOf(level) <= ACCESS_LEVELS.indexOf(ceiling)) return null;
-  return `Plugin '${pluginId}' is answering a tool call from an agent that runs at ${accessLabel(ceiling)}, so it can't start an agent at ${accessLabel(level)}${why}: an agent never sets Access above its own, even through a plugin. ${fix(accessLabel(ceiling))}`;
-}
 
 export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsAPI {
   // A local agent's sessions live under its own project. App-scope plugins
@@ -115,27 +104,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       }
 
       // Without the permission a plugin's agent never starts above Ask first, whatever the Default access (#2761).
-      let access: AccessLevel | boolean | undefined = options.access ?? (elevated ? options.freeAgentMode : 'ask');
-      // Read once: the call may end while this awaits the Default access.
-      const ceiling = pluginAnsweringLevel(ctx.pluginId);
-      if (ceiling) {
-        // Answering an agent: the level is worked out here as main would, and the one checked is the one made.
-        let level: AccessLevel;
-        let why = '';
-        if (typeof access === 'string') level = access;
-        // Its highest meaning is Full access; allowed only under a caller at Full access, it is sent as is for main to map.
-        else if (access === true) { level = 'full_access'; why = ' (freeAgentMode can mean Full access)'; }
-        else {
-          const base = await window.clubhouse.app.getDefaultAccess();
-          const fallback: AccessLevel = isAccessLevel(base) ? base : 'ask';
-          // Off keeps a Default that is already off, or becomes Ask first; unset is the Default.
-          level = access === false && isLegacyFreeAgent(fallback) ? 'ask' : fallback;
-          if (access === undefined) why = ' (the Default access for new agents)';
-        }
-        const refused = answeringRefusal(ctx.pluginId, ceiling, level, why, (c) => `Pass access at or below ${c}, or ask the person to start it.`);
-        if (refused) throw new Error(refused);
-        if (access !== true) access = level;
-      }
+      const access: AccessLevel | boolean | undefined = options.access ?? (elevated ? options.freeAgentMode : 'ask');
       const model = options.model && options.model !== 'default' ? options.model : undefined;
       const config = await window.clubhouse.agent.createDurable(
         projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator,
@@ -162,10 +131,6 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       if (!projectId || !projectPath) {
         throw new Error('runQuick requires a project context');
       }
-      // A quick agent with Free Agent Mode can run at Full access; without it, at Ask first (D126, #3161).
-      const refused = answeringRefusal(ctx.pluginId, pluginAnsweringLevel(ctx.pluginId), options?.freeAgentMode ? 'full_access' : 'ask', options?.freeAgentMode ? ' (freeAgentMode can mean Full access)' : '',
-        () => 'Leave freeAgentMode out, or ask the person to start it.');
-      if (refused) throw new Error(refused);
       return useAgentStore.getState().spawnQuickAgent(
         projectId,
         projectPath,
@@ -412,15 +377,9 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       }
     },
 
-    // v0.9 companion agent methods
-    async spawnCompanion(options?: { model?: string; systemPrompt?: string }) {
-      return window.clubhouse.agent.spawnCompanion(ctx.pluginId, options);
-    },
-    async getCompanionStatus() {
-      return window.clubhouse.agent.getCompanionStatus(ctx.pluginId);
-    },
-    async getCompanionWorkspace() {
-      return window.clubhouse.agent.getCompanionWorkspace(ctx.pluginId);
-    },
+    // Companion agents were removed in Clubhouse 1.0.
+    spawnCompanion: () => rejectRemovedPluginFeature(ctx.pluginId, 'companion agents', 'agents.spawnCompanion'),
+    getCompanionStatus: () => rejectRemovedPluginFeature(ctx.pluginId, 'companion agents', 'agents.getCompanionStatus'),
+    getCompanionWorkspace: () => rejectRemovedPluginFeature(ctx.pluginId, 'companion agents', 'agents.getCompanionWorkspace'),
   };
 }

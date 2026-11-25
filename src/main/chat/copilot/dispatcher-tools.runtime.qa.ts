@@ -20,7 +20,7 @@ import * as path from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/log-service', () => ({ appLog: () => undefined }));
-vi.mock('../../services/plugin-manifest-registry', () => ({ getManifest: () => ({ permissions: ['mcp.tools'] }) }));
+vi.mock('../../services/plugin-manifest-registry', () => ({ getManifest: () => ({ permissions: [] }) }));
 vi.mock('../../services/dispatcher/dispatcher-settings', async (original) => ({
   ...await original<typeof import('../../services/dispatcher/dispatcher-settings')>(),
   isDispatcherEnabled: () => true,

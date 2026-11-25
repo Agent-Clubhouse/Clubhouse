@@ -23,15 +23,12 @@ import { createThemeAPI } from './plugin-api-theme';
 import { createCanvasAPI } from './plugin-api-canvas';
 import { createWindowAPI } from './plugin-api-window';
 import { createAnnexAPI } from './plugin-api-annex';
-import { createMcpAPI } from './plugin-mcp-host';
-import { guardNamespace } from './plugin-api-guard';
+import { createRemovedMcpAPI } from './plugin-api-removed';
 
 // Re-export test helpers and utilities used by external consumers
 export { _resetEnforcedViolations } from './plugin-api-shared';
 export { computeDataDir, computeWorkspaceRoot } from './plugin-api-files';
 export { _resetBadgeStoreCache } from './plugin-api-badges';
-
-export { _resetPluginMcpStateForTests } from './plugin-mcp-host';
 
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
   // Capture the activation context once. API methods use this ID even if the
@@ -54,9 +51,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
   const projectsAvailable = ctx.scope === 'app' || isDual || (ctx.scope === 'project' && apiVersion >= 0.8);
   const scopeLabel = effectiveMode === 'app' ? 'app' : ctx.scope;
 
-  // While the plugin answers an agent's tool call, what it changes is checked against that agent (D126, #3174).
-  const guardScope = { ctx, manifest, base: ctx.projectPath };
-  const guard = <T,>(ns: string, value: T): T => guardNamespace(ns, value, guardScope);
 
   const contextInfo: PluginContextInfo = {
     mode: effectiveMode,
@@ -67,97 +61,94 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
   const api: PluginAPI = {
     project: gated(
       projectAvailable && !!ctx.projectPath && !!ctx.projectId, scopeLabel, 'project', 'files',
-      ctx.pluginId, manifest, () => guard('project', createProjectAPI(ctx)),
+      ctx.pluginId, manifest, () => createProjectAPI(ctx),
     ),
     projects: gated(
       projectsAvailable, 'project', 'projects', 'projects',
-      ctx.pluginId, manifest, () => guard('projects', createProjectsAPI()),
+      ctx.pluginId, manifest, () => createProjectsAPI(),
     ),
     git: gated(
       projectAvailable && !!ctx.projectPath, scopeLabel, 'git', 'git',
-      ctx.pluginId, manifest, () => guard('git', createGitAPI(ctx)),
+      ctx.pluginId, manifest, () => createGitAPI(ctx),
     ),
     storage: gated(
       true, scopeLabel, 'storage', 'storage',
-      ctx.pluginId, manifest, () => guard('storage', createStorageAPI(ctx)),
+      ctx.pluginId, manifest, () => createStorageAPI(ctx),
     ),
     ui: gated(
       true, scopeLabel, 'ui', 'notifications',
-      ctx.pluginId, manifest, () => guard('ui', createUIAPI(ctx)),
+      ctx.pluginId, manifest, () => createUIAPI(ctx),
     ),
     commands: gated(
       true, scopeLabel, 'commands', 'commands',
-      ctx.pluginId, manifest, () => guard('commands', createCommandsAPI(ctx)),
+      ctx.pluginId, manifest, () => createCommandsAPI(ctx),
     ),
     events: gated(
       true, scopeLabel, 'events', 'events',
-      ctx.pluginId, manifest, () => guard('events', createEventsAPI()),
+      ctx.pluginId, manifest, () => createEventsAPI(),
     ),
-    settings: guard('settings', createSettingsAPI(ctx)), // always available
+    settings: createSettingsAPI(ctx), // always available
     agents: gated(
       true, scopeLabel, 'agents', 'agents',
-      ctx.pluginId, manifest, () => guard('agents', createAgentsAPI(ctx, manifest)),
+      ctx.pluginId, manifest, () => createAgentsAPI(ctx, manifest),
     ),
     navigation: gated(
       true, scopeLabel, 'navigation', 'navigation',
-      ctx.pluginId, manifest, () => guard('navigation', createNavigationAPI()),
+      ctx.pluginId, manifest, () => createNavigationAPI(),
     ),
     widgets: gated(
       true, scopeLabel, 'widgets', 'widgets',
-      ctx.pluginId, manifest, () => guard('widgets', createWidgetsAPI()),
+      ctx.pluginId, manifest, () => createWidgetsAPI(),
     ),
     terminal: gated(
       true, scopeLabel, 'terminal', 'terminal',
-      ctx.pluginId, manifest, () => guard('terminal', createTerminalAPI(ctx)),
+      ctx.pluginId, manifest, () => createTerminalAPI(ctx),
     ),
     logging: gated(
       true, scopeLabel, 'logging', 'logging',
-      ctx.pluginId, manifest, () => guard('logging', createLoggingAPI(ctx)),
+      ctx.pluginId, manifest, () => createLoggingAPI(ctx),
     ),
     files: gated(
       projectAvailable && !!ctx.projectPath, scopeLabel, 'files', 'files',
-      ctx.pluginId, manifest, () => guard('files', createFilesAPI(ctx, manifest)),
+      ctx.pluginId, manifest, () => createFilesAPI(ctx, manifest),
     ),
     process: gated(
       (projectAvailable && !!ctx.projectPath) || hasPermission(manifest, 'process'),
       scopeLabel, 'process', 'process',
-      ctx.pluginId, manifest, () => guard('process', createProcessAPI(ctx, manifest)),
+      ctx.pluginId, manifest, () => createProcessAPI(ctx, manifest),
     ),
     badges: gated(
       true, scopeLabel, 'badges', 'badges',
-      ctx.pluginId, manifest, () => guard('badges', createBadgesAPI(ctx)),
+      ctx.pluginId, manifest, () => createBadgesAPI(ctx),
     ),
     agentConfig: gated(
       // Available in project mode (as before), OR in app/dual-app mode when plugin has cross-project permission
       (projectAvailable && !!ctx.projectPath) || hasPermission(manifest, 'agent-config.cross-project'),
       scopeLabel, 'agentConfig', 'agent-config',
-      ctx.pluginId, manifest, () => guard('agentConfig', createAgentConfigAPI(ctx, manifest)),
+      ctx.pluginId, manifest, () => createAgentConfigAPI(ctx, manifest),
     ),
     sounds: gated(
       true, scopeLabel, 'sounds', 'sounds',
-      ctx.pluginId, manifest, () => guard('sounds', createSoundsAPI(ctx)),
+      ctx.pluginId, manifest, () => createSoundsAPI(ctx),
     ),
     theme: gated(
       true, scopeLabel, 'theme', 'theme',
-      ctx.pluginId, manifest, () => guard('theme', createThemeAPI(ctx)),
+      ctx.pluginId, manifest, () => createThemeAPI(ctx),
     ),
     workspace: gated(
       true, scopeLabel, 'workspace', 'workspace',
-      ctx.pluginId, manifest, () => guard('workspace', createWorkspaceAPI(ctx, manifest)),
+      ctx.pluginId, manifest, () => createWorkspaceAPI(ctx, manifest),
     ),
     canvas: gated(
       true, scopeLabel, 'canvas', 'canvas',
-      ctx.pluginId, manifest, () => guard('canvas', createCanvasAPI(ctx, manifest, () => apiRef.current!)),
+      ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest, () => apiRef.current!),
     ),
-    window: guard('window', createWindowAPI(ctx, manifest)), // always available (v0.8+)
+    window: createWindowAPI(ctx, manifest), // always available (v0.8+)
     annex: gated(
       true, scopeLabel, 'annex', 'annex',
-      ctx.pluginId, manifest, () => guard('annex', createAnnexAPI(ctx)),
+      ctx.pluginId, manifest, () => createAnnexAPI(ctx),
     ),
-    mcp: gated(
-      true, scopeLabel, 'mcp', 'mcp.tools',
-      ctx.pluginId, manifest, () => guard('mcp', createMcpAPI(ctx)),
-    ),
+    mcp: createRemovedMcpAPI(ctx), // removed in Clubhouse 1.0: every method rejects
     context: contextInfo, // always available
   };
 

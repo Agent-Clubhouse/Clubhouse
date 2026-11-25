@@ -120,7 +120,9 @@ async function connect(server: CopilotServer): Promise<CopilotClient> {
   const client = new CopilotClient({
     runtime: RuntimeConnection.forTcp(server.host, server.port, { connectionToken: server.connectionToken }),
     mode: 'coding-agent',
-    observability: { logLevel: 'error' },
+    // No observability.logLevel: SDK 2.0.2 refuses runtime startup options on an
+    // attached (TCP) runtime. On TCP it only ever gated the SDK's own debug output,
+    // which is off when unset, and the CLI we launch takes its log level from its args.
   });
   markFailedCopilotWritesFromStart(client);
   try {

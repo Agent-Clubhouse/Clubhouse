@@ -14,7 +14,6 @@ import { legacyDefaults } from './legacyDefaults';
 import { file } from './file';
 import { plugin } from './plugin';
 import { marketplace } from './marketplace';
-import { pluginMcp } from './pluginMcp';
 import { log } from './log';
 import { process as processApi } from './process';
 import { app } from './app';
@@ -68,7 +67,6 @@ export const api = {
   ...file,
   ...plugin,
   ...marketplace,
-  ...pluginMcp,
   ...log,
   ...processApi,
   ...app,

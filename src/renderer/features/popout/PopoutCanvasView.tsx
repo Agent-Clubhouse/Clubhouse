@@ -26,6 +26,7 @@ import type { CanvasPopoutReveal } from '../../../shared/canvas-index-types';
 import { isCanvasTargetView } from '../../../shared/canvas-persistence';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { viewStructure } from '../../plugins/builtin/canvas/canvas-navigation-handoff';
+import { removedPluginFeatureMessage } from '../../../shared/removed-plugin-features';
 
 interface PopoutCanvasViewProps {
   canvasId?: string;
@@ -133,9 +134,9 @@ function createPopoutApi(projectId?: string): PluginAPI {
     listSessions: () => Promise.resolve([]),
     readSessionTranscript: () => Promise.resolve(null),
     getSessionSummary: () => Promise.resolve(null),
-    spawnCompanion: () => Promise.reject(new Error('Not available in popout')),
-    getCompanionStatus: () => Promise.resolve('none' as const),
-    getCompanionWorkspace: () => Promise.reject(new Error('Not available in popout')),
+    spawnCompanion: () => Promise.reject(new Error(removedPluginFeatureMessage('companion agents'))),
+    getCompanionStatus: () => Promise.reject(new Error(removedPluginFeatureMessage('companion agents'))),
+    getCompanionWorkspace: () => Promise.reject(new Error(removedPluginFeatureMessage('companion agents'))),
   };
 
   const projects: ProjectsAPI = {

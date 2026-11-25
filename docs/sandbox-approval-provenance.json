@@ -7,7 +7,7 @@
   "schemaCommand": "env -i PATH=/opt/homebrew/bin:/usr/bin:/bin HOME=<temporary-home> CODEX_HOME=<temporary-home> sandbox-exec -p '(version 1)(allow default)(deny network*)' /opt/homebrew/bin/codex app-server generate-json-schema --out <temporary-output>",
   "modelTurns": 0,
   "credentials": false,
-  "repoVendoredSchemaVersion": "0.166.0",
+  "repoVendoredSchemaVersion": "0.172.0",
   "schema": {
     "v2/ThreadStartParams.json": {
       "sha256": "e9c6d3cc18d049bfbc0249add3808fb8e5a27e1a0b5a423767aafbc3859a9428",

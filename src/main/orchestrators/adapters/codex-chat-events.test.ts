@@ -587,6 +587,11 @@ describe('codex chat helpers', () => {
     ['rateLimitExceeded', 'rate_limited'],
     ['unauthorized', 'auth_required'],
     ['cyberPolicy', 'refusal'],
+    ['bioPolicy', 'refusal'],
+    ['inferenceHookDenied', 'hook_denied'],
+    ['apiKeySpendLimitExceeded', 'account_issue'],
+    ['projectSpendLimitExceeded', 'account_issue'],
+    ['organizationSpendLimitExceeded', 'account_issue'],
     ['sandboxError', 'tool_failed'],
     ['badRequest', 'protocol_error'],
     ['serverOverloaded', 'service_unavailable'],
@@ -605,11 +610,32 @@ describe('codex chat helpers', () => {
     expect(codexErrorCode(info)).toBe(code);
   });
 
-  it('a policy refusal ends the turn as refusal', () => {
+  it.each(['cyberPolicy', 'bioPolicy'] as const)('a policy refusal (%s) ends the turn as refusal', (info) => {
     const mapper = new CodexChatEventMapper();
-    const turn = { ...fx.failedTurnCompleted.params.turn, error: { ...fx.failedTurnCompleted.params.turn.error!, codexErrorInfo: 'cyberPolicy' as const } };
+    const turn = { ...fx.failedTurnCompleted.params.turn, error: { ...fx.failedTurnCompleted.params.turn.error!, codexErrorInfo: info } };
     const events = mapper.mapNotification({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn } });
+    expect(events[0]).toMatchObject({ type: 'error', data: { code: 'refusal' } });
     expect(events[1]).toMatchObject({ type: 'turn_ended', data: { stopReason: 'refusal' } });
+  });
+
+  it('a declined inference hook is hook_denied, says so ahead of the hook\'s own text, and ends the turn in error', () => {
+    const mapper = new CodexChatEventMapper();
+    const base = fx.failedTurnCompleted.params.turn.error!;
+    const turn = { ...fx.failedTurnCompleted.params.turn, error: { ...base, message: 'Hook "org-dlp" denied the request', additionalDetails: null, codexErrorInfo: 'inferenceHookDenied' as const } };
+    const events = mapper.mapNotification({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn } });
+    expect(events[0]).toMatchObject({ type: 'error', data: { code: 'hook_denied', message: 'A configured Codex inference hook declined this request: Hook "org-dlp" denied the request' } });
+    expect(events[1]).toMatchObject({ type: 'turn_ended', data: { stopReason: 'error' } });
+  });
+
+  it('reports a notification or item type it has no mapping for once per name', () => {
+    const unhandled: string[] = [];
+    const mapper = new CodexChatEventMapper((kind, name) => unhandled.push(`${kind}:${name}`));
+    const drift = { method: 'thread/brandNew', params: {} } as unknown as Parameters<CodexChatEventMapper['mapNotification']>[0];
+    expect(mapper.mapNotification(drift)).toEqual([]);
+    expect(mapper.mapNotification(drift)).toEqual([]);
+    const completed = { method: 'item/completed', params: { threadId: fx.THREAD_ID, turnId: 't1', item: { type: 'brandNewItem', id: 'i1' } } };
+    mapper.mapNotification(completed as unknown as Parameters<CodexChatEventMapper['mapNotification']>[0]);
+    expect(unhandled).toEqual(['notification:thread/brandNew', 'item:brandNewItem']);
   });
 
   it('maps a thread rename to session_info', () => {

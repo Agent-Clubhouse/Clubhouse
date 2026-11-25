@@ -10,20 +10,13 @@ vi.mock('../services/agent-settings-service', () => ({
   writeClaudeMd: vi.fn(async () => undefined),
   readMcpConfig: vi.fn(async () => [{ name: 'server-1' }]),
   listSkills: vi.fn(async () => ['skill-a']),
-  listAgentTemplates: vi.fn(async () => ['template-a']),
   listSourceSkills: vi.fn(async () => ['src-skill']),
   listSourceAgentTemplates: vi.fn(async () => ['src-template']),
-  createSkillDir: vi.fn(async () => '/path/to/skill'),
-  createAgentTemplateDir: vi.fn(async () => '/path/to/template'),
   readPermissions: vi.fn(async () => ({ allow: ['read'] })),
   writePermissions: vi.fn(async () => undefined),
   readSkillContent: vi.fn(async () => 'skill content'),
   writeSkillContent: vi.fn(async () => undefined),
   deleteSkill: vi.fn(async () => undefined),
-  readAgentTemplateContent: vi.fn(async () => 'template content'),
-  writeAgentTemplateContent: vi.fn(async () => undefined),
-  deleteAgentTemplate: vi.fn(async () => undefined),
-  listAgentTemplateFiles: vi.fn(async () => ['file.md']),
   readMcpRawJson: vi.fn(async () => '{"mcpServers": {}}'),
   writeMcpRawJson: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({ model: 'default' })),
@@ -140,20 +133,26 @@ describe('agent-settings-handlers', () => {
   it('registers all agent-settings IPC handlers', () => {
     const expectedChannels = [
       IPC.AGENT.READ_INSTRUCTIONS, IPC.AGENT.SAVE_INSTRUCTIONS,
-      IPC.AGENT.READ_MCP_CONFIG, IPC.AGENT.LIST_SKILLS, IPC.AGENT.LIST_AGENT_TEMPLATES,
-      IPC.AGENT.CREATE_SKILL, IPC.AGENT.CREATE_AGENT_TEMPLATE,
+      IPC.AGENT.READ_MCP_CONFIG, IPC.AGENT.LIST_SKILLS,
       IPC.AGENT.READ_PERMISSIONS, IPC.AGENT.SAVE_PERMISSIONS,
       IPC.AGENT.READ_SKILL_CONTENT, IPC.AGENT.WRITE_SKILL_CONTENT, IPC.AGENT.DELETE_SKILL,
-      IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_AGENT_TEMPLATE,
-      IPC.AGENT.LIST_AGENT_TEMPLATE_FILES,
       IPC.AGENT.READ_MCP_RAW_JSON, IPC.AGENT.WRITE_MCP_RAW_JSON,
       IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS,
-      IPC.AGENT.GET_CONVENTIONS,
       IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, IPC.AGENT.DELETE_SOURCE_SKILL,
       IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
+    }
+  });
+
+  it('no longer registers the removed template, skill-folder and conventions channels', () => {
+    for (const channel of [
+      'agent:list-agent-templates', 'agent:create-skill', 'agent:create-agent-template',
+      'agent:read-agent-template-content', 'agent:write-agent-template-content',
+      'agent:delete-agent-template', 'agent:list-agent-template-files', 'agent:get-conventions',
+    ]) {
+      expect(handlers.has(channel)).toBe(false);
     }
   });
 
@@ -215,13 +214,6 @@ describe('agent-settings-handlers', () => {
     expect(result).toEqual(['skill-a']);
   });
 
-  it('CREATE_SKILL delegates to agentSettings.createSkillDir', async () => {
-    const handler = handlers.get(IPC.AGENT.CREATE_SKILL)!;
-    const result = await handler({}, '/base', 'my-skill', false);
-    expect(agentSettings.createSkillDir).toHaveBeenCalled();
-    expect(result).toBe('/path/to/skill');
-  });
-
   it('READ_SKILL_CONTENT delegates to agentSettings.readSkillContent', async () => {
     const handler = handlers.get(IPC.AGENT.READ_SKILL_CONTENT)!;
     const result = await handler({}, '/worktree', 'skill-a');
@@ -253,48 +245,6 @@ describe('agent-settings-handlers', () => {
     const handler = handlers.get(IPC.AGENT.DELETE_SOURCE_SKILL)!;
     await handler({}, '/project', 'src-skill');
     expect(agentSettings.deleteSourceSkill).toHaveBeenCalledWith('/project', 'src-skill');
-  });
-
-  // --- Agent templates ---
-
-  it('LIST_AGENT_TEMPLATES delegates to agentSettings.listAgentTemplates', async () => {
-    const handler = handlers.get(IPC.AGENT.LIST_AGENT_TEMPLATES)!;
-    const result = await handler({}, '/worktree');
-    expect(agentSettings.listAgentTemplates).toHaveBeenCalled();
-    expect(result).toEqual(['template-a']);
-  });
-
-  it('CREATE_AGENT_TEMPLATE delegates to agentSettings.createAgentTemplateDir', async () => {
-    const handler = handlers.get(IPC.AGENT.CREATE_AGENT_TEMPLATE)!;
-    const result = await handler({}, '/base', 'my-template', true);
-    expect(agentSettings.createAgentTemplateDir).toHaveBeenCalled();
-    expect(result).toBe('/path/to/template');
-  });
-
-  it('READ_AGENT_TEMPLATE_CONTENT delegates to agentSettings', async () => {
-    const handler = handlers.get(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT)!;
-    const result = await handler({}, '/worktree', 'template-a');
-    expect(agentSettings.readAgentTemplateContent).toHaveBeenCalled();
-    expect(result).toBe('template content');
-  });
-
-  it('WRITE_AGENT_TEMPLATE_CONTENT delegates to agentSettings', async () => {
-    const handler = handlers.get(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT)!;
-    await handler({}, '/worktree', 'template-a', 'updated');
-    expect(agentSettings.writeAgentTemplateContent).toHaveBeenCalled();
-  });
-
-  it('DELETE_AGENT_TEMPLATE delegates to agentSettings', async () => {
-    const handler = handlers.get(IPC.AGENT.DELETE_AGENT_TEMPLATE)!;
-    await handler({}, '/worktree', 'template-a');
-    expect(agentSettings.deleteAgentTemplate).toHaveBeenCalled();
-  });
-
-  it('LIST_AGENT_TEMPLATE_FILES delegates to agentSettings', async () => {
-    const handler = handlers.get(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES)!;
-    const result = await handler({}, '/worktree');
-    expect(agentSettings.listAgentTemplateFiles).toHaveBeenCalled();
-    expect(result).toEqual(['file.md']);
   });
 
   // --- Source agent templates ---
@@ -373,21 +323,6 @@ describe('agent-settings-handlers', () => {
     expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
   });
 
-  // --- Conventions ---
-
-  it('GET_CONVENTIONS returns provider conventions', async () => {
-    const handler = handlers.get(IPC.AGENT.GET_CONVENTIONS)!;
-    const result = await handler({}, '/project');
-    expect(result).toEqual({ configDir: '.claude', localInstructionsFile: 'CLAUDE.md' });
-  });
-
-  it('GET_CONVENTIONS returns null when resolveOrchestrator throws', async () => {
-    vi.mocked(agentSystem.resolveOrchestrator).mockRejectedValueOnce(new Error('not found'));
-    const handler = handlers.get(IPC.AGENT.GET_CONVENTIONS)!;
-    const result = await handler({}, '/project');
-    expect(result).toBeNull();
-  });
-
   // --- Input validation ---
 
   it('rejects non-string worktreePath for READ_INSTRUCTIONS', () => {
@@ -398,11 +333,6 @@ describe('agent-settings-handlers', () => {
   it('rejects non-string content for SAVE_INSTRUCTIONS', () => {
     const handler = handlers.get(IPC.AGENT.SAVE_INSTRUCTIONS)!;
     expect(() => handler({}, '/worktree', null)).toThrow('must be a string');
-  });
-
-  it('rejects non-boolean isSource for CREATE_SKILL', () => {
-    const handler = handlers.get(IPC.AGENT.CREATE_SKILL)!;
-    expect(() => handler({}, '/base', 'skill', 'not-bool')).toThrow('must be a boolean');
   });
 
   it('rejects non-object permissions for SAVE_PERMISSIONS', () => {
