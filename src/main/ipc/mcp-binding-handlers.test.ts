@@ -679,6 +679,12 @@ describe('REGISTER_WEBVIEW', () => {
     expect(registerWebview).toHaveBeenCalledWith('widget-1', 42);
   });
 
+  it('returns whether the webview was accepted', () => {
+    vi.mocked(registerWebview).mockReturnValueOnce(false);
+    const handler = getHandler(IPC.MCP_BINDING.REGISTER_WEBVIEW);
+    expect(handler(fakeEvent, 'widget-1', '7')).toBe(false);
+  });
+
   it('rejects missing webContentsId', () => {
     const handler = getHandler(IPC.MCP_BINDING.REGISTER_WEBVIEW);
     expect(() => handler(fakeEvent, 'widget-1')).toThrow();

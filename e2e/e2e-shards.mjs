@@ -49,6 +49,7 @@ export const E2E_SHARDS = {
   ],
   3: [
     'app-launch.spec.ts',
+    'browser-webview-guard.spec.ts',
     'canvas-create.spec.ts',
     'canvas-golden-path.spec.ts',
     'canvas-group-project-create.spec.ts',
