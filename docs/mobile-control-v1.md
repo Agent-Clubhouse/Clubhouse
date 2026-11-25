@@ -1490,7 +1490,7 @@ Capabilities: `terminal: {version:1, projectShell:true, agentShell:true, agentAt
 ### Shells
 
 - `pty:spawn-shell {sessionId, projectId, agentId?}` → `pty:spawn-shell:ack {sessionId, cwd}`.
-  - The phone picks `sessionId`: any string of 1–128 characters, unique among its open shells. A random UUID is a good choice.
+  - The phone picks `sessionId`: any string of 1–128 characters, unique among its open shells. Use an unguessable random id, such as a random UUID, never a counter or a name: some answers about an id (for example a spawn over another connection's shell is `session_in_use`) say that it exists.
   - The shell opens where the desktop's Terminal tab opens for the same selection. Without `agentId`, that's the project root. A durable agent opens at its worktree, or at the project root when it has none. A quick agent opens at the folder it runs in. `cwd` is the resolved absolute directory.
   - It's an interactive login shell (`$SHELL -il`, or the default shell on Windows), starting at 120×30. Send `pty:resize` once the view knows its size.
   - Spawning a `sessionId` the phone already owns replaces that shell.
@@ -1510,13 +1510,14 @@ When a phone's connection drops, for example while it is in the background to op
 - The shell is private. Its output goes to no connection and never into replay; the desktop keeps it in the PTY's own bounded buffer (2 MB) for the reattach snapshot.
 - `pty:input`, `pty:resize`, `clipboard:image` and `pty:attach` for it are refused, from any connection.
 - `pty:close {sessionId}` from the same device ends it without reattaching (`pty:close:ack`).
-- It ends right away when the device's pairing is removed or forgotten, when the desktop disconnects the device, when the connection was closed for a removed pairing (4401), when the process exits, when the grace runs out, and when Annex stops or the app quits.
+- It ends right away when the device's pairing is removed or forgotten, within 30 seconds when the device stops being allowed here in some other way, when the desktop disconnects the device, when the connection was closed for a removed pairing (4401), when the process exits, when the grace runs out, and when Annex stops or the app quits.
 - A device keeps at most `maxShellsPerConnection` detached shells; past that, the oldest ends, and its reattach gets `session_expired`.
 
 **Reattach:** `pty:reattach-shell {sessionId, cols?, rows?}` → `pty:reattach-shell:ack {sessionId, cwd, buffer, outputSeq, cols?, rows?, scrollbackLines?}`.
 - Only the same paired device can reattach: the same pairing and the same certificate, still allowed, as for every control frame. A session id alone is never enough.
 - `cols`/`rows`, when given as positive integers, resize the PTY before the snapshot is taken.
-- `buffer`, `outputSeq`, `cols`, `rows` and `scrollbackLines` mean what they do in `pty:attach:ack`, with the same 8 MiB limit. Live output follows as `pty:data {agentId: sessionId, data, outputSeq}` to this connection only. Drop frames with `outputSeq <= ack.outputSeq`, and buffer frames that arrive before the ack.
+- `buffer`, `outputSeq`, `cols`, `rows` and `scrollbackLines` mean what they do in `pty:attach:ack`, with the same 8 MiB limit. Live output follows as `pty:data {agentId: sessionId, data, outputSeq}` to this connection only.
+- Output can reach this connection **before** the ack: the shell is its from the moment of the claim, and the snapshot is taken after. Buffer `pty:data` for the session until the ack arrives, then drop every frame with `outputSeq <= ack.outputSeq`; of a frame that straddles it, keep only the last `outputSeq - ack.outputSeq` units. If the reattach is refused instead, discard what you buffered.
 - A reattach never starts a shell. "New shell" after a refusal is a `pty:spawn-shell` with a **new** `sessionId`, sent only when the user asks. Never answer a refusal, including a code you don't know, by spawning.
 - The same device may also reattach a shell that another of its connections still holds (a connection the desktop hasn't seen drop yet). The later claim wins. The earlier connection gets `error {code:"session_in_use", op:"pty:reattach-shell", sessionId}`, then no more of the shell's output, and its input, resize and close for it are refused. Two reattaches racing for the same shell end with exactly one ack; the other gets `session_in_use`.
 - A spawn is never a reattach. `pty:spawn-shell` from the same device over its own detached shell replaces it with a new shell, as over its own attached one, so a phone that doesn't reattach still gets a working shell.
@@ -1530,14 +1531,18 @@ When a phone's connection drops, for example while it is in the background to op
 | `session_expired` | This device's shell ended because the grace ran out. |
 | `session_exited` | This device's shell's process ended while detached. `exitCode` is included when known. |
 | `session_in_use` | This device's shell, claimed by a later reattach from the same device (also sent to a connection that held it when it is taken). |
-| `authorization_revoked` | The device was no longer allowed, before or during the reattach. If it had claimed the shell, the shell ends. |
+| `authorization_revoked` | The device was no longer allowed, before or during the reattach. A shell of this device under that id ends. |
 | `invalid_session_id` | `sessionId` missing, not a string, empty, or longer than 128 characters. |
 | `too_many_shells` | Taking it would put this connection over `maxShellsPerConnection`, counting the device's detached shells. |
 | `terminal_unavailable` | The screen can't fit in one frame. The shell stays detached, with the grace it had left; try again. |
 | `internal_error` | An unexpected desktop failure. The shell stays detached. |
 | `busy` | The connection has too many lifecycle requests in flight. Nothing was claimed; try again. |
 
-`session_expired` and `session_exited` are remembered for an hour (at most 256), and only for the device that owned the shell. After that, or after a desktop restart, the answer is `session_not_found`.
+`session_expired` and `session_exited` are remembered for an hour, at most 256 per device (and 4096 in all), and only for the device that owned the shell. After that, or after a desktop restart, the answer is `session_not_found`.
+
+`GET /api/v1/agents/:id/buffer` serves a shell only to the device that spawned it (attached or detached). Asked for any other device's shell, or a desktop terminal, it answers exactly as for an id with no terminal: 200 with an empty body. `agent:kill` for another connection's shell answers `agent_not_found`, as for an unknown id.
+
+A desktop controller (another computer controlling this one) gets the same detachment as a phone. It never reattaches, so its shells wait out the grace, or are replaced when it spawns the same id again.
 
 ### Attaching to an agent's PTY
 

@@ -2166,16 +2166,24 @@ const SHELL_REATTACH_GRACE_MS = 5 * 60_000;
 interface ShellTombstone { device: ShellDevice; code: 'session_expired' | 'session_exited'; exitCode?: number; at: number }
 const shellTombstones = new Map<string, ShellTombstone>();
 const SHELL_TOMBSTONE_MS = 60 * 60_000;
-const MAX_SHELL_TOMBSTONES = 256;
+/** Per device, so one device's churn never turns another's expiry into not found; the total is bounded too. */
+const MAX_SHELL_TOMBSTONES_PER_DEVICE = 256;
+const MAX_SHELL_TOMBSTONES = 4096;
 const tombstoneKey = (fingerprint: string, sessionId: string) => `${fingerprint}\n${sessionId}`;
 
 function addShellTombstone(sessionId: string, tombstone: ShellTombstone): void {
   const key = tombstoneKey(tombstone.device.fingerprint, sessionId);
   shellTombstones.delete(key);
   shellTombstones.set(key, tombstone);
+  // Oldest first: past their hour, then this device's beyond its share, then any beyond the total.
+  let own = 0;
+  for (const t of shellTombstones.values()) if (t.device.fingerprint === tombstone.device.fingerprint) own++;
   for (const [k, t] of shellTombstones) {
-    if (shellTombstones.size <= MAX_SHELL_TOMBSTONES && tombstone.at - t.at < SHELL_TOMBSTONE_MS) break;
+    const expired = tombstone.at - t.at >= SHELL_TOMBSTONE_MS;
+    const overOwn = t.device.fingerprint === tombstone.device.fingerprint && own > MAX_SHELL_TOMBSTONES_PER_DEVICE;
+    if (!expired && !overOwn && shellTombstones.size <= MAX_SHELL_TOMBSTONES) continue;
     shellTombstones.delete(k);
+    if (t.device.fingerprint === tombstone.device.fingerprint) own--;
   }
 }
 
@@ -2232,6 +2240,17 @@ function endShellsOfPeer(fingerprint: string): void {
   }
   for (const [key, tombstone] of [...shellTombstones]) {
     if (tombstone.device.fingerprint === fingerprint) shellTombstones.delete(key);
+  }
+}
+
+/**
+ * Detached shells whose device is no longer allowed here (a #3613 fence or role
+ * change with no revoke or close to end them), ended on the heartbeat rather
+ * than left to their grace (#3843). Such a device can't send a frame to reattach.
+ */
+function endUnauthorizedDetachedShells(): void {
+  for (const [sessionId, { device }] of [...detachedShells]) {
+    if (!authorize({ fingerprint: device.fingerprint, pin: device.pin, via: 'direct' }, authorizerDeps).ok) endDetachedShell(sessionId);
   }
 }
 
@@ -2292,6 +2311,16 @@ async function handleReattachShellWs(ws: WebSocket, payload: Record<string, unkn
   const sessionId = raw;
   const device = deviceOf(ws);
   if (!device || !controlStillAllowed(ws)) {
+    // A device no longer allowed loses this shell now, rather than leaving it to its grace (#3843).
+    if (device) {
+      const held = shellOwners.get(sessionId);
+      if (sameDevice(detachedShells.get(sessionId)?.device ?? null, device)) endDetachedShell(sessionId);
+      else if (held && sameDevice(deviceOf(held), device)) {
+        shellOwners.delete(sessionId);
+        shellReservations.delete(sessionId);
+        ptyManager.killShell(sessionId);
+      }
+    }
     sendReattachError(ws, 'authorization_revoked', sessionId);
     return;
   }
@@ -5905,18 +5934,16 @@ async function stopAgentForAnnex(agentId: string, projectPath: string, orchestra
 }
 
 async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> {
-  // Another controller's shell is private: it can't be stopped from here, as it can't be typed into (#3613).
-  if (isOtherControllersShell(ws, agentId)) {
-    sendPtyError(ws, 'agent:kill', 'session_not_found', { agentId });
-    return;
-  }
+  // Another controller's shell is private: it can't be stopped from here, as it can't be typed into (#3613),
+  // and it's answered after the same lookup, exactly as an unknown id, so the answer doesn't say it exists (#3843).
+  const foreign = isOtherControllersShell(ws, agentId);
   try {
     const info = await findAgentAcrossProjects(agentId);
     // Quick agents have no durable config; their running registration carries
     // the same project/provider identity used by the main-process stop path.
     const registration = agentRegistry.get(agentId);
     const shellCwd = ptyManager.getShellCwd(agentId);
-    const projectPath = info?.project.path || registration?.projectPath || shellCwd;
+    const projectPath = foreign ? undefined : info?.project.path || registration?.projectPath || shellCwd;
     if (!projectPath) {
       safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
       return;
@@ -6548,6 +6575,7 @@ function startServer(strict = false): Promise<void> {
   // that would otherwise leave the "connected (paused)" badge stuck forever.
   heartbeatInterval = setInterval(() => {
     if (!wss) return;
+    endUnauthorizedDetachedShells();
     for (const client of wss.clients) {
       if (wsAlive.get(client) === false) {
         appLog('core:annex', 'info', 'Heartbeat: terminating unresponsive WebSocket client');
@@ -7563,6 +7591,9 @@ export const _testing = {
   shellOwners,
   detachedShells,
   shellTombstones,
+  addShellTombstone,
+  endUnauthorizedDetachedShells,
+  MAX_SHELL_TOMBSTONES_PER_DEVICE,
   SHELL_REATTACH_GRACE_MS,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },

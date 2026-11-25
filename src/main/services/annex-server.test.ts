@@ -2362,7 +2362,12 @@ describe('annex-server', () => {
         vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 's1' ? '/project' : undefined));
         vi.mocked(agentSystem.killAgent).mockClear();
         b.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 's1' } }));
-        await vi.waitFor(() => expect(sent(b).at(-1)).toMatchObject({ type: 'error', payload: { message: 'session_not_found' } }));
+        await vi.waitFor(() => expect(b.send).toHaveBeenCalled());
+        b.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'no-such-agent' } }));
+        await vi.waitFor(() => expect(b.send).toHaveBeenCalledTimes(2));
+        // Exactly what an unknown id gets, so the answer says nothing about the shell (#3843).
+        expect(b.send.mock.calls[0][0]).toBe(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+        expect(b.send.mock.calls[1][0]).toBe(b.send.mock.calls[0][0]);
         expect(agentSystem.killAgent).not.toHaveBeenCalled();
         a.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 's1' } }));
         await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledTimes(1));
@@ -3026,6 +3031,43 @@ describe('annex-server', () => {
         expect(await read('mine')).toMatchObject({ status: 200, body: AUTH_PROMPT });
         drop(mine);
         expect(await read('mine')).toMatchObject({ status: 200, body: AUTH_PROMPT });
+      });
+
+      it('ends a detached shell on the heartbeat once its device is no longer allowed, with no revoke or close', async () => {
+        const shells = fakeShells();
+        await startAndPair();
+        const mine = await connectAs(PHONE);
+        await spawn(mine, { sessionId: 'mine', projectId: 'p' });
+        const theirs = await connectAs(OTHER_PHONE);
+        await spawn(theirs, { sessionId: 'theirs', projectId: 'p' });
+        drop(mine);
+        drop(theirs);
+        annexServer._testing.endUnauthorizedDetachedShells();
+        expect([...annexServer._testing.detachedShells.keys()].sort()).toEqual(['mine', 'theirs']);
+        // The pairing record changes under it (here its pinned certificate), without revokePeer or a socket close.
+        peers.set(PHONE.fingerprint, { ...PHONE, tlsCertificateFingerprint: 'RE:PI:NN:ED' });
+        annexServer._testing.endUnauthorizedDetachedShells();
+        expect(shells.procs.has('mine')).toBe(false);
+        expect(annexServer._testing.detachedShells.has('mine')).toBe(false);
+        expect(shells.procs.has('theirs')).toBe(true);
+      });
+
+      it('caps tombstones per device: one device\'s churn never evicts another\'s', () => {
+        const { addShellTombstone, shellTombstones, MAX_SHELL_TOMBSTONES_PER_DEVICE: cap } = annexServer._testing;
+        const phone = { fingerprint: PHONE.fingerprint, pin: PHONE.tlsCertificateFingerprint };
+        const other = { fingerprint: OTHER_PHONE.fingerprint, pin: OTHER_PHONE.tlsCertificateFingerprint };
+        const now = Date.now();
+        addShellTombstone('kept', { device: phone, code: 'session_expired', at: now });
+        for (let i = 0; i < cap + 50; i++) addShellTombstone(`churn-${i}`, { device: other, code: 'session_expired', at: now });
+        const count = (fp: string) => [...shellTombstones.values()].filter((t) => t.device.fingerprint === fp).length;
+        expect(count(other.fingerprint)).toBe(cap);
+        expect(shellTombstones.has(`${phone.fingerprint}\nkept`)).toBe(true);
+        // The other device kept its newest.
+        expect(shellTombstones.has(`${other.fingerprint}\nchurn-${cap + 49}`)).toBe(true);
+        expect(shellTombstones.has(`${other.fingerprint}\nchurn-0`)).toBe(false);
+        // Past their hour they go, whoever adds next.
+        addShellTombstone('later', { device: other, code: 'session_expired', at: now + 60 * 60_000 });
+        expect(shellTombstones.has(`${phone.fingerprint}\nkept`)).toBe(false);
       });
 
       it('every reattach error has message === code, a stable code and the sessionId', async () => {
