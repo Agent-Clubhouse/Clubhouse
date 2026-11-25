@@ -3,7 +3,8 @@
  * Phase 3 implementation.
  */
 
-import { BrowserWindow, dialog, webContents } from 'electron';
+import { BrowserWindow, dialog, session, webContents } from 'electron';
+import { BROWSER_WEBVIEW_PARTITION } from '../../../../shared/browser-partition';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import type { McpToolResult } from '../types';
@@ -49,9 +50,27 @@ const attachedDebuggers = new Map<number, boolean>();
 const consoleBuffers = new Map<number, Array<{ level: string; text: string; timestamp: number }>>();
 const MAX_CONSOLE_ENTRIES = 500;
 
-export function registerWebview(widgetId: string, webContentsId: number): void {
+/**
+ * Point a Browser widget's agent tools at a webContents. The renderer sends the
+ * id, so only a live Browser webview guest in the Browser's own session is
+ * accepted. Anything else (the app window, a popout, another session) would let
+ * an agent's click or evaluate reach a privileged page (#3869).
+ */
+export function registerWebview(widgetId: string, webContentsId: number): boolean {
+  const refuse = (reason: string): false => {
+    // Drop any earlier registration too, so a refused id never leaves a stale target.
+    unregisterWebview(widgetId);
+    appLog('core:security', 'warn', 'Browser webview registration refused', { meta: { widgetId, webContentsId, reason } });
+    return false;
+  };
+  if (!Number.isInteger(webContentsId)) return refuse('invalid-id');
+  const wc = webContents.fromId(webContentsId);
+  if (!wc || wc.isDestroyed?.()) return refuse('not-found');
+  if (wc.getType() !== 'webview') return refuse('not-a-webview');
+  if (wc.session !== session.fromPartition(BROWSER_WEBVIEW_PARTITION)) return refuse('wrong-session');
   webviewRegistry.set(widgetId, webContentsId);
   appLog('core:mcp', 'debug', 'Webview registered', { meta: { widgetId, webContentsId } });
+  return true;
 }
 
 export function unregisterWebview(widgetId: string): void {

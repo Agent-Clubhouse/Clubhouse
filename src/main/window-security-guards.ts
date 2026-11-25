@@ -9,6 +9,7 @@
 
 import { BrowserWindow } from 'electron';
 import type { WebContents, WebPreferences } from 'electron';
+import { BROWSER_WEBVIEW_PARTITION } from '../shared/browser-partition';
 import { BROWSER_FILE_SETTING_LOCATION, isBrowserFileAccessAllowed } from './browser-file-access';
 import { isAllowedNavigation } from './navigation-guard';
 import { appLog } from './services/log-service';
@@ -70,11 +71,9 @@ export function hardenWebviewPreferences(webPreferences: WebPreferences): void {
   prefs.webviewTag = false;
 }
 
-/**
- * The Browser's session. Other sessions are refused: the default session has
- * the app's own file and plugin protocol handlers and cookies.
- */
-export const BROWSER_WEBVIEW_PARTITION = 'persist:plugin-browser';
+// The Browser's session. Other sessions are refused: the default session has
+// the app's own file and plugin protocol handlers and cookies.
+export { BROWSER_WEBVIEW_PARTITION };
 
 type NavigationEvent = { preventDefault(): void; url?: string; isMainFrame?: boolean };
 

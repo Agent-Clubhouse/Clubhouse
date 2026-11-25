@@ -10,21 +10,34 @@ vi.mock('electron', () => {
     sendCommand: vi.fn(),
     on: vi.fn(),
   };
+  const browserSession = { name: 'persist:plugin-browser' };
+  const defaultSession = { name: 'default' };
   const mockWc = {
     id: 42,
     debugger: mockDebugger,
     loadURL: vi.fn(),
     capturePage: vi.fn(),
     on: vi.fn(),
+    getType: () => 'webview',
+    isDestroyed: () => false,
+    session: browserSession,
   };
+  // The app's main window: a privileged page an agent must never reach.
+  const mainWindowWc = { id: 1, debugger: mockDebugger, on: vi.fn(), getType: () => 'window', isDestroyed: () => false, session: defaultSession };
+  // A webview outside the Browser's session.
+  const otherSessionWc = { id: 7, debugger: mockDebugger, on: vi.fn(), getType: () => 'webview', isDestroyed: () => false, session: defaultSession };
+  const byId: Record<number, unknown> = { 42: mockWc, 1: mainWindowWc, 7: otherSessionWc };
   return {
     app: { getPath: () => '/tmp/clubhouse-test' },
     BrowserWindow: { getAllWindows: () => [] },
     dialog: {
       showMessageBox: vi.fn(async () => ({ response: 1 })), // Default: allow
     },
+    session: {
+      fromPartition: vi.fn((partition: string) => (partition === 'persist:plugin-browser' ? browserSession : defaultSession)),
+    },
     webContents: {
-      fromId: vi.fn((id: number) => (id === 42 ? mockWc : null)),
+      fromId: vi.fn((id: number) => byId[id] ?? null),
     },
   };
 });
@@ -128,6 +141,31 @@ describe('BrowserTools', () => {
         expect(result.isError).toBe(true);
         expect(result.content[0].text).toContain('not found');
       });
+    });
+
+    it('accepts a live Browser webview', () => {
+      expect(registerWebview('widget-ok', 42)).toBe(true);
+    });
+
+    it.each([
+      { id: 1, reason: 'not-a-webview', what: "the main window's webContents" },
+      { id: 7, reason: 'wrong-session', what: 'a webview outside persist:plugin-browser' },
+      { id: 999, reason: 'not-found', what: 'an id with no webContents' },
+      { id: Number.NaN, reason: 'invalid-id', what: 'an id that is not a number' },
+    ])('refuses $what and logs the refusal', async ({ id, reason }) => {
+      const { appLog } = await import('../../log-service');
+      (appLog as ReturnType<typeof vi.fn>).mockClear();
+
+      expect(registerWebview('widget-1', id)).toBe(false);
+      expect(appLog).toHaveBeenCalledWith('core:security', 'warn', 'Browser webview registration refused',
+        expect.objectContaining({ meta: expect.objectContaining({ widgetId: 'widget-1', reason }) }));
+
+      // The refusal also drops the widget's earlier, valid registration: no tool reaches anything.
+      const loadURL = getMockWc().loadURL;
+      loadURL.mockClear();
+      const result = await callTool('agent-1', 'browser__widget_1__navigate', { url: 'https://example.com' });
+      expect(result.isError).toBe(true);
+      expect(loadURL).not.toHaveBeenCalled();
     });
 
     it('unregister detaches debugger if attached', () => {
@@ -276,8 +314,9 @@ describe('BrowserTools', () => {
     });
 
     it('returns error when webContents gone', async () => {
-      // Register a webview with an ID that has no webContents
-      registerWebview('widget-gone', 999);
+      // Register a live webview, then let its webContents go away
+      registerWebview('widget-gone', 42);
+      vi.mocked(webContents.fromId).mockReturnValueOnce(null as never);
       bindingManager.bind('agent-1', { targetId: 'widget-gone', targetKind: 'browser', label: 'Gone' });
 
       const result = await callTool('agent-1', 'browser__widget_gone__get_console', {});
@@ -873,8 +912,9 @@ describe('BrowserTools', () => {
       const { appLog } = await import('../../log-service');
       (appLog as ReturnType<typeof vi.fn>).mockClear();
 
-      // Register a widget pointing to a destroyed webContents (ID 999 → null)
-      registerWebview('widget-destroyed', 999);
+      // Register a live webview, then let its webContents be destroyed
+      registerWebview('widget-destroyed', 42);
+      vi.mocked(webContents.fromId).mockReturnValueOnce(null as never);
       bindingManager.bind('agent-1', { targetId: 'widget-destroyed', targetKind: 'browser', label: 'Destroyed' });
 
       await callTool('agent-1', 'browser__widget_destroyed__navigate', { url: 'https://example.com' });
@@ -886,7 +926,7 @@ describe('BrowserTools', () => {
         expect.objectContaining({
           meta: expect.objectContaining({
             widgetId: 'widget-destroyed',
-            webContentsId: 999,
+            webContentsId: 42,
           }),
         }),
       );

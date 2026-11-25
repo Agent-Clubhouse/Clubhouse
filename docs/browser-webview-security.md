@@ -44,3 +44,5 @@ The old `allowLocalFileWebviews` key in `security-settings.json` had no UI and i
 ## Agent Browser tools
 
 The agent tools (`src/main/services/clubhouse-mcp/tools/browser-tools.ts`, grants `browser.read` and `browser.act` from #2988) are unchanged. `navigate` accepts only `http:` and `https:` and calls `loadURL`, which these guards allow. Pages that an agent's `click` or `evaluate` sends somewhere go through the same navigation guard as a user's click.
+
+The renderer tells main which webContents a Canvas Browser widget uses (`registerWebview`, through the MCP binding IPC). Main accepts the id only for a live `webview` guest in `persist:plugin-browser`. It refuses the app window, popouts, other sessions and unknown ids, and logs the refusal under `core:security`. A refusal also drops the widget's earlier registration, so an agent's `click`, `evaluate` and the other tools can never reach a privileged page.
