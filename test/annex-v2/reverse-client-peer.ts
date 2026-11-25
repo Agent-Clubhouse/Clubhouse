@@ -5,7 +5,6 @@ import * as net from 'net';
 import * as https from 'https';
 import type { TLSSocket } from 'tls';
 import type { Duplex } from 'stream';
-import { randomUUID } from 'crypto';
 import { vi } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { closeServer, installDialPolicy, listen, type DialPolicy } from './reverse-parity-fixture';

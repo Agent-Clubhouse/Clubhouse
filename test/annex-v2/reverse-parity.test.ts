@@ -771,9 +771,10 @@ describe('full-server audit inventory over one A to B forward', () => {
     const state = (): ReturnType<InventoryPeer['imageState']> => who === 'A' ? b.call('imageState') : a.imageState();
     beforeAll(async () => {
       imageTarget = who === 'A' ? await b.call('prepareImages') : await a.prepareImages();
-      expect(await state()).toMatchObject({ configUnchanged: true, cached: true });
+      expect(await state()).toMatchObject({ configUnchanged: true });
     });
-    beforeEach(async () => { expect(await state()).toMatchObject({ configUnchanged: true, cached: true }); });
+    // Warm or cold durable config cache: uploads work either way since #3750.
+    beforeEach(async () => { expect(await state()).toMatchObject({ configUnchanged: true }); });
     afterEach(async () => { expect(await state()).toMatchObject({ configUnchanged: true }); });
     it.each([0, 1])('rejects invalid %i-byte images with the existing HTTP status', async (size) => {
       const answer = await upload(size);
