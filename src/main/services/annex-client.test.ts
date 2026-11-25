@@ -471,6 +471,58 @@ describe('annex-client', () => {
       expect(annexControl.request).toHaveBeenCalledOnce();
     });
 
+    describe('why a retired request failed (#3613)', () => {
+      // Like annexControl.request: an aborted signal fails the request as cancelled, indeterminate for a write.
+      const pendingUntilAborted = () => vi.mocked(annexControl.request).mockImplementationOnce((_key, input, options) => new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', input.method !== 'GET', options.requestId ?? 'id')), { once: true });
+      }));
+
+      it('reports a replaced link mid-write as transport_unavailable, still indeterminate, sent once', async () => {
+        pendingUntilAborted();
+        const observed = annexClient.postToMachine(fingerprint, '/api/v1/network/test', {}).catch((error: unknown) => error);
+        epoch++;
+        devicesChanged();
+        expect(await observed).toMatchObject({ code: 'transport_unavailable', indeterminate: true });
+        expect(annexControl.request).toHaveBeenCalledOnce();
+      });
+
+      it('reports a dropped accepted link mid-read as transport_unavailable', async () => {
+        pendingUntilAborted();
+        const observed = annexClient.requestFileTree(fingerprint, 'p').catch((error: unknown) => error);
+        accepted = false;
+        devicesChanged();
+        await observed;
+        expect(annexControl.request).toHaveBeenCalledOnce();
+      });
+
+      it('reports a changed peer trust mid-write as authorization_revoked', async () => {
+        pendingUntilAborted();
+        const observed = annexClient.postToMachine(fingerprint, '/api/v1/network/test', {}).catch((error: unknown) => error);
+        peer = { ...peer, tlsCertificateFingerprint: 'replaced-pin' };
+        devicesChanged();
+        expect(await observed).toMatchObject({ code: 'authorization_revoked', indeterminate: true });
+        expect(annexControl.request).toHaveBeenCalledOnce();
+      });
+
+      it('keeps a caller\'s own abort as cancelled', async () => {
+        pendingUntilAborted();
+        const abort = new AbortController();
+        const observed = annexClient.postToMachine(fingerprint, '/api/v1/network/test', {}, { signal: abort.signal }).catch((error: unknown) => error);
+        abort.abort();
+        expect(await observed).toMatchObject({ code: 'cancelled', indeterminate: true });
+      });
+
+      it('reports a completed response from a replaced link as transport_unavailable, not revoked', async () => {
+        let complete!: (result: annexControl.ControlResult) => void;
+        vi.mocked(annexControl.request).mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+        const observed = annexClient.postToMachine(fingerprint, '/api/v1/network/test', {}).catch((error: unknown) => error);
+        epoch++;
+        devicesChanged();
+        complete({ status: 200, headers: {}, body: Buffer.from('{}') });
+        expect(await observed).toMatchObject({ code: 'transport_unavailable', indeterminate: true });
+      });
+    });
+
     it('does not mint a snapshot or live publication from request capability', async () => {
       expect(annexControl.subscribe).not.toHaveBeenCalled();
       expect(annexClient.getSatellite(fingerprint)?.snapshot).toBeFalsy();
