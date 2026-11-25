@@ -20,9 +20,17 @@ async function snapshot(folder: string, prefix = ''): Promise<Record<string, str
   return result;
 }
 beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-passive-changes-')); await git('init', '-b', 'main'); });
-afterEach(async () => { vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
+// Windows holds folders open briefly after a Git process exits (EBUSY/ENOTEMPTY): retry with a short bounded backoff.
+afterEach(async () => { vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
+/**
+ * Budget for the tests below, each of which runs real Git against a fresh repository
+ * (init, add, write-tree, and the comparison's own Git calls; the rename cases create
+ * and move 33 files). Process creation on a loaded hosted Windows runner took over the
+ * 5s default for 'bounds endpoint rechecks…'. Set on this describe only.
+ */
+const REAL_GIT_COMPARISON_BUDGET_MS = 30_000;
 const tree = () => git('write-tree');
-describe('passive repository comparison', () => {
+describe('passive repository comparison', { timeout: REAL_GIT_COMPARISON_BUDGET_MS }, () => {
   it.each((['branch', 'session', 'turn'] as const).flatMap((scope) => [false, true].map((empty) => ({ scope, empty }))))('pairs a unique identical live $scope move with endpoint-bound metadata, empty=$empty', async ({ scope, empty }) => {
     await fs.writeFile(path.join(root, 'old-name'), empty ? '' : 'same content\n');
     await git('add', '.');
