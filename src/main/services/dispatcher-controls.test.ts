@@ -219,6 +219,13 @@ function observeCase(promise: Promise<unknown>): void { fixture().work.roots.obs
 const it = ownedRegistration(rawIt, 1, observeCase);
 const beforeEach = ownedRegistration(rawBeforeEach, 0, observeCase);
 const waitFor = ownedRegistration(vi.waitFor, 0, observeCase);
+/**
+ * How long a poll may wait for the store, the bindings or a timer to settle. A
+ * passing poll returns on its first success, so this only bounds a failure. The
+ * default 1s was too short for the saves behind these checks on a loaded hosted
+ * Windows runner ('an end disposed: dropped for good' failed there).
+ */
+const SETTLE = { timeout: 10_000 };
 
 /** Return the original operation promise; retain its complete store/audit tail. */
 function ownOperation<A extends unknown[], R>(operation: (...args: A) => Promise<R>) {
@@ -313,7 +320,7 @@ async function userRemoves(a: string, b: string): Promise<void> {
   bindingManager.unbind(a, b);
   canvasWires = canvasWires.filter((w) => !(w.agentId === a && w.targetId === b));
   markBindingRemovedByUser(a, b);
-  await waitFor(async () => expect(await storedPairs()).not.toContain(`${a}>${b}`));
+  await waitFor(async () => expect(await storedPairs()).not.toContain(`${a}>${b}`), SETTLE);
 }
 
 const controls = async (args: Record<string, unknown> = {}) => JSON.parse(text(await call('list_orchestrator_controls', args)));
@@ -1005,7 +1012,7 @@ describe('a link the user removes stays removed', () => {
 
   it('ends when the user draws the pair', async () => {
     userDraws('a', 'b');
-    await waitFor(() => expect(storeFile().removedByUser).toEqual([]));
+    await waitFor(() => expect(storeFile().removedByUser).toEqual([]), SETTLE);
     await restart();
     expect(isBound('a', 'b')).toBe(true);
     // It is the user's now: the Dispatcher still can't claim or remove it.
@@ -1060,7 +1067,7 @@ describe('a removal the store can\'t take', () => {
 
     state.failWrite = null;
     await restart();
-    await waitFor(() => expect(pendingFile()).toBe(false));
+    await waitFor(() => expect(pendingFile()).toBe(false), SETTLE);
     expect(storeFile().connections).toEqual([]);
     expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', agentProjectPath: P1 })]);
     expect((await controls()).unconfirmed_removals).toBeUndefined();
@@ -1079,7 +1086,7 @@ describe('a removal the store can\'t take', () => {
 
     state.failWrite = null;
     agentChanged();
-    await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
+    await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1), SETTLE);
     await restart();
     expect(isBound('a', 'b')).toBe(false);
     await expectRefused();
@@ -1089,7 +1096,7 @@ describe('a removal the store can\'t take', () => {
     const timers = vi.spyOn(globalThis, 'setTimeout');
     state.failWrite = folderRefuses;
     await removeWire('a', 'b');
-    await waitFor(() => expect(timers.mock.calls.some(([, ms]) => ms === 30_000)).toBe(true));
+    await waitFor(() => expect(timers.mock.calls.some(([, ms]) => ms === 30_000)).toBe(true), SETTLE);
     const retryIndex = timers.mock.calls.findIndex(([, ms]) => ms === 30_000);
     const retry = timers.mock.calls[retryIndex][0] as () => void;
     const retryHandle = timers.mock.results[retryIndex];
@@ -1098,7 +1105,7 @@ describe('a removal the store can\'t take', () => {
     clearTimeout(retryHandle.value as ReturnType<typeof setTimeout>);
     state.failWrite = null;
     retry();
-    await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
+    await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1), SETTLE);
   });
 
   it('restores nothing while the folder still takes no writes after a restart, and says why', async () => {
@@ -1113,7 +1120,7 @@ describe('a removal the store can\'t take', () => {
     // The limit the user was told about: with no record at all, it returns once writes do.
     state.failWrite = null;
     agentChanged();
-    await waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(true), SETTLE);
     expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' });
   });
 
@@ -1123,7 +1130,7 @@ describe('a removal the store can\'t take', () => {
     state.failRead = null;
     await restart();
     expect(isBound('a', 'b')).toBe(false);
-    await waitFor(() => expect(pendingFile()).toBe(false));
+    await waitFor(() => expect(pendingFile()).toBe(false), SETTLE);
     expect(storeFile().connections).toEqual([]);
     expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', agentProjectPath: P1 })]);
   });
@@ -1212,7 +1219,7 @@ describe('a removal the store can\'t take', () => {
       expect(await listDispatcherLinksForUser()).toEqual([]);
       state.failWrite = null;
       agentChanged();
-      await waitFor(async () => expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' }));
+      await waitFor(async () => expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' }), SETTLE);
       expect(isBound('a', 'b')).toBe(true);
       expect(JSON.parse(text(await call('disconnect_orchestrators', { from: 'a', to: 'b' }))).links[0].outcome).toBe('kept');
       expect(isBound('a', 'b')).toBe(true);
@@ -1227,7 +1234,7 @@ describe('a removal the store can\'t take', () => {
         expect(storeFile().connections).toEqual([]);
         expect(storeFile().removedByUser).toEqual([]);
         expect(pendingFile()).toBe(false);
-      });
+      }, SETTLE);
       await restart();
       expect(isBound('a', 'b')).toBe(true);
     });
@@ -1257,7 +1264,7 @@ describe('a removal the store can\'t take', () => {
       let drainError: unknown;
       try {
         userDraws('a', 'b');
-        await waitFor(() => expect(captured).toBeDefined());
+        await waitFor(() => expect(captured).toBeDefined(), SETTLE);
         expect(storeFile().connections).toEqual([]);
         expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b' })]);
         expect(pendingFile()).toBe(true);
@@ -1419,7 +1426,7 @@ describe('a removal the store can\'t take', () => {
       let drainError: unknown;
       try {
         userDraws('a', 'b');
-        await waitFor(() => expect(queued).toBe(true));
+        await waitFor(() => expect(queued).toBe(true), SETTLE);
         await isRemovalUnsaved({ agentId: 'a', targetId: 'c' });
         expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'c' })]);
         expect(pendingFile()).toBe(false);
@@ -1552,14 +1559,14 @@ describe('suspended links', () => {
   ])('%s: the binding goes, the entry stays, readback says why, and it returns', async (_name, policy, reason) => {
     state.policies.set('b', policy);
     agentChanged();
-    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false), SETTLE);
     expect(await storedPairs()).toEqual(['a>b']);
     expect(await linkRow('a', 'b')).toMatchObject({ status: 'suspended', reason, reason_agent: 'b' });
     expect(await listDispatcherLinksForUser()).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', status: 'suspended', reason })]);
 
     state.policies.delete('b');
     agentChanged();
-    await waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(true), SETTLE);
     expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' });
     expect((await linkRow('a', 'b')).reason).toBeUndefined();
   });
@@ -1567,13 +1574,13 @@ describe('suspended links', () => {
   it('the Dispatcher off: lists nothing, names the reason, restores when on', async () => {
     state.dispatcherOn = false;
     for (const listener of state.dispatcherListeners) listener();
-    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false), SETTLE);
     expect(await storedPairs()).toEqual(['a>b']);
     expect(await listDispatcherLinksForUser()).toEqual([expect.objectContaining({ status: 'suspended', reason: 'dispatcher_off' })]);
 
     state.dispatcherOn = true;
     for (const listener of state.dispatcherListeners) listener();
-    await waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(true), SETTLE);
   });
 
   it('stays suspended across a restart, and lets the Dispatcher sever it', async () => {
@@ -1588,7 +1595,7 @@ describe('suspended links', () => {
   it('can be removed by the user, and then stays removed', async () => {
     state.policies.set('b', { orchestrate: false, connectToDispatcher: false });
     agentChanged();
-    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false), SETTLE);
     await userRemoves('a', 'b');
     expect(await listDispatcherLinksForUser()).toEqual([]);
     state.policies.delete('b');
@@ -1603,16 +1610,16 @@ describe('suspended links', () => {
   ])('an end %s: dropped for good', async (_name, change) => {
     change();
     agentChanged();
-    await waitFor(async () => expect(await storedPairs()).toEqual([]));
-    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(async () => expect(await storedPairs()).toEqual([]), SETTLE);
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false), SETTLE);
   });
 
   it('a project unregistered: dropped for good', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'c' });
     state.projects = state.projects.filter((p) => p.path !== P2);
     agentChanged();
-    await waitFor(async () => expect(await storedPairs()).toEqual(['a>b']));
-    await waitFor(() => expect(isBound('a', 'c')).toBe(false));
+    await waitFor(async () => expect(await storedPairs()).toEqual(['a>b']), SETTLE);
+    await waitFor(() => expect(isBound('a', 'c')).toBe(false), SETTLE);
   });
 
   it('an unreadable project: entry and binding stay, and readback says unverified', async () => {
