@@ -198,7 +198,7 @@ export const agent = {
     parentAgentId?: string;
     projectPath: string;
     cwd: string;
-    kind: 'durable' | 'quick' | 'companion';
+    kind: 'durable' | 'quick';
     model?: string;
     mission?: string;
     systemPrompt?: string;
@@ -209,8 +209,6 @@ export const agent = {
     access?: AccessLevel;
     resume?: boolean;
     sessionId?: string;
-    pluginOwner?: string;
-    companionWorkspace?: string;
     permissionMode?: 'auto' | 'skip-all';
     /** Clubhouse-managed quick agents: start from this template. */
     managedTemplate?: { id: string; agentName: string };
@@ -219,15 +217,6 @@ export const agent = {
   /** `waitForExit`: resolve once the PTY exited and its session id is saved (restart-with-resume). */
   killAgent: (agentId: string, projectPath: string, waitForExit?: boolean) =>
     ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath, waitForExit),
-
-  spawnCompanion: (pluginId: string, options?: { model?: string; systemPrompt?: string }) =>
-    ipcRenderer.invoke(IPC.AGENT.SPAWN_COMPANION, pluginId, options),
-
-  getCompanionStatus: (pluginId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_STATUS, pluginId),
-
-  getCompanionWorkspace: (pluginId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_WORKSPACE, pluginId),
 
   getModelOptions: (projectPath: string, orchestrator?: string) =>
     ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),

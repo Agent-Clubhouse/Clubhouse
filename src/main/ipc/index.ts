@@ -12,7 +12,6 @@ import { registerSkillBundleHandlers } from './skill-bundle-handlers';
 import { registerManagedAgentsHandlers } from './managed-agents-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
-import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
@@ -83,7 +82,6 @@ export function registerAllHandlers(): void {
   registerAppHandlers();
   registerContentContextMenu();
   registerPluginHandlers();
-  registerPluginMcpHandlers();
   registerProcessHandlers();
   registerWindowHandlers();
   registerAnnexHandlers();

@@ -163,24 +163,43 @@ describe('validateManifest', () => {
     expect(r.errors).toContainEqual(expect.stringContaining('must contribute at least one of'));
   });
 
-  // --- Kind: workspace ---
+  // --- Removed in Clubhouse 1.0: companion agents, the workspace kind, mcp.tools ---
 
-  it('rejects workspace with API < 0.9', () => {
-    const m = validManifest({ kind: 'workspace', engine: { api: 0.8 } });
+  it('loads a workspace plugin with companion and mcp.tools as a normal plugin, with one warning', () => {
+    const m = validManifest({
+      kind: 'workspace', scope: 'app', engine: { api: 0.9 },
+      permissions: ['files', 'companion', 'mcp.tools'],
+      companion: { enabled: true, defaultModel: 'opus' },
+    });
     const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Workspace plugins require API >= 0.9'));
+    expect(r.valid).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(r.manifest!.kind).toBe('plugin');
+    expect(r.manifest!.permissions).toEqual(['files']);
+    expect('companion' in r.manifest!).toBe(false);
+    expect(r.warnings).toEqual([
+      'This plugin declares the "companion" permission, the "mcp.tools" permission, the "workspace" plugin kind, companion config, which are no longer supported (removed in Clubhouse 1.0) and are ignored.',
+    ]);
+    // The input is left as it was.
+    expect(m.permissions).toEqual(['files', 'companion', 'mcp.tools']);
   });
 
-  it('requires workspace plugins to be app-scoped', () => {
-    const m = validManifest({ kind: 'workspace', scope: 'project', permissions: ['files', 'companion'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('must be app-scoped'));
+  it('loads a plugin on API 0.7 or 0.8 that declares mcp.tools, without it', () => {
+    for (const api of [0.7, 0.8]) {
+      const r = validateManifest(validManifest({ engine: { api }, permissions: ['files', 'mcp.tools'], contributes: { help: {} } }));
+      expect(r.valid).toBe(true);
+      expect(r.manifest!.permissions).toEqual(['files']);
+      expect(r.warnings).toEqual([expect.stringContaining('the "mcp.tools" permission, which is no longer supported')]);
+    }
   });
 
-  it('requires workspace plugins to have companion permission', () => {
-    const m = validManifest({ kind: 'workspace', scope: 'app', permissions: ['files'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('require the "companion" permission'));
+  it('gives no warning when nothing removed is declared', () => {
+    expect(validateManifest(validManifest()).warnings).toEqual([]);
+  });
+
+  it('still rejects an unknown kind', () => {
+    const r = validateManifest(validManifest({ kind: 'robot' }));
+    expect(r.errors).toContainEqual('Invalid kind: "robot". Must be "plugin" or "pack"');
   });
 
   // --- Help topics ---
@@ -282,18 +301,6 @@ describe('validateManifest', () => {
     expect(r.errors).toContainEqual(expect.stringContaining('Annex permission requires API >= 0.8'));
   });
 
-  it('rejects companion permission below API 0.9', () => {
-    const m = validManifest({ engine: { api: 0.8 }, permissions: ['files', 'companion'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Companion permission requires API >= 0.9'));
-  });
-
-  it('rejects mcp.tools permission below API 0.9', () => {
-    const m = validManifest({ engine: { api: 0.8 }, permissions: ['files', 'mcp.tools'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('mcp.tools permission requires API >= 0.9'));
-  });
-
   // --- Commands ---
 
   it('rejects non-boolean global in commands', () => {
@@ -373,26 +380,6 @@ describe('validateManifest', () => {
     });
     const r = validateManifest(m);
     expect(r.errors).toContainEqual(expect.stringContaining('requires the "canvas" permission'));
-  });
-
-  // --- Companion config (v0.9+) ---
-
-  it('rejects companion config below API 0.9', () => {
-    const m = validManifest({ engine: { api: 0.8 }, companion: { enabled: true } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('companion config requires API >= 0.9'));
-  });
-
-  it('requires companion.enabled to be boolean', () => {
-    const m = validManifest({ companion: { enabled: 'yes' }, permissions: ['files', 'companion'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('companion.enabled must be a boolean'));
-  });
-
-  it('requires companion permission for companion config', () => {
-    const m = validManifest({ companion: { enabled: true }, permissions: ['files'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('companion config requires the "companion" permission'));
   });
 
   // --- Tab/RailItem title (v0.8+) ---

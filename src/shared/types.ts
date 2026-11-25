@@ -75,7 +75,7 @@ export interface Project {
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';
-export type AgentKind = 'durable' | 'quick' | 'companion';
+export type AgentKind = 'durable' | 'quick';
 
 /**
  * Why an agent last went to sleep, and when (#2104). `idle`: the chat idle
@@ -139,10 +139,6 @@ export interface Agent extends ExecutionPolicy {
   resuming?: boolean;
   /** Plugin-supplied metadata for correlating agents to domain objects (e.g. boardId, cardId). */
   pluginMetadata?: Record<string, string>;
-  /** Plugin ID that owns this companion agent (v0.9+). */
-  pluginOwner?: string;
-  /** Path to companion workspace directory (v0.9+). */
-  companionWorkspace?: string;
   /** Quick agents: the directory the run was spawned in. */
   runCwd?: string;
   /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */

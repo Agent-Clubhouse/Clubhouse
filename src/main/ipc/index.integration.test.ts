@@ -651,11 +651,4 @@ describe('preload ↔ main composition', () => {
     const missing = [...MCP_BINDING_INVOKES].filter((ch) => !everHandled.has(ch));
     expect(missing).toEqual([]);
   });
-
-  it('the plugin MCP channels are registered (#2054)', () => {
-    expect(handleHandlers.has(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS)).toBe(true);
-    expect(handleHandlers.has(IPC.PLUGIN_MCP.REMOVE_TOOLS)).toBe(true);
-    expect(handleHandlers.has(IPC.PLUGIN_MCP.LIST_TOOLS)).toBe(true);
-    expect(onHandlers.has(IPC.PLUGIN_MCP.TOOL_RESULT)).toBe(true);
-  });
 });

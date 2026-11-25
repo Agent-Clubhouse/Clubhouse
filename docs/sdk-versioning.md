@@ -34,7 +34,7 @@ wip  -->  stable  -->  deprecated  -->  removed
 | v0.6 | removed | Removed in Clubhouse 1.0 (#2757); a manifest on it is refused with a message that names the version |
 | v0.7 | stable | Current baseline for all plugins |
 | v0.8 | stable | Canvas widgets, annex, window API |
-| v0.9 | wip | Companion agents, MCP tool contribution |
+| v0.9 | stable | Pinnable canvas widgets (`pinnableToControls`); the latest version, for new plugins |
 
 ---
 
@@ -123,9 +123,9 @@ You can't modify a stable API without a patch justification. If you need new cap
 
 Build against **stable** versions for production plugins. These versions are frozen and will not change under you.
 
-Check the current version states in `versions.json` or this document. As of v0.38:
-- **v0.7** and **v0.8** are stable and recommended
-- **v0.9** is wip — use for early access only
+Check the current version states in this document. As of Clubhouse 1.0:
+- **v0.7**, **v0.8** and **v0.9** are supported. Build new plugins against **v0.9**.
+- **v0.5** and **v0.6** are removed. A plugin on either is refused.
 
 ### How to know when a version is being deprecated
 
@@ -144,7 +144,7 @@ Each major version adds new capabilities while maintaining backward compatibilit
 | v0.6 | Command keyboard bindings, defaultBinding |
 | v0.7 | Plugin themes, global dialogs, agent config, file watching, pack kind |
 | v0.8 | Canvas widgets, annex, window API, tab/rail titles, project-scoped projects API |
-| v0.9 | Companion agents, MCP tool contribution, workspace plugin kind |
+| v0.9 | Pinnable canvas widgets (`pinnableToControls`). Companion agents, MCP tool contribution (`mcp.tools`) and the `workspace` plugin kind were added in v0.9 and removed in Clubhouse 1.0: a manifest that declares them still loads, without them, and the methods reject |
 
 To migrate, update your `manifest.json`:
 1. Change `engine.api` to the target version number

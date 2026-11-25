@@ -101,7 +101,7 @@ Open an issue describing the use case. Explain the problem you're solving, not j
 
 ## Plugin Development
 
-Clubhouse has a plugin API for extending functionality. Current supported API versions: `0.5`, `0.6`, `0.7`, `0.8`. See the [Plugin System](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Plugin-System) wiki page for the full API reference, manifest format, and permissions model.
+Clubhouse has a plugin API for extending functionality. Current supported API versions: `0.7`, `0.8`, `0.9` (`0.5` and `0.6` were removed in Clubhouse 1.0; see [docs/sdk-versioning.md](docs/sdk-versioning.md)). See the [Plugin System](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Plugin-System) wiki page for the full API reference, manifest format, and permissions model.
 
 ## License
 

@@ -6,7 +6,6 @@ import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcri
 import { sweepHandoffQuarantines } from './services/handoff-quarantine';
 import { scheduleChatMediaPrune } from './services/agent-runtime/chat-media-retention';
 import { registerAllHandlers } from './ipc';
-import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
 import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
@@ -15,6 +14,7 @@ import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
+import { removeCompanionState } from './services/companion-state-cleanup';
 import { startMainStallMonitor } from './services/main-stall-monitor';
 import { installProcessErrorHandlers } from './process-error-handlers';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
@@ -271,11 +271,6 @@ app.on('ready', async () => {
 
   markStartup('register_ipc_start');
   registerAllHandlers();
-  // Only the main window's app page may mint plugin MCP tokens.
-  configurePluginMcpHost({
-    getMainWebContentsId: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined),
-    entryUrl: MAIN_WINDOW_WEBPACK_ENTRY,
-  });
   markStartup('register_ipc_end');
   // E2E only: a no-op unless unpackaged and asked for (#2490).
   installHelperDeliverySeam();
@@ -456,6 +451,9 @@ app.on('ready', async () => {
 
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
+
+  // Plugin companion agents were removed in Clubhouse 1.0: delete their workspaces.
+  void removeCompanionState(app.getPath('home'));
 
   // Delete plugin data left behind by removed built-in plugins (Hub, Sessions,
   // Agent Queue).

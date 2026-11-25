@@ -502,11 +502,11 @@ describe('resume-queue', () => {
         makeEntry({ agentId: 'helper' }),
         {
           id: 'helper', projectId: 'proj-1', kind: 'durable', status: 'sleeping',
-          executionMode: 'headless', pluginOwner: 'plug', color: 'green', model: 'claude-opus-4',
+          executionMode: 'headless', pluginMetadata: { boardId: 'b1' }, color: 'green', model: 'claude-opus-4',
           lastSleep: { reason: 'user', at: '2026-01-01T00:00:00.000Z' }, exitCode: 1, errorMessage: 'boom',
         },
       );
-      expect(record).toMatchObject({ executionMode: 'headless', pluginOwner: 'plug', color: 'green', model: 'claude-opus-4', status: 'running' });
+      expect(record).toMatchObject({ executionMode: 'headless', pluginMetadata: { boardId: 'b1' }, color: 'green', model: 'claude-opus-4', status: 'running' });
       expect(record.lastSleep).toBeUndefined();
       expect(record.exitCode).toBeUndefined();
       expect(record.errorMessage).toBeUndefined();

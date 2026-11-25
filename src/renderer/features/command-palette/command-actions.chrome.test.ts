@@ -21,7 +21,6 @@ beforeEach(() => {
       s1: agent('s1', 'durable', 'sleeping'),
       q1: agent('q1', 'quick'),
       d1: agent('d1', 'durable'),
-      c1: agent('c1', 'companion'),
       d2: agent('d2', 'durable'),
     } as never,
     activeAgentId: null,

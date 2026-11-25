@@ -60,7 +60,7 @@ export interface ChatSpawnParams extends ExecutionPolicy {
   agentId: string;
   projectPath: string;
   cwd: string;
-  kind: 'durable' | 'quick' | 'companion';
+  kind: 'durable' | 'quick';
   model?: string;
   contextWindow?: string;
   /** Why the saved context choice wasn't used; shown in the chat as a notice. */
