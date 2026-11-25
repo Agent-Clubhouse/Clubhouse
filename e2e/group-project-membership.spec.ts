@@ -113,7 +113,6 @@ test('removing a group project card keeps its members and board on another canva
   };
   await attach();
   await window.getByTestId('canvas-add-button').click();
-  await window.getByTestId('canvas-add-new').click();
   await expect(tabs).toHaveCount(2);
   const secondCard = await attach();
   await secondCard.getByRole('button', { name: 'Remove from this canvas' }).click();

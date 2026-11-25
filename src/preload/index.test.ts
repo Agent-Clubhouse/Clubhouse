@@ -27,7 +27,6 @@ import { git } from './git';
 import { annex } from './annex';
 import { window as windowApi } from './window';
 import { log } from './log';
-import { blueprint } from './blueprint';
 import { mcpBinding } from './mcpBinding';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
@@ -69,7 +68,6 @@ describe('preload IPC bridge', () => {
       managedAgents,
       legacyDefaults,
       file,
-      blueprint,
       plugin,
       marketplace,
       log,

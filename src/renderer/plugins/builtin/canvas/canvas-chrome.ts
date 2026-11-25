@@ -8,8 +8,6 @@ import { Z_INDEX } from '../../../zIndex';
 export const CANVAS_Z = {
   /** The minimap, under the pane overlays. */
   minimap: Z_INDEX.canvasOverlay - 9,
-  /** Blueprint drop target over the board. */
-  blueprintDrop: Z_INDEX.canvasOverlay - 2,
   /** Satellite pause overlay and off-screen attention arrows. */
   paneOverlay: Z_INDEX.canvasOverlay - 1,
   /** A zone's theme picker. */

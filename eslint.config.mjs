@@ -31,7 +31,6 @@ const builtinHostImportAllowlist = new Set([
   'src/renderer/plugins/builtin/canvas/canvas-store.ts',
   'src/renderer/plugins/builtin/canvas/canvas-sync.ts',
   'src/renderer/plugins/builtin/canvas/main.ts',
-  'src/renderer/plugins/builtin/canvas/useBlueprintDrop.ts',
   'src/renderer/plugins/builtin/canvas/useViewportControls.ts',
   'src/renderer/plugins/builtin/canvas/useWiring.ts',
   // Split out of main.ts / canvas-store.ts; same McpBindingEntry type import.

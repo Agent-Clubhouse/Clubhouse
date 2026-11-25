@@ -521,60 +521,6 @@ export function useCommandSource(): CommandItem[] {
       },
     });
 
-    items.push({
-      id: 'action:import-blueprint',
-      label: 'Import blueprint',
-      category: CATEGORY.commands,
-      keywords: ['blueprint', 'canvas', 'template', 'import', 'board', 'layout'],
-      execute: () => { useUIStore.getState().openBlueprintGallery(); },
-    });
-
-    items.push({
-      id: 'action:export-blueprint',
-      label: 'Export canvas as blueprint',
-      category: CATEGORY.commands,
-      keywords: ['blueprint', 'canvas', 'export', 'save', 'share', 'board'],
-      execute: () => {
-        // Export the currently active canvas as a blueprint to clipboard
-        const canvasStore = activeProjectId
-          ? getProjectCanvasStore(activeProjectId)
-          : useAppCanvasStore;
-        const { canvases, activeCanvasId } = canvasStore.getState();
-        const canvas = canvases.find((c) => c.id === activeCanvasId);
-        if (!canvas) return;
-        // Dynamic import to avoid circular deps at module level
-        import('../../plugins/builtin/canvas/canvas-blueprint').then(({ exportBlueprint }) => {
-          const blueprint = exportBlueprint(canvas);
-          navigator.clipboard.writeText(JSON.stringify(blueprint, null, 2)).catch(() => {});
-        });
-      },
-    });
-
-    if (activeProjectId) {
-      items.push({
-        id: 'action:export-project-blueprints',
-        label: 'Export project as blueprint bundle',
-        category: CATEGORY.commands,
-        keywords: ['blueprint', 'bundle', 'project', 'export', 'all', 'canvases', 'backup'],
-        execute: () => {
-          // Project settings has the export bundle button. This used to set
-          // the scope to the word 'project', which no project has.
-          openProjectSettings(activeProjectId);
-        },
-      });
-    }
-
-    items.push({
-      id: 'action:import-blueprint-bundle',
-      label: 'Import blueprint bundle',
-      category: CATEGORY.commands,
-      keywords: ['blueprint', 'bundle', 'import', 'project', 'canvases', 'restore'],
-      execute: () => {
-        // Open the blueprint gallery which handles both single and bundle imports
-        useUIStore.getState().openBlueprintGallery();
-      },
-    });
-
     return items;
   }, [
     shortcuts, activeProjectId, annexSettings, annexStatus,

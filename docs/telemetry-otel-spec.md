@@ -601,12 +601,11 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.settings.page_viewed` | `c.settings.page` (`SettingsSubPage` union, `shared/types.ts:570`) |
 | `c.command_palette.executed` | `c.command.prefix` (text before the first `:`, e.g. `toggle-settings`, `project`, `agent`, `plugin-cmd`), `c.command.category` |
 | `c.help.topic_viewed` | `c.help.topic` (static IDs from `help-content.ts`). **Search text is never sent.** |
-| `c.blueprint.*` | `export` (destination enum), `import` (match-status counts), `create_from_builtin` (`small-squad`/`large-squad`) |
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
 
-**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette and help topics are renderer call sites, owned by the refresh (§9.1).
+**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` comes from main. Page views, the command palette and help topics are renderer call sites, owned by the refresh (§9.1).
 
 ### 4.16 Feedback (`framebriar/feedback-service.ts`, [#2309](https://github.com/Agent-Clubhouse/Clubhouse/issues/2309))
 
@@ -1256,7 +1255,7 @@ One destination failing never shortens another's flush or shutdown. Export resul
 | Preset | Spans | Events | Metrics |
 |---|---|---|---|
 | `all` | everything the level allows | everything the level allows | everything the level allows |
-| `user_activity` ("User activity and errors") | `c.agent.spawn`, `.kill`, `.create`, `.delete`, `c.agent.turn` (chat turn start to end), `c.agent.permission` (permission decisions), `c.agent.run` (normal runs too), `c.app.startup`, plus any span that ended in error. Never a Detailed span (`c.agent.tool_call`, `c.ipc.invoke`, `c.annex.rest`), whatever the level. | every Errors-level event (exceptions, `c.app.unclean_exit`, `c.renderer.gone`, `c.child_process.gone`, `c.ui.action_failed`, …), `c.telemetry.enabled` / `.disabled`, plus feature and navigation events: `c.ui.feature_used` (also carries view and surface changes; there is no separate navigation event), `c.popout.opened`, `c.settings.changed`, `c.theme.changed`, `c.blueprint.exported` / `.imported`, and the feedback lifecycle (`c.feedback.captured`, `.submitted`, `.delivered`, `.connected`, `.access`; #2524) | `c.app.sessions`, `c.telemetry.dropped` (so a gap can be told from silence) and `c.app.startup.duration` |
+| `user_activity` ("User activity and errors") | `c.agent.spawn`, `.kill`, `.create`, `.delete`, `c.agent.turn` (chat turn start to end), `c.agent.permission` (permission decisions), `c.agent.run` (normal runs too), `c.app.startup`, plus any span that ended in error. Never a Detailed span (`c.agent.tool_call`, `c.ipc.invoke`, `c.annex.rest`), whatever the level. | every Errors-level event (exceptions, `c.app.unclean_exit`, `c.renderer.gone`, `c.child_process.gone`, `c.ui.action_failed`, …), `c.telemetry.enabled` / `.disabled`, plus feature and navigation events: `c.ui.feature_used` (also carries view and surface changes; there is no separate navigation event), `c.popout.opened`, `c.settings.changed`, `c.theme.changed`, and the feedback lifecycle (`c.feedback.captured`, `.submitted`, `.delivered`, `.connected`, `.access`; #2524) | `c.app.sessions`, `c.telemetry.dropped` (so a gap can be told from silence) and `c.app.startup.duration` |
 
 The Goobers poll counters are Detailed metrics, so the preset never sends them. The test event (`c.telemetry.test`) passes every preset, but carries its target's id in `c.telemetry.destination` and reaches only that destination.
 

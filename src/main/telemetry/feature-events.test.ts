@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortPending } from './facade';
 import { setProducingRuntime } from './__test-utils__/producing-runtime';
-import { blueprintTransfer, helperAutoCooldown, helperAutoRefused, helperPresetsChanged, helperQuotaRead, helperRouted, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
+import { helperAutoCooldown, helperAutoRefused, helperPresetsChanged, helperQuotaRead, helperRouted, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
 import * as definitions from '../../shared/settings-definitions';
 import { byteSizeBucket, classifyFetchError } from './workspace';
 import type { TelemetryRuntime } from './types';
@@ -42,15 +42,11 @@ describe('feature events', () => {
     expect(JSON.stringify(events)).not.toContain('acme');
   });
 
-  it('records popouts and blueprint transfers', () => {
+  it('records popouts', () => {
     setProducingRuntime(runtime());
     popoutOpened('canvas');
-    blueprintTransfer('exported', true);
-    blueprintTransfer('imported', false);
     expect(events).toEqual([
       { name: 'clubhouse.popout.opened', attrs: { 'clubhouse.popout.type': 'canvas' } },
-      { name: 'clubhouse.blueprint.exported', attrs: { 'clubhouse.outcome': 'ok' } },
-      { name: 'clubhouse.blueprint.imported', attrs: { 'clubhouse.outcome': 'error' } },
     ]);
   });
 

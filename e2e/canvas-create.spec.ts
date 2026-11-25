@@ -64,19 +64,11 @@ test('clicking the canvas + button → New Canvas creates a new canvas tab', asy
   const initialCount = await tabsLocator.count();
   expect(initialCount).toBeGreaterThanOrEqual(1);
 
-  // 4. Click the + button. In production main.ts always provides
-  //    onAddFromBlueprint, so the + button opens a dropdown.
+  // 4. Click New canvas. It adds a canvas directly; there is no menu.
   const addBtn = window.locator('[data-testid="canvas-add-button"]');
   await expect(addBtn).toBeVisible();
   await addBtn.click();
 
-  // 5. The dropdown should appear and contain "New canvas".
-  const addMenu = window.locator('[data-testid="canvas-add"]');
-  await expect(addMenu).toBeVisible({ timeout: 2_000 });
-  const addNew = window.locator('[data-testid="canvas-add-new"]');
-  await expect(addNew).toBeVisible({ timeout: 5_000 });
-  await addNew.click();
-
-  // 6. A new canvas tab must now exist (count increased by exactly 1).
+  // 5. A new canvas tab must now exist (count increased by exactly 1).
   await expect(tabsLocator).toHaveCount(initialCount + 1, { timeout: 5_000 });
 });

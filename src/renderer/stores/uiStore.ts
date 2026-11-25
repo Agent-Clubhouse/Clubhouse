@@ -6,17 +6,6 @@ import { migrateRetiredExplorerTab } from '../plugins/retired-plugins';
 
 const ACTIVE_HOST_KEY = 'clubhouse_active_host';
 
-/**
- * Which canvas store a blueprint import should target. Set by the caller that
- * opened the gallery (e.g. the app-mode rail Canvas vs. a project-mode Canvas
- * tab) so the import doesn't fall back to guessing from the globally active
- * project — that guess is wrong whenever a project is open but the gallery
- * was opened from the app-level rail Canvas.
- */
-export type BlueprintGalleryScope =
-  | { mode: 'app' }
-  | { mode: 'project'; projectId: string; projectPath: string };
-
 interface UIState {
   explorerTab: ExplorerTab;
   previousExplorerTab: ExplorerTab | null;
@@ -61,10 +50,6 @@ interface UIState {
   quickAgentDialogOpen: boolean;
   openQuickAgentDialog: () => void;
   closeQuickAgentDialog: () => void;
-  blueprintGalleryOpen: boolean;
-  blueprintGalleryScope: BlueprintGalleryScope | null;
-  openBlueprintGallery: (scope?: BlueprintGalleryScope) => void;
-  closeBlueprintGallery: () => void;
 }
 
 
@@ -189,8 +174,4 @@ export const useUIStore = create<UIState>((set, get) => ({
   quickAgentDialogOpen: false,
   openQuickAgentDialog: () => set({ quickAgentDialogOpen: true }),
   closeQuickAgentDialog: () => set({ quickAgentDialogOpen: false }),
-  blueprintGalleryOpen: false,
-  blueprintGalleryScope: null,
-  openBlueprintGallery: (scope) => set({ blueprintGalleryOpen: true, blueprintGalleryScope: scope ?? null }),
-  closeBlueprintGallery: () => set({ blueprintGalleryOpen: false, blueprintGalleryScope: null }),
 }));

@@ -195,7 +195,7 @@ export function registerMcpBindingHandlers(): void {
         // Allow binding for sleeping (unregistered) durable agents — the binding
         // will be stored and used when the agent wakes up and connects to the MCP
         // bridge. This is essential for canvas wire creation: wires can be
-        // created (e.g. from a blueprint) before agents are started.
+        // created before agents are started.
         if (!agentRegistry.get(agentId as string)) {
           appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
         }

@@ -24,7 +24,6 @@ import { CommandPalette } from './features/command-palette/CommandPalette';
 import { FeedbackDialogHost } from './features/feedback/FeedbackDialogHost';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { QuickPrompt } from './chrome/QuickPrompt';
-import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { CollapsedSidebarNotices } from './features/app/AppNotices';
 import { initApp } from './app-initializer';
@@ -292,7 +291,6 @@ export function App() {
         <CommandPalette />
         <QuickPrompt />
         <QuickAgentDialog />
-        <BlueprintGallery />
         <WhatsNewDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
@@ -324,7 +322,6 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
-        <BlueprintGallery />
         <WhatsNewDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
@@ -379,7 +376,6 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
-        <BlueprintGallery />
         <WhatsNewDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
@@ -409,7 +405,6 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
-        <BlueprintGallery />
         <WhatsNewDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
@@ -439,7 +434,6 @@ export function App() {
       </RailSection>
       <CommandPalette />
       <QuickAgentDialog />
-      <BlueprintGallery />
       <WhatsNewDialog />
       <FeedbackDialogHost />
       <FilePreviewHost />
