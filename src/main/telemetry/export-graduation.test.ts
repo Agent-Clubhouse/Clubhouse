@@ -140,6 +140,18 @@ afterEach(async () => {
   await fsp.rm(userData.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
+/**
+ * Budgets for this file, whose cases save settings through atomic file writes
+ * (and hold or fail them on purpose) and then poll the result. A poll that succeeds
+ * returns on its first success, so SETTLE only bounds a failure; the default 1s
+ * missed on a loaded hosted Windows runner (#3691), as in 'an unreadable file stays
+ * unreadable until the write over it lands'. The file-wide test budget lets a poll
+ * run its course; each case takes well under a second locally.
+ */
+const SETTLE = { timeout: 10_000 };
+const TEST_BUDGET_MS = 30_000;
+vi.setConfig({ testTimeout: TEST_BUDGET_MS });
+
 describe('a setup the old gate held back ends up off', () => {
   const phase1 = { enabled: true, level: 'standard', sampleRate: 1, destination: { kind: 'otlp', endpoint: `http://${LOOPBACK_HOST}` } };
   const phase2 = { enabled: true, level: 'standard', sampleRate: 1, consentVersion: 1, destination: 'otlp', otlpEndpoint: `http://${LOOPBACK_HOST}`, otlpConfirmedHost: LOOPBACK_HOST };
@@ -199,7 +211,7 @@ describe('a setup the old gate held back ends up off', () => {
     await fsp.mkdir(getOfflineDir(), { recursive: true });
     await fsp.writeFile(path.join(getOfflineDir(), 'queued.ai.json'), '[]');
     await launchAndWaitForMarker();
-    await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false));
+    await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false), SETTLE);
   });
 
   it('does not raise the local recording level for a setup that was held back', async () => {
@@ -211,7 +223,7 @@ describe('a setup the old gate held back ends up off', () => {
       const logging = JSON.parse(readText('logging-settings.json'));
       expect(logging.telemetryLevelMigrated).toBe(true);
       expect(logging.telemetryLevel).not.toBe('detailed');
-    });
+    }, SETTLE);
   });
 });
 
@@ -245,7 +257,7 @@ describe('a setup left exactly alone', () => {
     seedGate(true, true);
     writeJson(SETTINGS_FILE, file(1, { ...otlp(true), level: 'detailed' }, framebriar()));
     await launchAndWaitForMarker();
-    await vi.waitFor(() => expect(JSON.parse(readText('logging-settings.json')).telemetryLevel).toBe('detailed'));
+    await vi.waitFor(() => expect(JSON.parse(readText('logging-settings.json')).telemetryLevel).toBe('detailed'), SETTLE);
   });
 
   it('keeps the queue of a setup that passed', async () => {
@@ -362,7 +374,7 @@ describe('Feedback connecting later', () => {
       writeJson(SETTINGS_FILE, { ...file(1, otlp(false), framebriar({ confirmedHost: FB_HOST })), developerRule: 1, exportGraduation: 1 });
       takeDeveloperRuleSwitchedOff();
       await launch();
-      await vi.waitFor(() => expect(readSaved().developerRule).toBe(2));
+      await vi.waitFor(() => expect(readSaved().developerRule).toBe(2), SETTLE);
       expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true });
       // The next launch's load finds the marker.
       resetAllSettingsStoresForTests();
@@ -448,7 +460,7 @@ describe('Feedback connecting later', () => {
     expect(developer()).toMatchObject({ enabled: true, confirmedHost: FB_HOST, framebriar: { userOff: false } });
 
     // The file this wrote came from the defaults. Neither one-time migration may undo the choice.
-    await vi.waitFor(() => expect(readSaved()).toMatchObject({ exportGraduation: 1, developerRule: 2 }));
+    await vi.waitFor(() => expect(readSaved()).toMatchObject({ exportGraduation: 1, developerRule: 2 }), SETTLE);
     await launch();
     expect(developer()).toMatchObject({ enabled: true, framebriar: { userOff: false } });
   });
@@ -475,8 +487,8 @@ describe('opting in after the migration', () => {
     await control.setEnabled('otlp', true, { consent: true, host: LOOPBACK_HOST });
     expect(otlpEntry().enabled).toBe(true);
 
-    await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
-    await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true));
+    await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1), SETTLE);
+    await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true), SETTLE);
     await launch();
     expect(otlpEntry()).toMatchObject({ enabled: true, confirmedHost: LOOPBACK_HOST });
     expect(exportAttempts()).toBe(1);
@@ -501,7 +513,7 @@ describe('a failed save', () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await launch();
-    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled(), SETTLE);
 
     // Off in memory, untouched on disk, and nothing started.
     expect(readText(SETTINGS_FILE)).toBe(before);
@@ -532,7 +544,7 @@ describe('the saved flag', () => {
     expect(readText('experimental-settings.json')).toBe(flagFile);
 
     await experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), themeGradients: true });
-    await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json'))).toEqual({ telemetry: true, themeGradients: true }));
+    await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json'))).toEqual({ telemetry: true, themeGradients: true }), SETTLE);
   });
 });
 
@@ -551,7 +563,7 @@ describe('a saved false always wins', () => {
   /** The next launch, once its save has landed. */
   async function upgradeAndWaitForOff(): Promise<void> {
     await launch();
-    await vi.waitFor(() => expect(readSaved().destinations.some((d) => d.enabled)).toBe(false));
+    await vi.waitFor(() => expect(readSaved().destinations.some((d) => d.enabled)).toBe(false), SETTLE);
   }
 
   it('kept install, older build turns the flag off, upgrade: off, with no export attempt and the queue cleared', async () => {
@@ -570,7 +582,7 @@ describe('a saved false always wins', () => {
     expect(readSaved().consentVersion).toBe(1);
     expect(entryOf('otlp')).toMatchObject({ enabled: false, confirmedHost: LOOPBACK_HOST });
     expect(entryOf('framebriar')).toMatchObject({ enabled: false, confirmedHost: FB_HOST, framebriar: { userOff: true } });
-    await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false));
+    await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false), SETTLE);
 
     // Repeated starts are no-ops.
     const bytes = readText(SETTINGS_FILE);
@@ -589,7 +601,7 @@ describe('a saved false always wins', () => {
 
     await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
     expect(entryOf('otlp').enabled).toBe(true);
-    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true), SETTLE);
 
     for (let run = 0; run < 3; run++) {
       await launch();
@@ -603,8 +615,8 @@ describe('a saved false always wins', () => {
     writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar()));
     await launchAndWaitForMarker();
     await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
-    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
-    await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'otlp')?.enabled).toBe(true));
+    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true), SETTLE);
+    await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'otlp')?.enabled).toBe(true), SETTLE);
 
     // Back to true on the older build changes nothing, so the install stays on through that launch.
     olderBuildSavesFlag(true);
@@ -625,7 +637,7 @@ describe('a saved false always wins', () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await launch();
-    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled(), SETTLE);
     expect(readText(SETTINGS_FILE)).toBe(before);
     expect(anyOn()).toBe(false);
     expect(isTelemetryConfigured()).toBe(false);
@@ -664,7 +676,7 @@ describe('a saved false always wins', () => {
       vi.mocked(fs.promises.rename).mockRestore();
       await control.setEnabled(id, true, ack);
       expect(entryOf(id).enabled).toBe(true);
-      await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+      await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true), SETTLE);
     });
   });
 
@@ -674,14 +686,14 @@ describe('a saved false always wins', () => {
     writeJson(SETTINGS_FILE, graduated(otlp(false)));
     await launch();
     await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
-    await vi.waitFor(() => expect(savedFlags()).toEqual({ telemetry: true, chat: true, dispatcher: false, themeGradients: true }));
+    await vi.waitFor(() => expect(savedFlags()).toEqual({ telemetry: true, chat: true, dispatcher: false, themeGradients: true }), SETTLE);
   });
 
   it('Framebriar confirmed, flag false, Feedback connects later: doesn\'t follow on, and a Share still works and sets the flag', async () => {
     seedGate(false, true);
     writeJson(SETTINGS_FILE, graduated(otlp(false), framebriar({ confirmedHost: FB_HOST })));
     await launch();
-    await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true }));
+    await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true }), SETTLE);
 
     connect();
     await control.syncFramebriarDestination();
@@ -691,7 +703,7 @@ describe('a saved false always wins', () => {
 
     await control.setEnabled('framebriar', true, { host: FB_HOST });
     expect(entryOf('framebriar')).toMatchObject({ enabled: true, framebriar: { userOff: false } });
-    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true), SETTLE);
 
     await launch();
     await control.syncFramebriarDestination();
@@ -772,7 +784,7 @@ describe('an unreadable flag file', () => {
     seed();
     writeJson(SETTINGS_FILE, active());
     await launch();
-    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
   }
 
   describe('what counts as unreadable', () => {
@@ -808,7 +820,7 @@ describe('an unreadable flag file', () => {
       expect(exportAttempts()).toBe(0);
       expect(isTelemetryConfigured()).toBe(false);
       expect(getLocalSink()).not.toBeNull();
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
 
       expect(prefs(readSaved())).toBe(prefs(before));
       expect(readSaved().consentVersion).toBe(1);
@@ -898,7 +910,7 @@ describe('an unreadable flag file', () => {
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBeUndefined();
       expect(exportAttempts()).toBe(1);
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBeUndefined());
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBeUndefined(), SETTLE);
       expect(prefs(readSaved())).toBe(saved);
     });
 
@@ -911,7 +923,7 @@ describe('an unreadable flag file', () => {
       expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
       expect(entryOf('framebriar').framebriar).toEqual({ userOff: true });
       expect(exportAttempts()).toBe(0);
-      await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false));
+      await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false), SETTLE);
     });
 
     it.each<[string, () => void]>([
@@ -929,7 +941,7 @@ describe('an unreadable flag file', () => {
     it('an unrelated save from the renderer doesn\'t clear it', async () => {
       await paused();
       await experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, telemetry: null }));
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, telemetry: null }), SETTLE);
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
@@ -988,7 +1000,7 @@ describe('an unreadable flag file', () => {
     failWritesTo(SETTINGS_FILE);
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await launch();
-    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled(), SETTLE);
     expect(readText(SETTINGS_FILE)).toBe(before);
     expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
     expect(isTelemetryConfigured()).toBe(false);
@@ -996,7 +1008,7 @@ describe('an unreadable flag file', () => {
 
     vi.mocked(fs.promises.rename).mockRestore();
     await launch();
-    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
     expect(exportAttempts()).toBe(0);
   });
 
@@ -1009,10 +1021,10 @@ describe('an unreadable flag file', () => {
       failWritesTo(SETTINGS_FILE);
       const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       await launch();
-      await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+      await vi.waitFor(() => expect(quiet).toHaveBeenCalled(), SETTLE);
       expect(readSaved().exportSuspended).toBeUndefined();
       await experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).themeGradients).toBe(true));
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).themeGradients).toBe(true), SETTLE);
       vi.mocked(fs.promises.rename).mockRestore();
     }
 
@@ -1021,7 +1033,7 @@ describe('an unreadable flag file', () => {
       failWritesTo(SETTINGS_FILE);
       const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       await launch();
-      await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+      await vi.waitFor(() => expect(quiet).toHaveBeenCalled(), SETTLE);
       expect(readSaved().exportSuspended).toBeUndefined();
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
@@ -1059,7 +1071,7 @@ describe('an unreadable flag file', () => {
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
       expect(recoveryCopies()).toEqual([`${FLAG_FILE}.unreadable`]);
       expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
     });
@@ -1067,11 +1079,11 @@ describe('an unreadable flag file', () => {
     it('Resume over the marker writes true and resumes, and lasts', async () => {
       await pausedInMemoryThenRewritten();
       await launch();
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
       expect((await control.getStatus()).exportPaused).toBe(true);
       const result = await control.resumeExport();
       expect(result.status.exportPaused).toBe(false);
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, telemetry: true }));
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, telemetry: true }), SETTLE);
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBeUndefined();
       expect(exportAttempts()).toBe(1);
@@ -1080,7 +1092,7 @@ describe('an unreadable flag file', () => {
     it('Resume stays paused while the opt-in can\'t be saved, even with the marker in place', async () => {
       await pausedInMemoryThenRewritten();
       await launch();
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
       const flagFile = readText(FLAG_FILE);
       failWritesTo(FLAG_FILE);
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -1094,7 +1106,7 @@ describe('an unreadable flag file', () => {
     it('Resume with the flag saved but the pause not cleared on disk still resolves on the next load', async () => {
       await pausedInMemoryThenRewritten();
       await launch();
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
       failWritesTo(SETTINGS_FILE);
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       expect((await control.resumeExport()).status.exportPaused).toBe(false);
@@ -1117,7 +1129,7 @@ describe('an unreadable flag file', () => {
     it('repeated starts over the marker are no-ops, and the recovery copy stays', async () => {
       await pausedInMemoryThenRewritten();
       await launch();
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
       const settings = readText(SETTINGS_FILE);
       const flags = readText(FLAG_FILE);
       for (let run = 0; run < 2; run++) {
@@ -1164,7 +1176,7 @@ describe('an unreadable flag file', () => {
       const original = readText(FLAG_FILE);
 
       const firstSave = experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(held.staged()).toBe(true));
+      await vi.waitFor(() => expect(held.staged()).toBe(true), SETTLE);
       expect(readText(FLAG_FILE)).toBe(original);
       const secondSave = experimentalSettings.saveSettings({ themeGradients: false });
       held.release();
@@ -1185,8 +1197,8 @@ describe('an unreadable flag file', () => {
       expect(result.status.pausedFileCopy).toBeUndefined();
       expect('needs' in result).toBe(false);
       expect(exportAttempts()).toBeGreaterThan(0);
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).telemetry).toBe(true));
-      await vi.waitFor(() => expect(readSaved().exportSuspended).toBeUndefined());
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).telemetry).toBe(true), SETTLE);
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBeUndefined(), SETTLE);
       expect(prefs(readSaved())).toBe(saved);
       expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
 
@@ -1268,7 +1280,7 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
       seedGate(stored, eligible);
       resetAllSettingsStoresForTests();
       await experimentalSettings.saveSettings(sent);
-      await vi.waitFor(() => expect(saved().themeGradients).toBe(true));
+      await vi.waitFor(() => expect(saved().themeGradients).toBe(true), SETTLE);
       expect(saved().telemetry).toBe(stored);
     });
   });
@@ -1289,9 +1301,9 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
     fs.writeFileSync(userDataPath(FLAG_FILE), '{broken');
     writeJson(SETTINGS_FILE, { ...file(1, otlp(true), framebriar()), exportGraduation: 1 });
     await launch();
-    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'), SETTLE);
     await experimentalSettings.saveSettings({ telemetry: true, themeGradients: true });
-    await vi.waitFor(() => expect(saved()).toMatchObject({ themeGradients: true, telemetry: null }));
+    await vi.waitFor(() => expect(saved()).toMatchObject({ themeGradients: true, telemetry: null }), SETTLE);
     await launch();
     expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
     expect(exportAttempts()).toBe(0);
@@ -1310,9 +1322,9 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
     writeJson(SETTINGS_FILE, { ...file(1, otlp(false), framebriar({ userOff: true })), exportGraduation: 1 });
     await launch();
     await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
-    await vi.waitFor(() => expect(saved().telemetry).toBe(true));
+    await vi.waitFor(() => expect(saved().telemetry).toBe(true), SETTLE);
     await experimentalSettings.saveSettings({ telemetry: false, themeGradients: true });
-    await vi.waitFor(() => expect(saved()).toEqual({ telemetry: true, themeGradients: true }));
+    await vi.waitFor(() => expect(saved()).toEqual({ telemetry: true, themeGradients: true }), SETTLE);
   });
 });
 
@@ -1327,7 +1339,7 @@ describe('reading the flags while this process is writing them', () => {
     const held = holdSettingsRename(FLAG_FILE);
 
     const saving = experimentalSettings.saveSettings({ themeGradients: true });
-    await vi.waitFor(() => expect(held.staged()).toBe(true));
+    await vi.waitFor(() => expect(held.staged()).toBe(true), SETTLE);
     expect(readText(FLAG_FILE)).toBe(original);
 
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
@@ -1348,7 +1360,7 @@ describe('reading the flags while this process is writing them', () => {
 
     const saving = experimentalSettings.saveSettings({ themeGradients: true });
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
-    await vi.waitFor(() => expect(held.staged()).toBe(true));
+    await vi.waitFor(() => expect(held.staged()).toBe(true), SETTLE);
     expect(readText(FLAG_FILE)).toBe(original);
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
     expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
