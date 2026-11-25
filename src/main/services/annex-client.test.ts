@@ -478,6 +478,74 @@ describe('annex-client', () => {
       expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
     });
 
+    it('reports an accepted reverse link as reachable without calling it a direct connection (#3613)', () => {
+      expect(annexClient.canReachMachine(fingerprint)).toBe(true);
+      expect(annexClient.canReachMachine(fingerprint.toUpperCase())).toBe(true);
+      expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
+      accepted = false;
+      devicesChanged();
+      expect(annexClient.canReachMachine(fingerprint)).toBe(false);
+    });
+
+    it('tells reachability listeners once per transition to reachable (#3613)', () => {
+      const heard: string[] = [];
+      const off = annexClient.onMachineReachable((machine) => heard.push(machine));
+      try {
+        devicesChanged();
+        expect(heard).toEqual([]);
+        accepted = false;
+        devicesChanged();
+        accepted = true;
+        devicesChanged();
+        devicesChanged();
+        expect(heard).toEqual([fingerprint]);
+      } finally { off(); }
+    });
+
+    it('re-drives listeners when a route that dropped while the machine stayed reachable opens again (#3613)', () => {
+      // Already reachable over the reverse link since startClient.
+      expect(annexClient.canReachMachine(fingerprint)).toBe(true);
+      const heard: string[] = [];
+      const off = annexClient.onMachineReachable((machine) => heard.push(machine));
+      try {
+        // The direct route's first opening in this reachable period tells no one again.
+        annexClient._addConnectedSatelliteForTesting(fingerprint);
+        devicesChanged();
+        expect(heard).toEqual([]);
+        // The direct socket drops mid-send; the reverse link keeps the machine reachable, and nothing opened.
+        annexClient._receiveSatelliteDisconnectForTesting(fingerprint);
+        expect(annexClient.canReachMachine(fingerprint)).toBe(true);
+        expect(heard).toEqual([]);
+        // The direct connection comes back: consumers hear it, as onSatelliteConnected told them.
+        annexClient._addConnectedSatelliteForTesting(fingerprint);
+        devicesChanged();
+        expect(heard).toEqual([fingerprint]);
+        devicesChanged();
+        expect(heard).toHaveLength(1);
+        // A replaced accepted link with no drop tells no one.
+        epoch++;
+        devicesChanged();
+        expect(heard).toHaveLength(1);
+        // The reverse link drops and returns while direct holds: heard once more.
+        accepted = false;
+        devicesChanged();
+        expect(heard).toHaveLength(1);
+        accepted = true;
+        devicesChanged();
+        expect(heard).toHaveLength(2);
+      } finally { off(); }
+    });
+
+    it.each([
+      ['a phone', { kind: 'phone' as const }],
+      ['a pending member', { networkPending: true }],
+      ['a one-to-one controller', { role: 'controller' as const }],
+    ])('never reports %s as reachable over a reverse link (#3613)', (_name, change) => {
+      peer = { ...peer, ...change };
+      devicesChanged();
+      expect(annexClient.canReachMachine(fingerprint)).toBe(false);
+    });
+
     describe('reverse Details admission', () => {
       const agentId = 'details /agent';
       const details = (): RemoteAgentDetails => ({

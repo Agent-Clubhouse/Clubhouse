@@ -91,7 +91,7 @@ export async function listConnectionPickerTargets(agentId: string): Promise<Conn
     const chat = inventory.targets.find((target) => target.kind === 'dispatcher');
     const targets = inventory.targets.filter((target) => target.kind === 'dispatcher' || (target.id !== controller?.agentId && target.id !== chat?.id));
     if (chat && controller?.agentId && controller.agentId !== chat.id) targets.push({ id: controller.agentId, name: 'Dispatcher controller', kind: 'agent', controllerOf: chat.id });
-    return targets.map((target) => ({ ...target, machineId, machineName: peer.alias, online: client.isMachineConnected(machineId) }));
+    return targets.map((target) => ({ ...target, machineId, machineName: peer.alias, online: client.canReachMachine(machineId) }));
   });
   return { targets: [...locals.filter((target) => target.id !== agentId && target.routeId !== agentId && target.controllerOf !== agentId), ...remote, ...groups.map((group): ConnectionPickerTarget => ({ id: group.id, name: group.name, kind: 'group-project' }))],
     machines: peers.map((peer) => ({ id: peer.fingerprint.toLowerCase(), name: peer.alias, network: peer.role === 'member' && peer.kind !== 'phone' })),

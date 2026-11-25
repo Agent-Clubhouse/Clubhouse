@@ -357,6 +357,71 @@ function reconcileSatelliteStreams(): void {
       }
     }
   } finally { reconcilingStreams = false; }
+  noteReachability();
+}
+
+const reachableListeners = new Set<(machine: string) => void>();
+interface ReachablePeriod {
+  /** Routes up now. */
+  direct: boolean;
+  reverse: boolean;
+  /** Routes that were up at some point since the machine last became reachable. */
+  seenDirect: boolean;
+  seenReverse: boolean;
+}
+const reachableMachines = new Map<string, ReachablePeriod>();
+
+/**
+ * Tells listeners when requests to a machine become possible (#3613), and when
+ * a route that dropped while the other route kept the machine reachable opens
+ * again. A send the dropped route aborted is then re-driven, as a direct
+ * reconnect did before. A second route opening for the first time in a
+ * reachable period tells no one: the first already did, and a peer that is
+ * still starting must not be caught up with twice.
+ */
+function noteReachability(): void {
+  const now = new Map<string, ReachablePeriod>();
+  const changed: string[] = [];
+  for (const sat of satellites.values()) {
+    if (!canRequestSatellite(sat.fingerprint)) continue;
+    const machine = sat.fingerprint.toLowerCase();
+    const direct = directSatelliteReady(sat.fingerprint);
+    const reverse = reverseControllerReadReady(sat.fingerprint);
+    const before = reachableMachines.get(machine);
+    if (!before) changed.push(machine);
+    else if ((direct && !before.direct && before.seenDirect) || (reverse && !before.reverse && before.seenReverse)) changed.push(machine);
+    now.set(machine, {
+      direct, reverse,
+      seenDirect: direct || !!before?.seenDirect,
+      seenReverse: reverse || !!before?.seenReverse,
+    });
+  }
+  reachableMachines.clear();
+  for (const [machine, period] of now) reachableMachines.set(machine, period);
+  for (const machine of changed) {
+    for (const listener of [...reachableListeners]) {
+      try {
+        listener(machine);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+}
+
+/**
+ * Whether requests to `machine` can go now: over this machine's own connection,
+ * or over the reverse control link it accepted from that member (#3613). The
+ * target still applies its own grants; this only says whether a route exists.
+ */
+export function canReachMachine(machine: string): boolean {
+  return canRequestSatellite(satelliteFor(machine)?.fingerprint ?? machine.toLowerCase());
+}
+
+/** Told each time requests to a machine become possible, or a route that dropped while it stayed reachable opens again, with its lowercased fingerprint (#3613). */
+export function onMachineReachable(listener: (machine: string) => void): () => void {
+  reachableListeners.add(listener);
+  return () => { reachableListeners.delete(listener); };
 }
 
 /** Discovered but unpaired services visible on the LAN. */
@@ -885,6 +950,7 @@ function setState(
       }
     }
   }
+  noteReachability();
 }
 
 const connectedListeners = new Set<(machine: string) => void>();
@@ -3559,6 +3625,7 @@ export function forgetAllSatellites(): void {
     disposeRemoteBuffers(sat.id);
   }
   satellites.clear();
+  reachableMachines.clear();
   seededBuffers.clear();
   networkChannel.closeAll('out');
   annexControl.closeAll('out');
@@ -3677,6 +3744,7 @@ export function stopClient(): void {
     disposeRemoteBuffers(sat.id);
   }
   satellites.clear();
+  reachableMachines.clear();
   seededBuffers.clear();
   discoveredServices.clear();
   networkChannel.closeAll('out');

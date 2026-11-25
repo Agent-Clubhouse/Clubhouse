@@ -13,7 +13,7 @@ const machine = Array(32).fill('aa').join(':');
 vi.mock('./annex-identity', () => ({ getOrCreateIdentity: () => ({ fingerprint: Array(32).fill('aa').join(':') }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => state.settings, networkEnabled: () => state.settings.networkEnabled }));
 vi.mock('./annex-devices', () => ({ listDevices: () => state.devices }));
-vi.mock('./annex-client', () => ({ isMachineConnected: () => true, postToMachine: (...args: unknown[]) => state.post(...args) }));
+vi.mock('./annex-client', () => ({ canReachMachine: () => true, postToMachine: (...args: unknown[]) => state.post(...args) }));
 vi.mock('./project-store', () => ({ peekProjects: async () => state.projects }));
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.agents }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { getAllRegistrations: () => new Map([...state.runtimes.keys()].map((id) => [id, {}])) } }));
