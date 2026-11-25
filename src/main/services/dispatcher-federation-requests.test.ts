@@ -166,6 +166,21 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
       expect(f.a.deps.present).toHaveBeenCalledWith(expect.objectContaining({ id: r.id, delivery: 'expired' }), 'failure');
     });
 
+    it('lets a final outbox answer win over the restart wait', async () => {
+      const f = fixture(); const r = await f.offer();
+      f.revoke(); f.a.deps.awaitingController = () => true;
+      f.statuses.get(r.id)!.state = 'refused'; f.statuses.get(r.id)!.reason = 'The receiver refused it.';
+      await f.a.api.reconcile();
+      expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ delivery: 'refused', reason: 'The receiver refused it.' });
+    });
+
+    it('names a member\'s controller only from a retained request to or from it', async () => {
+      const f = fixture(); await f.offer();
+      expect(f.a.api.namesController('LAPTOP', f.b.self.agentId)).toBe(true);
+      expect(f.a.api.namesController('Laptop', 'project-agent')).toBe(false);
+      expect(f.a.api.namesController('Elsewhere', f.b.self.agentId)).toBe(false);
+    });
+
     it('refuses for good when the member or pairing is really gone', async () => {
       const f = fixture(); await f.offer();
       f.revoke(); f.a.deps.awaitingController = () => false;

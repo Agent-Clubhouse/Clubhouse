@@ -856,7 +856,7 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       expect(getDelivery('here', first.id)).not.toHaveProperty('reason');
     } finally { vi.useRealTimers(); }
   });
-  it('keeps busy-target retries fixed and timer-driven while a longer transport retry is waiting', async () => {
+  it('grows busy-target retries with age, timer-driven, while a longer transport retry is waiting (#3829)', async () => {
     vi.useFakeTimers();
     try {
       useMemoryDeliveryStore();
@@ -871,7 +871,8 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       for (let attempt = 1; attempt <= 8; attempt++) {
         const status = getDelivery('here', busy.id)!;
         expect(status.attempts).toBe(attempt);
-        expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(READINESS_RETRY_MS);
+        const age = Date.parse(status.updatedAt) - Date.parse(busy.queuedAt);
+        expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(Math.min(60 * 60_000, Math.max(READINESS_RETRY_MS, Math.floor(age / 4))));
         const remaining = Date.parse(status.nextAttemptAt!) - Date.now();
         const calls = posts.filter((p) => p.path.endsWith('agent-call') && p.body.to === 'busy').length;
         await vi.advanceTimersByTimeAsync(remaining - 1);
@@ -916,6 +917,25 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       await vi.waitFor(() => expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', attempts: 2 }));
       const next = getDelivery('here', id)!;
       expect(Date.parse(next.nextAttemptAt!) - Date.parse(next.updatedAt)).toBe(120_000);
+    } finally { vi.useRealTimers(); }
+  });
+  it('caps a never-ready target at the hourly maximum, bounding tries before expiry (#3829)', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); connected = false;
+      await forwardAgentCall('here', `busy@${OTHER}`, 'Busy target', 'send_message', { message: 'never ready', idempotency_key: 'never-ready' });
+      const id = waitingFor(OTHER)[0].id;
+      respond = (urlPath, body) => !urlPath.endsWith('agent-call') ? { status: 200, body: { directions: [] } }
+        : { status: 200, body: { result: { ...ok('No input accepted'), isError: true }, delivery: { callId: body.callId, state: 'retry_later', reason: 'target_not_ready' } } };
+      vi.setSystemTime(Date.now() + 6 * 60 * 60_000);
+      connected = true; await flushOutbox(OTHER);
+      const status = getDelivery('here', id)!;
+      expect(status).toMatchObject({ state: 'retry_later', attempts: 1 });
+      expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(60 * 60_000);
+      const calls = posts.filter((p) => p.path.endsWith('agent-call')).length;
+      // An event-driven flush before the deadline does not send again.
+      await flushOutbox(OTHER);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(calls);
     } finally { vi.useRealTimers(); }
   });
   it('honors an old unproven readiness deadline after restart without rewriting historical status', async () => {

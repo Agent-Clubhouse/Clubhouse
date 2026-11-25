@@ -19,6 +19,7 @@ import { getAgentRuntime } from './agent-runtime';
 import { actionsReady, recordExternalRun } from './actions';
 import { federationMessageDirection, federationRequestRouter } from './dispatcher-federation-policy';
 import { remoteDispatcherPermissionHash } from './dispatcher-remote-permissions';
+import { federatedRequests } from './dispatcher-federation-runtime';
 
 /** Recovered work uses saved grants too: a sleeping sender is not revoked. */
 export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promise<{ allowed: true } | { allowed: false; reason: string; notReady?: true }> {
@@ -71,8 +72,10 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
     return refuse('The receiving Dispatcher or its controller link is unavailable.');
   }
   const direction = getConnectionDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine });
-  if (!direction && isDispatcherAgentId(callerId) && isNetworkComputer(item.machine) && !remoteFederationController(item.machine)?.agentId) {
+  if (!direction && isDispatcherAgentId(callerId) && isNetworkComputer(item.machine) && !remoteFederationController(item.machine)?.agentId
+    && !!federatedRequests()?.namesController(item.machine, item.body.to)) {
     // This Dispatcher's controller link to a member that hasn't published its controller yet: a restart (#3829).
+    // Only work already addressed to that member's controller waits; a project agent target is final.
     // It waits only while the sender's own grant still allows it; anything else is final.
     const waiting = evaluateGrant({ caller: { kind: 'agent', agentId: callerId, projectPath }, action: 'agent.message', target: { kind: 'agent', relations: ['connected'] } }, grants);
     return waiting.outcome === 'allow'

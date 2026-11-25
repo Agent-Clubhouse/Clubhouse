@@ -436,13 +436,21 @@ async function deliverFailureNotices(): Promise<void> {
 }
 
 /**
+ * How long a not-ready wait lasts: the readiness retry at first, growing with
+ * the item's age up to the ordinary maximum, so a receiver that never becomes
+ * ready sees a bounded number of tries before the seven-day expiry (#3829).
+ */
+function readinessBackoff(queuedAt: string, at = Date.now()): number {
+  return Math.min(RETRY_MAX_MS, Math.max(READINESS_RETRY_MS, Math.floor((at - Date.parse(queuedAt)) / 4)));
+}
+
+/**
  * Waits for a receiver that hasn't published what this delivery needs (#3829).
  * No input was sent. The wait grows with the item's age, between the readiness
  * retry and the ordinary maximum, and the seven-day expiry still ends it.
  */
 async function deferNotReady(item: OutboxItem, machine: string, detail: string): Promise<void> {
-  const age = Date.now() - Date.parse(item.queuedAt);
-  const retry = Math.min(RETRY_MAX_MS, Math.max(READINESS_RETRY_MS, Math.floor(age / 4)));
+  const retry = readinessBackoff(item.queuedAt);
   await deliveries.update((file) => {
     const saved = file.deliveries.find((r) => r.callId === item.id)!;
     // Marked sending just before the last check, but nothing went: this attempt doesn't count.
@@ -577,7 +585,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const savedDeadline = Date.parse(status.nextAttemptAt ?? '');
       // A reason string is diagnostic, not proof of safe readiness retry. Old
       // unmarked records keep their stored deadline because provenance is unknown.
-      const deadline = status.readinessRetry === true ? Math.min(savedDeadline, Date.parse(status.updatedAt) + READINESS_RETRY_MS) : savedDeadline;
+      const deadline = status.readinessRetry === true ? Math.min(savedDeadline, Date.parse(status.updatedAt) + readinessBackoff(item.queuedAt, Date.parse(status.updatedAt))) : savedDeadline;
       const delay = deadline - Date.now();
       if (delay > 0) { deferred.add(deliveryLane(item.body)); retryLater(machine, delay); continue; }
       let supported: boolean;
@@ -650,7 +658,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
         reason = receipt?.reason ?? (answer?.isError ? 'tool_retry_later' : `http_${response.status}`);
         targetNotReady = receipt?.state === 'retry_later' && receipt.reason === 'target_not_ready';
       }
-      const retry = targetNotReady ? READINESS_RETRY_MS : Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
+      const retry = targetNotReady ? readinessBackoff(item.queuedAt) : Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
       await deliveries.update((file) => {
         const saved = file.deliveries.find((r) => r.callId === item.id)!;
         Object.assign(saved, { state: 'retry_later', reason, readinessRetry: targetNotReady, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });

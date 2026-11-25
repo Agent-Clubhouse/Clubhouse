@@ -437,6 +437,11 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       if (d.store.get().pendingNews?.[admissionId]) await d.store.update((file) => { delete file.pendingNews?.[admissionId]; });
     },
     list(callerId: string) { return d.store.get().requests.filter((r) => r.callerId === callerId || d.self().agentId === callerId); },
+    /** Whether a retained request names `agentId` as that member's controller: the target it was sent to, or the origin it answers (#3829). */
+    namesController(machine: string, agentId: string) {
+      const fp = machine.toLowerCase();
+      return d.store.get().requests.some((r) => r.machineId.toLowerCase() === fp && (r.direction === 'outgoing' ? r.targetId : r.origin.agentId) === agentId);
+    },
     /** IDs may select a delivered item, but can never suppress runtime ancestry. */
     cause(callerId: string, requestId?: string, causedBy?: unknown) {
       const active = (d.inputs?.(callerId) ?? []).filter((r) => r.targetId === callerId && r.expiresAt > d.now() && current(r));
@@ -583,13 +588,16 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         }
         const status = request.deliveryId && d.delivery(request.callerId, request.deliveryId);
         const expired = d.now() >= request.expiresAt;
+        // A final outbox answer still wins over a restart wait.
+        const finalStatus = !!status && ['refused', 'expired', 'indeterminate'].includes(status.state);
         const state = request.delivery !== 'accepted' ? request.delivery
-          : waiting ? expired ? 'expired' : request.delivery
+          : waiting && !finalStatus ? expired ? 'expired' : request.delivery
+          : waiting ? status!.state === 'expired' ? 'expired' : 'refused'
           : !authorizedNow ? 'refused' : status && status.state === 'delivered' ? 'delivered' : expired ? 'expired'
           : status && ['refused', 'expired', 'indeterminate'].includes(status.state) ? status.state === 'expired' ? 'expired' : 'refused'
           : request.delivery;
         if (state === request.delivery) continue;
-        const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !authorizedNow && !waiting ? 'The network member or controller link was removed.' : status && !waiting ? status.reason : 'The request expired while waiting for the other machine.'; });
+        const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !authorizedNow && !waiting ? 'The network member or controller link was removed.' : status && (!waiting || finalStatus) ? status.reason : 'The request expired while waiting for the other machine.'; });
         d.record(updated, 'crossing');
         if (state === 'refused' || state === 'expired') await showNotice(updated);
       }
