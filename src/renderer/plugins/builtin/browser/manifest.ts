@@ -78,7 +78,7 @@ export const manifest: PluginManifest = {
             '',
             '### Safety',
             '- Pages run sandboxed, without Node.js access or app scripts.',
-            '- Clubhouse checks every page load, link and redirect. Pages can open http and https addresses, and file:// only when **Allow file:// URLs** is on. Other kinds of address are blocked.',
+            '- Clubhouse checks page loads, links and redirects. Pages can open http and https addresses, and file:// only when **Allow file:// URLs** is on for this project (or, on the app canvas, for the app). Other kinds of address are blocked.',
             '- Pages can\'t open new windows or popups. A link that would open one does nothing.',
           ].join('\n'),
         },

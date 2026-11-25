@@ -24,17 +24,19 @@ function parse(url: string): URL | null {
 }
 
 /**
- * Whether a webview may load `url`. Top-level loads allow http, https,
+ * Whether a webview may load `url`. Top-level loads allow http, https, blob:,
  * about:blank, and file when the Browser's "Allow file:// URLs" setting is on.
- * Subframes also allow about:, data: and blob:, which ordinary pages use for
- * embedded frames; Chromium already keeps those from reaching the top level.
+ * Subframes also allow about: and data:, which ordinary pages use for
+ * embedded frames.
  */
 export function webviewUrlVerdict(url: string, opts: { subframe?: boolean } = {}): WebviewUrlVerdict {
   const parsed = parse(url);
   const protocol = parsed?.protocol ?? null;
   if (protocol === 'http:' || protocol === 'https:') return 'allow';
   if (protocol === 'about:') return opts.subframe || parsed?.pathname === 'blank' ? 'allow' : 'scheme';
-  if (opts.subframe && (protocol === 'data:' || protocol === 'blob:')) return 'allow';
+  // blob: URLs belong to the page's own origin (e.g. a generated PDF opened in the same tab).
+  if (protocol === 'blob:') return 'allow';
+  if (opts.subframe && protocol === 'data:') return 'allow';
   if (protocol === 'file:') return isBrowserFileAccessAllowed() ? 'allow' : 'file-off';
   return 'scheme';
 }
@@ -63,7 +65,16 @@ export function hardenWebviewPreferences(webPreferences: WebPreferences): void {
   prefs.sandbox = true;
   prefs.webSecurity = true;
   prefs.allowRunningInsecureContent = false;
+  // A guest page must not create its own <webview>: nested guests attach to
+  // the guest's webContents, where none of these guards run.
+  prefs.webviewTag = false;
 }
+
+/**
+ * The Browser's session. Other sessions are refused: the default session has
+ * the app's own file and plugin protocol handlers and cookies.
+ */
+export const BROWSER_WEBVIEW_PARTITION = 'persist:plugin-browser';
 
 type NavigationEvent = { preventDefault(): void; url?: string; isMainFrame?: boolean };
 
@@ -85,6 +96,26 @@ export function applyWebviewGuestGuards(guest: WebContents): void {
   guest.on('will-navigate', guard('will-navigate') as never);
   guest.on('will-frame-navigate', guard('will-frame-navigate') as never);
   guest.on('will-redirect', guard('will-redirect') as never);
+
+  // Backstop for loads that skip the will-* events: the renderer changing a
+  // <webview> src after attach and webContents.loadURL both navigate
+  // programmatically. Stopping in did-start-navigation cancels the load before
+  // it commits. The renderer applies the per-project file:// setting; this
+  // keeps the floor (no file:// anywhere when the setting is off everywhere).
+  guest.on('did-start-navigation', ((event: NavigationEvent & { isSameDocument?: boolean }, legacyUrl?: unknown, legacyIsInPlace?: unknown, legacyIsMainFrame?: unknown) => {
+    const url = typeof event.url === 'string' ? event.url : typeof legacyUrl === 'string' ? legacyUrl : '';
+    const isMainFrame = typeof event.isMainFrame === 'boolean'
+      ? event.isMainFrame
+      : typeof legacyIsMainFrame === 'boolean' ? legacyIsMainFrame : true;
+    const isSameDocument = typeof event.isSameDocument === 'boolean'
+      ? event.isSameDocument
+      : legacyIsInPlace === true;
+    if (!isMainFrame || isSameDocument) return;
+    const verdict = webviewUrlVerdict(url);
+    if (verdict === 'allow') return;
+    guest.stop();
+    logBlocked(verdict, 'did-start-navigation', url);
+  }) as never);
 
   // <webview> tags don't set allowpopups, so pages never got new windows.
   // Enforce that here instead of trusting the tag.
@@ -114,6 +145,14 @@ export function applyWindowSecurityGuards(win: BrowserWindow): void {
   // Force safe preferences and restrict the first URL of every webview
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     hardenWebviewPreferences(webPreferences);
+
+    if (params.partition !== BROWSER_WEBVIEW_PARTITION) {
+      appLog('core:security', 'warn', 'Blocked webview outside the Browser session', {
+        meta: { partition: String(params.partition ?? '').slice(0, 80) },
+      });
+      event.preventDefault();
+      return;
+    }
 
     const src = params.src || '';
     if (!src) return;

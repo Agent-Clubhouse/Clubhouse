@@ -47,6 +47,8 @@ function createMockWindow() {
   };
 }
 
+const BROWSER = 'persist:plugin-browser';
+
 describe('applyWindowSecurityGuards', () => {
   let mockWin: ReturnType<typeof createMockWindow>;
 
@@ -98,14 +100,14 @@ describe('applyWindowSecurityGuards', () => {
     it('blocks javascript: URLs', () => {
       const event = { preventDefault: vi.fn() };
       const webPreferences: Record<string, unknown> = {};
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'javascript:alert(1)' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'javascript:alert(1)' });
       expect(event.preventDefault).toHaveBeenCalled();
     });
 
     it('blocks data: URLs', () => {
       const event = { preventDefault: vi.fn() };
       const webPreferences: Record<string, unknown> = {};
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'data:text/html,<h1>hi</h1>' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'data:text/html,<h1>hi</h1>' });
       expect(event.preventDefault).toHaveBeenCalled();
     });
 
@@ -113,21 +115,21 @@ describe('applyWindowSecurityGuards', () => {
       const event = { preventDefault: vi.fn() };
       const webPreferences: Record<string, unknown> = {};
       vi.mocked(isBrowserFileAccessAllowed).mockReturnValue(true);
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'file:///tmp/test.html' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'file:///tmp/test.html' });
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
     it('allows http: URLs', () => {
       const event = { preventDefault: vi.fn() };
       const webPreferences: Record<string, unknown> = {};
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'https://example.com' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'https://example.com' });
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
     it('enforces secure webPreferences', () => {
       const event = { preventDefault: vi.fn() };
       const webPreferences: Record<string, unknown> = { nodeIntegration: true };
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'https://example.com' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'https://example.com' });
       expect(webPreferences.nodeIntegration).toBe(false);
       expect(webPreferences.contextIsolation).toBe(true);
       expect(webPreferences.nodeIntegrationInSubFrames).toBe(false);
@@ -148,7 +150,7 @@ describe('applyWindowSecurityGuards', () => {
         preload: '/tmp/evil-preload.js',
         preloadURL: 'file:///tmp/evil-preload.js',
       };
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'https://example.com' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'https://example.com' });
       expect(webPreferences).toEqual({
         nodeIntegration: false,
         nodeIntegrationInSubFrames: false,
@@ -157,6 +159,7 @@ describe('applyWindowSecurityGuards', () => {
         sandbox: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
+        webviewTag: false,
       });
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
@@ -164,7 +167,7 @@ describe('applyWindowSecurityGuards', () => {
     it('hardens preferences even when the webview is then blocked', () => {
       const event = { preventDefault: vi.fn() };
       const webPreferences: Record<string, unknown> = { sandbox: false, preload: '/tmp/p.js' };
-      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'chrome://settings' });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { partition: BROWSER, src: 'chrome://settings' });
       expect(event.preventDefault).toHaveBeenCalled();
       expect(webPreferences.sandbox).toBe(true);
       expect(webPreferences).not.toHaveProperty('preload');
@@ -172,7 +175,7 @@ describe('applyWindowSecurityGuards', () => {
 
     it('blocks file: URLs by default and names the real setting', () => {
       const event = { preventDefault: vi.fn() };
-      mockWin._trigger('will-attach-webview', event, {}, { src: 'file:///tmp/test.html' });
+      mockWin._trigger('will-attach-webview', event, {}, { partition: BROWSER, src: 'file:///tmp/test.html' });
       expect(event.preventDefault).toHaveBeenCalled();
       const message = vi.mocked(appLog).mock.calls.map((c) => String(c[2])).join('\n');
       expect(message).toContain('Settings > Plugins > Browser > Allow file:// URLs');
@@ -181,13 +184,27 @@ describe('applyWindowSecurityGuards', () => {
 
     it.each(['about:blank', 'about:blank#top'])('allows %s as a first page', (src) => {
       const event = { preventDefault: vi.fn() };
-      mockWin._trigger('will-attach-webview', event, {}, { src });
+      mockWin._trigger('will-attach-webview', event, {}, { partition: BROWSER, src });
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
     it('blocks other about: pages as a first page', () => {
       const event = { preventDefault: vi.fn() };
-      mockWin._trigger('will-attach-webview', event, {}, { src: 'about:srcdoc' });
+      mockWin._trigger('will-attach-webview', event, {}, { partition: BROWSER, src: 'about:srcdoc' });
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    it('forces webviewTag off so a guest cannot nest its own unguarded webview', () => {
+      const webPreferences: Record<string, unknown> = { webviewTag: true };
+      mockWin._trigger('will-attach-webview', { preventDefault: vi.fn() }, webPreferences, { partition: BROWSER, src: 'https://example.com' });
+      expect(webPreferences.webviewTag).toBe(false);
+    });
+
+    it.each([undefined, '', 'persist:other', 'default'])('refuses a webview outside the Browser session (partition %s)', (partition) => {
+      const event = { preventDefault: vi.fn() };
+      const params: Record<string, unknown> = { src: 'https://example.com' };
+      if (partition !== undefined) params.partition = partition;
+      mockWin._trigger('will-attach-webview', event, {}, params);
       expect(event.preventDefault).toHaveBeenCalled();
     });
 
@@ -205,6 +222,7 @@ describe('applyWindowSecurityGuards', () => {
       let openHandler: WindowOpenHandler | null = null;
       guest.on = vi.fn((event: string, handler: Listener) => { listeners[event] = handler; }) as never;
       guest.setWindowOpenHandler = vi.fn((handler: WindowOpenHandler) => { openHandler = handler; }) as never;
+      (guest as unknown as { stop: () => void }).stop = vi.fn();
       mockWin._trigger('did-attach-webview', {}, guest);
       return {
         guest,
@@ -227,7 +245,7 @@ describe('applyWindowSecurityGuards', () => {
       expect(guest.setWindowOpenHandler).toHaveBeenCalledWith(expect.any(Function));
     });
 
-    it.each(['https://example.com/next', 'http://localhost:3000/', 'http://example.com/'])('allows navigation to %s', (url) => {
+    it.each(['https://example.com/next', 'http://localhost:3000/', 'http://example.com/', 'blob:https://example.com/7d1c'])('allows navigation to %s', (url) => {
       const { fire } = attachGuest();
       expect(fire('will-navigate', { url }).preventDefault).not.toHaveBeenCalled();
       expect(fire('will-redirect', { url }).preventDefault).not.toHaveBeenCalled();
@@ -273,6 +291,47 @@ describe('applyWindowSecurityGuards', () => {
       const { fire } = attachGuest();
       expect(fire('will-frame-navigate', { url: 'chrome://settings', isMainFrame: true }).preventDefault).not.toHaveBeenCalled();
       expect(fire('will-navigate', { url: 'chrome://settings' }).preventDefault).toHaveBeenCalled();
+    });
+
+    describe('did-start-navigation backstop for programmatic loads', () => {
+      function start(fire: ReturnType<typeof attachGuest>['fire'], details: { url: string; isMainFrame?: boolean; isSameDocument?: boolean }) {
+        return fire('did-start-navigation', { isMainFrame: true, isSameDocument: false, ...details } as { url: string; isMainFrame?: boolean });
+      }
+
+      it('registers the backstop', () => {
+        const { guest } = attachGuest();
+        expect(guest.on).toHaveBeenCalledWith('did-start-navigation', expect.any(Function));
+      });
+
+      it('stops a main-frame file:// load when the setting is off everywhere', () => {
+        const { guest, fire } = attachGuest();
+        start(fire, { url: 'file:///etc/hosts' });
+        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalledTimes(1);
+      });
+
+      it('lets a main-frame file:// load through when the setting is on', () => {
+        vi.mocked(isBrowserFileAccessAllowed).mockReturnValue(true);
+        const { guest, fire } = attachGuest();
+        start(fire, { url: 'file:///tmp/page.html' });
+        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).not.toHaveBeenCalled();
+      });
+
+      it('stops a main-frame load with a disallowed scheme', () => {
+        const { guest, fire } = attachGuest();
+        start(fire, { url: 'chrome://settings' });
+        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalledTimes(1);
+      });
+
+      it.each([
+        { url: 'https://example.com/' },
+        { url: 'about:blank' },
+        { url: 'file:///etc/hosts', isMainFrame: false },
+        { url: 'file:///tmp/page.html#section', isSameDocument: true },
+      ])('leaves $url alone (main frame: $isMainFrame, same document: $isSameDocument)', (details) => {
+        const { guest, fire } = attachGuest();
+        start(fire, details);
+        expect((guest as unknown as { stop: ReturnType<typeof vi.fn> }).stop).not.toHaveBeenCalled();
+      });
     });
 
     it.each(['https://example.com/popup', 'file:///tmp/x.html', 'about:blank', 'javascript:alert(1)'])('denies popups to %s', (url) => {

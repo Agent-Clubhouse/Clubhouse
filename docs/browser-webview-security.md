@@ -10,18 +10,30 @@ On `will-attach-webview`, main overrides whatever the `<webview>` tag asked for:
 - `contextIsolation`, `sandbox` and `webSecurity`: `true`
 - `allowRunningInsecureContent`: `false`
 - `preload` and `preloadURL`: removed. The app has no webview preload.
+- `webviewTag`: `false`, so a guest page can't nest its own webview (nested guests attach to the guest, where these guards don't run).
+
+The webview must use the Browser's session, `persist:plugin-browser`. Any other partition, including none (the default session, which has the app's own `file` and plugin protocol handlers and cookies), is refused.
 
 ## Allowed URLs
 
 | Where | Allowed |
 |---|---|
-| First page (`will-attach-webview`) | `http:`, `https:`, `about:blank`, and `file:` when the setting is on |
+| First page (`will-attach-webview`) | `http:`, `https:`, `blob:`, `about:blank`, and `file:` when the setting is on |
 | Main-frame navigation and redirects (`will-navigate`, `will-redirect`) | Same as the first page |
-| Subframes (`will-frame-navigate`, subframe `will-redirect`) | The above, plus `about:`, `data:` and `blob:` |
+| Programmatic main-frame loads (`did-start-navigation` backstop) | Same as the first page; anything else is stopped with `stop()` before it commits |
+| Subframes (`will-frame-navigate`, subframe `will-redirect`) | The above, plus `about:` and `data:` |
 
 Everything else (`javascript:`, `chrome:`, `devtools:`, custom app schemes and so on) is blocked and logged under `core:security`.
 
 Pages can't open windows: the guest's `setWindowOpenHandler` always denies. The `<webview>` tags never set `allowpopups`, so this matches earlier behavior.
+
+`will-navigate`, `will-frame-navigate` and `will-redirect` don't fire for programmatic loads: the renderer changing a `<webview>` `src` after attach, `webview.loadURL()`, back and forward, or main's `webContents.loadURL`. The `did-start-navigation` backstop covers those. It can't cancel the event, so it calls `stop()`, which cancels a navigation that hasn't committed yet.
+
+## Trust boundary
+
+- **Main is the floor.** Sandboxed, no preload, no nested webviews, the Browser session only. Pages get http, https and `blob:`, plus `file:` only when the setting is on in at least one scope. If it's off everywhere, no route loads `file://`.
+- **The renderer does the per-project check.** Main can't tell which project a webview belongs to. The partition is shared and holds saved cookies, and the attach params only carry tag attributes. The Browser tab and the Canvas widget check the setting for their own scope before they set a `file://` src. Web pages can't reach `file://` through another project's setting, because Chromium blocks web-to-file navigation and redirects.
+- Binding each webview to its project in main is #3878.
 
 ## Local files
 
