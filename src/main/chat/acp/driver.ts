@@ -17,7 +17,7 @@
  *   `$/cancel_request`; that is reported as cancelled by the agent.
  */
 
-import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
+import { PERMISSION_LEVEL_LABELS, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
 import type { ChatErrorCode, ChatEventDraft, ChatQuestionAnswers, ContentBlock as ChatContentBlock, MessageDelivery } from '../../../shared/chat/events';
 import type {
   ChatDriver,
@@ -30,7 +30,17 @@ import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import { RpcError } from '../../orchestrators/adapters/rpc-error';
 import { throwIfStartAborted, untilStartAborted } from '../../orchestrators/adapters/start-abort';
 import { resolveStructuredSpawn, type StructuredSpawnCommand } from '../../orchestrators/adapters/structured-spawn';
-import { acpChatCapabilities, negotiate, selectOption, type AcpNegotiated, type AcpSessionFacts, type AcpStaticClaims } from './capabilities';
+import {
+  acpChatCapabilities,
+  levelForMode,
+  modeChoice,
+  negotiate,
+  selectOption,
+  type AcpLevelPolicy,
+  type AcpNegotiated,
+  type AcpSessionFacts,
+  type AcpStaticClaims,
+} from './capabilities';
 import { AcpConnection, AcpDisconnectedError, AcpRequestTimeoutError, type AcpConnector, type AcpLog, type AcpTransportEnd } from './connection';
 import {
   AcpUpdateMapper,
@@ -70,11 +80,26 @@ export interface AcpLaunchSpec {
   optIn?: boolean;
   /**
    * Arguments for the agent binary (`ChatDriverStartOptions.binaryPath`).
-   * `extraArgs` are the caller's, already validated. The driver applies the
-   * command prefix and Windows shim handling (resolveStructuredSpawn).
+   * `extraArgs` are the caller's, already validated. `level` is the start's
+   * permission level (absent for a probe), for levels set by a launch flag.
+   * The driver applies the command prefix and Windows shim handling
+   * (resolveStructuredSpawn).
    */
-  args(opts: { extraArgs: readonly string[] }): string[];
+  args(opts: { extraArgs: readonly string[]; level?: PermissionLevel }): string[];
   claims?: AcpStaticClaims;
+  /** How permission levels map onto the agent's session modes. Absent: levels aren't applied over ACP. */
+  levels?: AcpLevelPolicy;
+  /**
+   * The provider's own words for signing in, shown when setup fails with
+   * `Authentication required` (-32000). Clubhouse never calls `authenticate`.
+   */
+  loginHint?: string;
+  /**
+   * A start whose requested model the session doesn't offer. Absent: the
+   * session starts on its own model with a notice. 'refuse': the start fails
+   * naming the model, so nothing runs on a model the person didn't choose.
+   */
+  unofferedModel?: 'refuse';
 }
 
 export interface AcpDriverDeps {
@@ -150,8 +175,8 @@ class AcpChatDriver implements ChatDriver {
 
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
     throwIfStartAborted(opts.signal);
-    const command = resolveStructuredSpawn(opts.binaryPath, this.spec.args({ extraArgs: opts.extraArgs ?? [] }), opts.commandPrefix);
-    const session = new AcpDriverSession(this.id, this.spec.claims ?? {}, this.timeouts, this.deps.log ?? (() => undefined));
+    const command = resolveStructuredSpawn(opts.binaryPath, this.spec.args({ extraArgs: opts.extraArgs ?? [], level: opts.level }), opts.commandPrefix);
+    const session = new AcpDriverSession(this.id, this.spec, this.timeouts, this.deps.log ?? (() => undefined));
     session.connect(this.connector(command, { cwd: opts.cwd, env: opts.env }));
     try {
       await untilStartAborted(session.open(opts, this.initializeParams()), opts.signal, () => void session.abort());
@@ -203,6 +228,34 @@ interface PendingQuestion {
   resolve(response: CreateElicitationResponse): void;
 }
 
+/**
+ * One turn: from the first prompt's write until every prompt written into it
+ * has been answered. Without the steer claim it only ever holds one prompt.
+ */
+interface OpenTurn {
+  startedAt: number;
+  /** Prompts written into this turn and not answered yet. */
+  outstanding: number;
+}
+
+/** Thrown when setup fails for want of a login, in words isLoginRequiredError recognises. */
+/** The requested model isn't one the session offers this account. */
+export class AcpModelUnavailableError extends Error {
+  /** A start error code (chat-spawn): the account, not the driver, so no driver-health failure. */
+  readonly code = 'model_unavailable';
+  constructor(readonly model: string) {
+    super(`${model} is not available for this account. Choose another model and start again.`);
+    this.name = 'AcpModelUnavailableError';
+  }
+}
+
+export class AcpAuthRequiredError extends Error {
+  readonly needsLogin = true;
+  constructor(readonly loginHint: string, detail: string) {
+    super(`Authentication required: ${loginHint} (${detail})`);
+  }
+}
+
 class AcpDriverSession implements ChatDriverSession {
   private readonly queue = new AsyncQueue<ChatEventDraft>();
   readonly events: AsyncIterable<ChatEventDraft> = this.queue;
@@ -215,7 +268,9 @@ class AcpDriverSession implements ChatDriverSession {
   private sessionId: string | undefined;
   private facts: AcpSessionFacts = { configOptions: [], commands: false, usage: false };
   private readonly mapper: AcpUpdateMapper;
-  private turn: { startedAt: number } | undefined;
+  private readonly claims: AcpStaticClaims;
+  private level: PermissionLevel | undefined;
+  private turn: OpenTurn | undefined;
   /** Updates for a session id not known yet (they can precede the session/new answer). */
   private early: SessionNotification[] = [];
   /** Drafts from this session's updates during setup, sent after the opening session_info. */
@@ -232,10 +287,11 @@ class AcpDriverSession implements ChatDriverSession {
 
   constructor(
     private readonly driverId: ChatDriverId,
-    private readonly claims: AcpStaticClaims,
+    private readonly spec: AcpLaunchSpec,
     private readonly timeouts: AcpTimeouts,
     private readonly log: AcpLog,
   ) {
+    this.claims = spec.claims ?? {};
     this.mapper = new AcpUpdateMapper(driverId);
     this.ended = new Promise((resolve) => { this.markEnded = resolve; });
   }
@@ -276,6 +332,31 @@ class AcpDriverSession implements ChatDriverSession {
       ...(opts.systemPrompt && n.systemPrompt && { systemPrompt: { mode: 'append', content: [{ type: 'text', text: opts.systemPrompt }] } }),
     };
 
+    try {
+      await this.setUp(opts, setup, n);
+    } catch (err) {
+      if (this.spec.loginHint && err instanceof RpcError && err.code === ACP_ERROR_CODES.authRequired) throw new AcpAuthRequiredError(this.spec.loginHint, err.message);
+      throw err;
+    }
+
+    this.capabilities = this.currentCapabilities();
+    const choices = configChoices(this.facts.configOptions);
+    const model = currentModel(this.facts.configOptions);
+    this.push({
+      type: 'session_info',
+      data: {
+        ...(n.agentInfo?.version && { cliVersion: n.agentInfo.version }),
+        model: model.modelId ?? null,
+        models: choices.models,
+        efforts: choices.efforts,
+        // With no model id, model_changed can't carry the effort, so it goes here.
+        ...(!model.modelId && model.effort && { effort: model.effort }),
+      },
+    });
+    for (const draft of this.heldDrafts.splice(0)) this.push(draft);
+  }
+
+  private async setUp(opts: ChatDriverStartOptions, setup: SessionSetup, n: AcpNegotiated): Promise<void> {
     const resumeId = opts.resumeNativeSessionId;
     let setupResponse: SessionSetupResponse | undefined;
     if (resumeId && (n.resume || n.loadSession)) {
@@ -296,29 +377,64 @@ class AcpDriverSession implements ChatDriverSession {
       this.sessionId = setupResponse.sessionId;
     }
     if (Array.isArray(setupResponse?.configOptions)) this.facts = { ...this.facts, configOptions: setupResponse.configOptions };
+    if (setupResponse?.modes && typeof setupResponse.modes === 'object') this.facts = { ...this.facts, modes: setupResponse.modes };
     // Updates that arrived before the session id was known: their state
     // applies now, in arrival order, ahead of anything later.
     for (const early of this.early.splice(0)) {
       if (early.sessionId === this.sessionId) this.holdUpdate(early.update);
     }
     // Requested settings go in before events flow, so they aren't reported as changes.
+    await this.applyRequestedLevel(opts.level);
     await this.applyRequestedModel(opts);
     this.setupDone = true;
-    if (opts.level) this.log('debug', 'Permission levels are provider policy; none applied over ACP', { level: opts.level });
+  }
 
-    this.capabilities = acpChatCapabilities(n, this.facts, this.claims);
-    const choices = configChoices(this.facts.configOptions);
-    const model = currentModel(this.facts.configOptions);
-    this.push({
-      type: 'session_info',
-      data: {
-        ...(n.agentInfo?.version && { cliVersion: n.agentInfo.version }),
-        model: model.modelId ?? null,
-        models: choices.models,
-        efforts: choices.efforts,
-      },
-    });
-    for (const draft of this.heldDrafts.splice(0)) this.push(draft);
+  /**
+   * The start's level, before any prompt. A level the policy maps to a mode
+   * the session doesn't offer refuses the start: running at another level
+   * than the one asked for is never silent.
+   */
+  private async applyRequestedLevel(level: PermissionLevel | undefined): Promise<void> {
+    const policy = this.spec.levels;
+    if (!level || !policy) {
+      if (level) this.log('debug', 'Permission levels are provider policy; none applied over ACP', { level });
+      return;
+    }
+    this.level = level;
+    // Set by the launch flag (AcpLaunchSpec.args); nothing to send.
+    if (policy.processLevels?.includes(level)) return;
+    const mode = policy.mode(level);
+    if (mode === undefined) throw new Error(`This agent has no mode for the ${PERMISSION_LEVEL_LABELS[level]} level`);
+    const choice = modeChoice(this.facts.configOptions, this.facts.modes);
+    if (choice?.current === mode) return;
+    if (!choice || !choice.available.includes(mode)) {
+      throw new Error(`This agent's session doesn't offer mode "${mode}" for the ${PERMISSION_LEVEL_LABELS[level]} level`);
+    }
+    await this.setMode(mode);
+  }
+
+  private async setMode(mode: string): Promise<void> {
+    if (!this.sessionId) throw new Error('The ACP session is not open');
+    const choice = modeChoice(this.facts.configOptions, this.facts.modes);
+    if (!choice) throw new Error('This agent offers no session modes');
+    if (choice.via === 'set_mode') {
+      await this.conn.request(ACP_AGENT_METHODS.sessionSetMode, { sessionId: this.sessionId, modeId: mode }, { timeoutMs: this.timeouts.requestMs });
+      // set_mode answers with nothing, and the agent may or may not confirm
+      // with current_mode_update, so the answer itself counts. updateFacts
+      // re-sends capabilities if they changed.
+      this.updateFacts({ modes: { ...this.facts.modes!, currentModeId: mode } });
+      return;
+    }
+    const response = await this.conn.request<{ configOptions?: SessionConfigOption[] }>(
+      ACP_AGENT_METHODS.sessionSetConfigOption,
+      { sessionId: this.sessionId, configId: choice.via.configId, value: mode },
+      { timeoutMs: this.timeouts.requestMs },
+    );
+    if (Array.isArray(response?.configOptions)) this.applyConfig(response.configOptions);
+  }
+
+  private currentCapabilities(): ChatCapabilities {
+    return acpChatCapabilities(this.negotiated!, this.facts, this.claims, { policy: this.spec.levels, launched: this.level });
   }
 
   private async reopen(sessionId: string, setup: SessionSetup, n: AcpNegotiated): Promise<SessionSetupResponse> {
@@ -347,6 +463,10 @@ class AcpDriverSession implements ChatDriverSession {
   }
 
   private async applyRequestedModel(opts: ChatDriverStartOptions): Promise<void> {
+    if (opts.model && this.spec.unofferedModel === 'refuse' && selectOption(this.facts.configOptions, 'model')
+      && !configChoices(this.facts.configOptions).models.some((m) => m.id === opts.model)) {
+      throw new AcpModelUnavailableError(opts.model);
+    }
     if (opts.model) {
       await this.setConfig('model', opts.model).catch((err: Error) => this.notApplied('model', opts.model!, err));
     }
@@ -364,14 +484,27 @@ class AcpDriverSession implements ChatDriverSession {
 
   async send(content: ChatContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
     if (this.conn.ended || this.closing || !this.sessionId || !this.negotiated) throw new Error('The ACP session is not open');
-    if (this.turn) {
-      // No steer in the stable schema; queue: 'client' means the runtime holds it.
+    const running = this.turn;
+    if (running && !(this.claims.steer && delivery === 'steer')) {
+      // Without the steer claim the stable schema has no way in; queue: 'client' means the runtime holds it.
       throw new Error(`Cannot ${delivery} into a running ACP turn; queue it until the turn ends`);
     }
+    // A steer that finds the turn already over starts a new one, and says so.
     // Anything that can fail before the prompt is written fails the send itself.
     const prompt = toAcpPrompt(content, this.negotiated.prompt);
     const answer = this.conn.request<PromptResponse>(ACP_AGENT_METHODS.sessionPrompt, { sessionId: this.sessionId, prompt }, { timeoutMs: null });
-    const turn = { startedAt: Date.now() };
+    if (running) {
+      // Documented to join the running turn: no new turn starts, and the turn
+      // ends only once this prompt has been answered too.
+      running.outstanding++;
+      const steered = steerText(content);
+      answer.then(
+        (response) => this.endTurn(running, response),
+        (err: unknown) => this.failTurn(running, err, steered),
+      );
+      return 'steer';
+    }
+    const turn: OpenTurn = { startedAt: Date.now(), outstanding: 1 };
     this.turn = turn;
     this.mapper.breakRun();
     this.push({ type: 'turn_started', data: { trigger: 'prompt' } });
@@ -382,8 +515,10 @@ class AcpDriverSession implements ChatDriverSession {
     return 'prompt';
   }
 
-  private endTurn(turn: { startedAt: number }, response: PromptResponse | null | undefined): void {
+  private endTurn(turn: OpenTurn, response: PromptResponse | null | undefined): void {
     if (this.turn !== turn) return;
+    // A steered turn ends with the answer to its last outstanding prompt.
+    if (--turn.outstanding > 0) return;
     this.turn = undefined;
     this.mapper.breakRun();
     const stopReason = toStopReason(response?.stopReason);
@@ -393,14 +528,27 @@ class AcpDriverSession implements ChatDriverSession {
     this.push({ type: 'turn_ended', data: { stopReason: stopReason ?? 'error', durationMs: Date.now() - turn.startedAt } });
   }
 
-  private failTurn(turn: { startedAt: number }, err: unknown): void {
+  private failTurn(turn: OpenTurn, err: unknown, steered?: string): void {
     if (this.turn !== turn) return;
     if (!(err instanceof RpcError)) {
       // The transport ended with the prompt unanswered: the agent may or may
       // not have run it. Left open; handleEnd reports the exit.
       return;
     }
+    if (steered !== undefined) {
+      // The send already reported 'steer'. The error answer means it may not
+      // have reached the turn: say so with its text, and never resend it.
+      this.push({
+        type: 'notice',
+        data: { level: 'warn', code: 'steer_not_delivered', message: `The agent refused a message sent during the turn, so it may not have reached it. It was not resent: "${steered}"` },
+      });
+    }
     // The agent answered the prompt with an error: a reported failure.
+    if (--turn.outstanding > 0) {
+      // Another prompt in this turn is still unanswered, so the turn goes on.
+      this.push({ type: 'error', data: { code: rpcErrorCode(err), message: err.message, fatal: false } });
+      return;
+    }
     this.turn = undefined;
     this.mapper.breakRun();
     this.push({ type: 'error', data: { code: rpcErrorCode(err), message: err.message, fatal: false } });
@@ -446,7 +594,13 @@ class AcpDriverSession implements ChatDriverSession {
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
-    throw new Error(`This ACP agent has no live permission levels (asked for ${level})`);
+    if (!this.spec.levels) throw new Error(`This ACP agent has no live permission levels (asked for ${level})`);
+    if (!this.capabilities.liveLevels.includes(level)) {
+      throw new Error(`This ACP agent can't switch to the ${PERMISSION_LEVEL_LABELS[level]} level without a restart`);
+    }
+    const mode = this.spec.levels!.mode(level)!;
+    await this.setMode(mode);
+    this.level = level;
   }
 
   async setModel(modelId: string, effort?: string | null): Promise<void> {
@@ -458,6 +612,15 @@ class AcpDriverSession implements ChatDriverSession {
     if (!flatValues(model).includes(modelId)) throw new Error(`This agent doesn't offer model "${modelId}"`);
     if (model.currentValue !== modelId) await this.setConfig('model', modelId);
     if (effort) await this.setConfig('thought_level', effort);
+  }
+
+  /** Effort alone, for a session with a thought_level option and no model choice (gate 3). */
+  async setEffort(effort: string | null): Promise<void> {
+    if (effort === null) throw new Error("This agent can't return effort to its default");
+    const option = selectOption(this.facts.configOptions, 'thought_level');
+    if (!option) throw new Error('This agent offers no effort choice');
+    if (!flatValues(option).includes(effort)) throw new Error(`This agent doesn't offer effort "${effort}"`);
+    if (option.currentValue !== effort) await this.setConfig('thought_level', effort);
   }
 
   /** ACP v1 has no compaction method. */
@@ -607,12 +770,25 @@ class AcpDriverSession implements ChatDriverSession {
     const { drafts, effects } = this.mapper.map(update);
     for (const draft of drafts) this.push(draft);
     this.applyEffects(effects);
+    this.applyModeUpdate(update, true);
+  }
+
+  /** `current_mode_update` keeps the session's mode; reported as a level change when one level maps to it. */
+  private applyModeUpdate(update: unknown, report: boolean): void {
+    const u = update as { sessionUpdate?: unknown; currentModeId?: unknown } | null;
+    if (u?.sessionUpdate !== 'current_mode_update' || typeof u.currentModeId !== 'string' || !this.facts.modes) return;
+    if (this.facts.modes.currentModeId === u.currentModeId) return;
+    this.facts = { ...this.facts, modes: { ...this.facts.modes, currentModeId: u.currentModeId } };
+    const level = levelForMode(this.spec.levels, u.currentModeId);
+    if (level) this.level = level;
+    if (report && level) this.push({ type: 'mode_changed', data: { level, nativeMode: u.currentModeId } });
   }
 
   /** An update during setup: its state applies now, its events wait for the opening session_info. */
   private holdUpdate(update: unknown): void {
     const { drafts, effects } = this.mapper.map(update);
     this.applyEffects(effects);
+    this.applyModeUpdate(update, false);
     if (this.heldDrafts.length + drafts.length <= MAX_HELD) this.heldDrafts.push(...drafts);
   }
 
@@ -637,13 +813,15 @@ class AcpDriverSession implements ChatDriverSession {
     if (JSON.stringify(choices) !== beforeChoices) this.push({ type: 'session_info', data: { models: choices.models, efforts: choices.efforts } });
     if (after.modelId && (after.modelId !== before.modelId || after.effort !== before.effort)) {
       this.push({ type: 'model_changed', data: { modelId: after.modelId, ...(after.effort && { effort: after.effort }) } });
+    } else if (!after.modelId && after.effort !== before.effort) {
+      this.push({ type: 'session_info', data: { effort: after.effort ?? null } });
     }
   }
 
   private updateFacts(change: Partial<AcpSessionFacts>): void {
     this.facts = { ...this.facts, ...change };
     if (!this.negotiated || !this.setupDone) return;
-    const next = acpChatCapabilities(this.negotiated, this.facts, this.claims);
+    const next = this.currentCapabilities();
     const changed: Partial<ChatCapabilities> = {};
     for (const key of Object.keys(next) as Array<keyof ChatCapabilities>) {
       if (JSON.stringify(next[key]) !== JSON.stringify(this.capabilities[key])) (changed as Record<string, unknown>)[key] = next[key];
@@ -675,6 +853,12 @@ class AcpDriverSession implements ChatDriverSession {
   private push(draft: ChatEventDraft): void {
     this.queue.push(draft);
   }
+}
+
+/** A steered message's text, for a notice if the agent refuses it. */
+function steerText(content: ChatContentBlock[]): string {
+  const text = content.map((b) => (b.type === 'text' ? b.text : b.type === 'file' ? `[${b.name ?? b.path}]` : b.type === 'image' ? '[image]' : `[${b.uri}]`)).join(' ').trim();
+  return text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
 }
 
 function flatValues(option: Extract<SessionConfigOption, { type: 'select' }>): string[] {

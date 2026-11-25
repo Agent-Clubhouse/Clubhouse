@@ -397,6 +397,12 @@ export interface ChatEventDataMap {
      * array clears it, absent leaves it unchanged.
      */
     efforts?: string[];
+    /**
+     * The session's current effort, reported here when no model id goes with
+     * it (an agent that offers effort but no model choice; model_changed
+     * needs a model id). Absent leaves it unchanged.
+     */
+    effort?: string | null;
     /** The provider's own name for each live level, shown under Clubhouse's level name. */
     levelNames?: Partial<Record<PermissionLevel, string>>;
     /** MCP servers the CLI loaded, with their status. Replaces any earlier list; absent leaves it unchanged. */

@@ -27,6 +27,8 @@ export interface ChatActions {
   setLevel: (level: PermissionLevel) => Promise<boolean>;
   /** Omitted effort keeps the current one; null returns it to the provider's default. */
   setModel?: (modelId: string, effort?: string | null) => Promise<void>;
+  /** Effort alone, for an agent that offers no model choice. */
+  setEffort?: (effort: string | null) => Promise<void>;
 }
 
 /**
@@ -221,5 +223,6 @@ export function useChatActions(agentId: string): ChatActions {
       && (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
     setLevel: async (level) => (await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level)).ok,
     setModel: async (modelId, effort) => { await wrap("Couldn't change the model", store.getState().setModel)(agentId, modelId, effort); },
+    setEffort: async (effort) => { await wrap("Couldn't change the effort", store.getState().setEffort)(agentId, effort); },
   }), [agentId, store, wrap]);
 }

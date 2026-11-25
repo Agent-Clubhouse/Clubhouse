@@ -20,6 +20,8 @@ Clubhouse does not change Antigravity's trust list. The first time `agy` opens a
 | Chat | Not offered yet | When chat is offered, it needs `agy` with ACP support and a cached sign-in. Google's changelog shows `agy acp` added in 1.5.0. Chat will need 1.5.10 or newer, because earlier releases have documented ACP cancel and permission fixes, and Clubhouse checks the version before it opens chat. |
 | Headless | Not offered | See **Why headless is not offered**. |
 
+In chat, `agy` reports some errors from Google's service as an ordinary reply that ends the turn normally. Such a turn can show as finished, with the error in its text. Clubhouse does not read Antigravity's own session files to tell these apart, because their format is not documented.
+
 Chat and the CLI view never stand in for each other. If chat can't start, the agent says so and you choose whether to retry or open it in the CLI view. Clubhouse does not replay a message into a different view.
 
 ## Why headless is not offered

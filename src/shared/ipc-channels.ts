@@ -297,6 +297,7 @@ export const IPC = {
     ANSWER_QUESTION: 'chat:answer-question',
     SET_LEVEL: 'chat:set-level',
     SET_MODEL: 'chat:set-model',
+    SET_EFFORT: 'chat:set-effort',
     GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
     SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
     GET_AGENT_RUNTIME: 'chat:get-agent-runtime',
