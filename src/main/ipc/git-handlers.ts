@@ -60,10 +60,6 @@ export function registerGitHandlers(): void {
     return gitService.getFileDiff(dirPath, filePath, staged, base);
   }));
 
-  ipcMain.handle(IPC.GIT.CREATE_BRANCH, withValidatedArgs([stringArg(), stringArg()], (_event, dirPath: string, branchName: string) => {
-    return gitService.createBranch(dirPath, branchName);
-  }));
-
   ipcMain.handle(IPC.GIT.STASH, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
     return gitService.stash(dirPath);
   }));

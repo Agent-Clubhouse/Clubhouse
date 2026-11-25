@@ -15,7 +15,6 @@ import { fileURLToPath } from 'node:url';
 /** Files that change nothing the app builds or runs. */
 const DOCS_ONLY = [
   /^docs\//,
-  /^notes\//,
   /^[^/]+\.md$/, // top-level markdown (README, CONTRIBUTING, …); src/**/*.md is bundled app content
   /^\.github\/ISSUE_TEMPLATE\//,
   /^\.github\/[^/]+\.md$/,

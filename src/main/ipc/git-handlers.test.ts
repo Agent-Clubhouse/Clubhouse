@@ -45,7 +45,7 @@ describe('git-handlers', () => {
       IPC.GIT.INFO, IPC.GIT.CHECKOUT, IPC.GIT.STAGE, IPC.GIT.UNSTAGE,
       IPC.GIT.STAGE_ALL, IPC.GIT.UNSTAGE_ALL, IPC.GIT.DISCARD,
       IPC.GIT.COMMIT, IPC.GIT.PUSH, IPC.GIT.PULL,
-      IPC.GIT.DIFF, IPC.GIT.CREATE_BRANCH, IPC.GIT.STASH, IPC.GIT.STASH_POP,
+      IPC.GIT.DIFF, IPC.GIT.STASH, IPC.GIT.STASH_POP,
       IPC.GIT.HEAD_SHA, IPC.GIT.DIFF_NUMSTAT,
     ];
     for (const channel of expectedChannels) {
@@ -142,12 +142,6 @@ describe('git-handlers', () => {
     const handler = handlers.get(IPC.GIT.DIFF)!;
     await handler({}, '/project', 'file.ts', false, 'abc1234');
     expect(gitService.getFileDiff).toHaveBeenCalledWith('/project', 'file.ts', false, 'abc1234');
-  });
-
-  it('CREATE_BRANCH delegates to gitService.createBranch', async () => {
-    const handler = handlers.get(IPC.GIT.CREATE_BRANCH)!;
-    await handler({}, '/project', 'new-branch');
-    expect(gitService.createBranch).toHaveBeenCalledWith('/project', 'new-branch');
   });
 
   it('STASH delegates to gitService.stash', async () => {
