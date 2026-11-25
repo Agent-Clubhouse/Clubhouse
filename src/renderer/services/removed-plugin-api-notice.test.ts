@@ -26,7 +26,7 @@ describe('showRemovedPluginApiNotice (#2757)', () => {
     install('automations', 'Automations', 0.8, 'registered'); // 0.8 still loads
     install('pomodoro', 'Pomodoro', 0.9, 'registered');
     install('future', 'Future', 2.0, 'incompatible');
-    install('lounge', 'Lounge', 0.6, 'incompatible'); // retired: its own notice, even on a removed API
+    install('lounge', 'Lounge', 0.6, 'incompatible'); // retired: removed at startup, never in this toast
 
     await showRemovedPluginApiNotice();
     expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([

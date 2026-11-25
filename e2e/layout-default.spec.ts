@@ -173,9 +173,10 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
     'switch-agent-1': 'Meta+Shift+1',
     // Retired in the new layout: left out there, kept for classic.
     'switch-project-1': 'Meta+Alt+P',
-    // Go to Home was removed with Home: unused, but the saved binding stays on disk.
+    // Go to Home was removed with Home: its saved binding is deleted at startup.
     'go-home': 'Meta+Shift+J',
   };
+  const { 'go-home': _removed, ...kept } = overrides;
 
   // A stable session: the classic layout, two projects in a chosen order, and no finished onboarding.
   let w = await launch({ experimental: { newChrome: false } });
@@ -212,7 +213,7 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
     'command-palette': 'Meta+Shift+K',
     'switch-agent-1': 'Meta+Shift+1',
   });
-  expect(JSON.parse(await readStorage(w, OVERRIDES_KEY) ?? '{}')).toEqual(overrides);
+  expect(JSON.parse(await readStorage(w, OVERRIDES_KEY) ?? '{}')).toEqual(kept);
   expect(await projectOrder(w)).toEqual(order);
   expect(fs.existsSync(path.join(profile.userDataDir, FLAGS_FILE))).toBe(false);
   await quit();
@@ -223,7 +224,7 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
   await expectClassicLayout(w);
   await w.waitForTimeout(1_500);
   await expect(w.locator('[data-testid="onboarding-backdrop"]')).toHaveCount(0);
-  expect(JSON.parse(await readStorage(w, OVERRIDES_KEY) ?? '{}')).toEqual(overrides);
+  expect(JSON.parse(await readStorage(w, OVERRIDES_KEY) ?? '{}')).toEqual(kept);
   expect(await projectOrder(w)).toEqual(order);
 });
 

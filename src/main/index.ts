@@ -38,7 +38,6 @@ import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
-import { noteRetiredPlugins } from './services/retired-plugin-data';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry } from './telemetry/crash-handlers';
@@ -457,8 +456,8 @@ app.on('ready', async () => {
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
 
-  // Delete plugin data left behind by removed built-in plugins (Hub, Sessions,
-  // Agent Queue).
+  // Delete what removed plugins left behind: built-ins (Hub, Sessions, Agent
+  // Queue) and the retired Workshop plugins (Lounge, KanBoss, Bug Report).
   projectStore.list()
     .then((projects) => cleanupRetiredPluginData({
       globalPluginDataDir: getGlobalPluginDataDir(),
@@ -467,19 +466,6 @@ app.on('ready', async () => {
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-
-  // Retired Workshop plugins (Lounge, KanBoss, Bug Report; #2756) keep their
-  // data: log once where it is, never delete it.
-  projectStore.list()
-    .then((projects) => noteRetiredPlugins({
-      globalPluginDataDir: getGlobalPluginDataDir(),
-      communityPluginsDir: getCommunityPluginsDir(),
-      projects,
-      markerFile: path.join(getGlobalPluginDataDir(), '_system', 'retired-plugins-noted.json'),
-    }))
-    .catch((err) => {
-      appLog('core:plugins', 'warn', `Retired plugin check failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
   // Start stale session sweeps (safety net for leaked sessions)

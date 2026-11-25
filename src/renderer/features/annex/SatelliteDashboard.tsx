@@ -1,9 +1,7 @@
 /**
- * SatelliteDashboard — Home view when a satellite is the active host.
- *
- * Mirrors the local Dashboard layout but shows the satellite's remote
- * projects and agents. This decouples Home from the Canvas plugin so
- * Home always renders useful content regardless of canvas/annex state.
+ * SatelliteDashboard: the overview shown when a satellite is the active host
+ * in the classic layout. It lists the satellite's remote projects and agents,
+ * and opens from the satellite's rail button.
  */
 import { useMemo, useCallback } from 'react';
 import { useAnnexClientStore } from '../../stores/annexClientStore';

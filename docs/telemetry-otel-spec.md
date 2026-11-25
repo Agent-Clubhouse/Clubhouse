@@ -1176,6 +1176,8 @@ Community plugins can send their own telemetry to the user's destination, under 
 | Code plugins (9) | `bug-report`, `automations`, `github-issues`, `kanboss`, `ado-work-items`, `wiki`, `pomodoro`, `daily-admin`, `lounge` | Yes, once they declare the `telemetry` permission and a schema |
 | Theme packs (7) | `fall-themes`, `neon-themes`, `ocean-themes`, `spring-themes`, `summer-themes`, `winter-themes`, `tech-modern` | No: they declare no permissions and run no code |
 
+Since then, `bug-report`, `kanboss` and `lounge` were retired (#2756). Clubhouse refuses them by id and removes an installed copy and its data at startup.
+
 The preview registry holds 8 of the same IDs (`pomodoro` and the 7 theme packs). Nothing in either registry is marked unofficial. Every plugin that qualifies for a raw `c.plugin.ref` (§4.10) is therefore currently a maintainer-authored Workshop plugin. Even so, grants default to off for official plugins too (decision 2026-10-16, §10.1).
 - The preview dialog labels plugin items with their source plugin.
 

@@ -42,7 +42,7 @@ import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivi
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
 import { showCopilotAcpRemovedNotice } from './services/copilot-acp-removal-notice';
-import { showRetiredPluginNotices } from './services/retired-plugin-notice';
+import { removeHomeViewData } from './services/removed-home-data';
 import { showRemovedPluginApiNotice } from './services/removed-plugin-api-notice';
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
@@ -933,10 +933,11 @@ export function initAppEventBridge(): () => void {
   // One after the other: each reads the flags and saves them back without its own marker.
   showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ })
     .then(() => showCopilotAcpRemovedNotice()).catch(() => { /* best-effort one-time notice */ });
-  showRetiredPluginNotices().catch(() => { /* best-effort one-time notice */ });
   showRemovedPluginApiNotice().catch(() => { /* best-effort one-time notice */ });
   // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
   showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
+  // Before the shortcuts load, so the removed Go to Home binding isn't read back (#2943).
+  removeHomeViewData();
   cleanups.push(initKeyboardShortcuts());
   cleanups.push(initAnnexListener());
   cleanups.push(initAnnexClientListener());

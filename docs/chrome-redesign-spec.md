@@ -14,7 +14,7 @@ Today, on a 1400px window, the navigation chrome takes 556px of width in three c
 
 Each agent row is 90px tall, so about 8 agents fit on screen. The redesign replaces this with one resizable sidebar (264px by default), 30px agent rows, and project tabs in the existing 38px title bar.
 
-In scope: the project rail, explorer column, agent list, title bar, Settings navigation, the Home view, the first-run state, and window chrome on macOS, Windows and Linux.
+In scope: the project rail, explorer column, agent list, title bar, Settings navigation, the first-run state, and window chrome on macOS, Windows and Linux.
 
 Out of scope:
 - The agent pane (terminal and chat views) and plugin content views. They render unchanged.

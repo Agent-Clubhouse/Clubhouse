@@ -1,16 +1,33 @@
 import type { ExplorerTab } from '../../shared/types';
+import { RETIRED_PLUGINS, isRetiredPlugin } from '../../shared/retired-plugins';
 
 /**
- * Built-in plugins that have been removed from Clubhouse. Existing installs may
- * still name them in persisted state (enabled-plugin lists, the last explorer
- * tab), so that state is scrubbed on load rather than left to dangle.
+ * Plugins that have been removed from Clubhouse: the retired built-ins and the
+ * retired Workshop plugins. Existing installs may still name them in persisted
+ * state (enabled-plugin lists, the last explorer tab), so that state is
+ * scrubbed on load rather than left to dangle. Keep in sync with
+ * RETIRED_BUILTIN_PLUGIN_IDS and RETIRED_WORKSHOP_PLUGIN_IDS in
+ * src/main/services/retired-plugin-cleanup.ts.
  */
-export const RETIRED_BUILTIN_PLUGIN_IDS: ReadonlySet<string> = new Set(['hub', 'sessions', 'agent-queue']);
+export const RETIRED_BUILTIN_PLUGIN_IDS: ReadonlySet<string> = new Set([
+  'hub', 'sessions', 'agent-queue',
+  ...Object.keys(RETIRED_PLUGINS),
+]);
 
 /** Experimental flags for features that were removed rather than graduated. */
 export const RETIRED_EXPERIMENTAL_FLAGS: readonly string[] = ['assistant', 'agentQueue', 'sessions'];
 
 const FALLBACK_EXPLORER_TAB: ExplorerTab = 'agents';
+
+/**
+ * A removed plugin's id. A built-in id stays when a registered plugin (say, a
+ * community one) reuses it; a retired Workshop id never does, because any
+ * plugin with that id is refused.
+ */
+function isRemoved(pluginId: string, isRegistered: (pluginId: string) => boolean): boolean {
+  if (!RETIRED_BUILTIN_PLUGIN_IDS.has(pluginId)) return false;
+  return isRetiredPlugin(pluginId) || !isRegistered(pluginId);
+}
 
 /**
  * Drop retired built-in plugin IDs from an enabled-plugin list. An ID is kept
@@ -21,7 +38,7 @@ export function stripRetiredPluginIds(
   ids: readonly string[],
   isRegistered: (pluginId: string) => boolean = () => false,
 ): { ids: string[]; changed: boolean } {
-  const kept = ids.filter((id) => !RETIRED_BUILTIN_PLUGIN_IDS.has(id) || isRegistered(id));
+  const kept = ids.filter((id) => !isRemoved(id, isRegistered));
   return { ids: kept, changed: kept.length !== ids.length };
 }
 
@@ -39,7 +56,7 @@ export function migrateRetiredExplorerTab(
 ): ExplorerTab {
   if (tab === 'assistant') return FALLBACK_EXPLORER_TAB;
   const pluginId = pluginIdForTab(tab);
-  if (pluginId && RETIRED_BUILTIN_PLUGIN_IDS.has(pluginId) && !isRegistered(pluginId)) {
+  if (pluginId && isRemoved(pluginId, isRegistered)) {
     return FALLBACK_EXPLORER_TAB;
   }
   return tab;

@@ -92,7 +92,7 @@ The beta tag will be `v<version>` (e.g., `v0.34.0-beta.1`).
 ### Release Title
 
 A brief phrase (not a full sentence, no period) capturing the marquee theme. Guidelines:
-- If there is a standout feature, name it: `"New KanBoss Plugin"`
+- If there is a standout feature, name it: `"New Group Projects Board"`
 - If multiple features, generalize: `"Plugin System & Agent Improvements"`
 - If only fixes/internals: `"Bug Fixes & Performance Improvements"`
 

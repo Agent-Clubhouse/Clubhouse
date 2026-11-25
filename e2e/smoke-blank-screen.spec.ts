@@ -51,7 +51,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Blank-Screen Prevention — Navigation', () => {
-  test('home view renders content on initial launch', async () => {
+  test('the first view renders content on initial launch', async () => {
     await assertNotBlankScreen(window);
 
     const titleBar = window.locator('[data-testid="title-bar"]');

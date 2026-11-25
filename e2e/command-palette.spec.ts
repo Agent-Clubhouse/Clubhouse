@@ -273,7 +273,6 @@ test.describe('Command Palette – Mode Prefixes', () => {
       (t) =>
         t.toLowerCase().includes('settings') ||
         t.toLowerCase().includes('help') ||
-        t.toLowerCase().includes('home') ||
         t.toLowerCase().includes('sidebar'),
     );
     expect(hasAction).toBe(true);

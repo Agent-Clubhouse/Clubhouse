@@ -84,7 +84,7 @@ Present the following to the user:
 ### Release Title
 
 A brief phrase (not a full sentence, no period) capturing the marquee theme. Guidelines:
-- If there is a standout feature, name it: `"New KanBoss Plugin"`
+- If there is a standout feature, name it: `"New Group Projects Board"`
 - If multiple features, generalize: `"Plugin System & Agent Improvements"`
 - If only fixes/internals: `"Bug Fixes & Performance Improvements"`
 - If nothing meaningful: `"Various Bug Fixes & Improvements"`
@@ -197,7 +197,7 @@ git tag -s v<new-version> -m "<Release Title>" <bump-merge-sha> && git push orig
 
 Where:
 - `<new-version>` is the confirmed version (e.g., `0.27.0`)
-- `<Release Title>` is the confirmed release title (e.g., `New KanBoss Plugin`)
+- `<Release Title>` is the confirmed release title (e.g., `New Group Projects Board`)
 - `<bump-merge-sha>` is the bump PR's merge commit
 
 If `git log` listed any commits, warn the user: `main` has moved past the bump commit, so those PRs are **not** in this release. Tagging `<bump-merge-sha>` is still correct; don't tag `main` instead. The tag must be signed (`-s`); the pipeline rejects unsigned tags.
