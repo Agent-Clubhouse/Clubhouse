@@ -929,8 +929,8 @@ describe('full-server audit inventory over one A to B forward', () => {
       ? { code: 'ECONNRESET', indeterminate: undefined }
       : { code: 'transport_unavailable', indeterminate: true });
     const shell = who === 'A' ? await b.call('ptyState', sessionId) : a.ptyState(sessionId);
-    // A direct /ws controller's shell detaches for its reattach grace (#3856); the reverse subscription's shell closes.
-    expect(shell).toMatchObject(who === 'A' ? { running: true, closed: false } : { running: false, closed: true });
+    // A dropped controller's shell detaches for its reattach grace, over its own /ws (#3856) or a reverse subscription.
+    expect(shell).toMatchObject({ running: true, closed: false });
     expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
     expect(await chat(who, command, commandId)).toMatchObject({ status: 'completed' });
     expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);

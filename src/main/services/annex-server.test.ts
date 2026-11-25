@@ -11200,15 +11200,122 @@ describe('annex-server', () => {
           await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'session_not_found')).toBe(true));
         }, 15_000);
 
-        it('ending the subscription closes the subscriber\'s shells, as a direct socket closing does', async () => {
-          const sub = await ready();
-          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
-          await vi.waitFor(() => expect(annexServer._testing.shellOwners.has('rs1')).toBe(true));
-          vi.mocked(ptyManagerModule.killShell).mockClear();
-          sub.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'unsubscribe', id: sub.id })), false);
-          expect(ptyManagerModule.killShell).toHaveBeenCalledWith('rs1');
-          expect(annexServer._testing.shellOwners.has('rs1')).toBe(false);
-        }, 15_000);
+        describe('reverse shell reattach (#3613 parity with #3843)', () => {
+          let running: Set<string>;
+          let holdSnapshot: Promise<void> | null;
+          beforeEach(() => {
+            annexServer._testing.detachedShells.clear();
+            annexServer._testing.shellTombstones.clear();
+            running = new Set();
+            holdSnapshot = null;
+            vi.mocked(ptyManagerModule.spawnShell).mockImplementation((async (id: string, _cwd: string, opts?: { beforeSpawn?: () => void }) => {
+              opts?.beforeSpawn?.();
+              running.add(id);
+            }) as never);
+            vi.mocked(ptyManagerModule.isRunning).mockImplementation((id) => running.has(id));
+            vi.mocked(ptyManagerModule.killShell).mockImplementation((id) => running.delete(id));
+            vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockImplementation(async (id) => {
+              if (holdSnapshot) await holdSnapshot;
+              return { data: running.has(id) ? `screen of ${id}` : '', seq: 7, cols: 100, rows: 30 };
+            });
+          });
+          afterEach(() => {
+            for (const sessionId of [...annexServer._testing.detachedShells.keys()]) {
+              clearTimeout(annexServer._testing.detachedShells.get(sessionId)!.timer);
+            }
+            annexServer._testing.detachedShells.clear();
+          });
+
+          async function spawnAndUnsubscribe(sessionId: string) {
+            const sub = await ready();
+            sub.client({ type: 'pty:spawn-shell', payload: { sessionId, projectId: 'p' } });
+            await vi.waitFor(() => expect(annexServer._testing.shellOwners.get(sessionId)).toBe(sub.virtual()[0]));
+            sub.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'unsubscribe', id: sub.id })), false);
+            return sub;
+          }
+          const reattachReplies = (sub: ReturnType<typeof subscribed>, sessionId: string) => sub.frames()
+            .filter((f) => f.type === 'pty:reattach-shell:ack' || (f.type === 'error' && (f.payload as { op?: string }).op === 'pty:reattach-shell'))
+            .filter((f) => (f.payload as { sessionId?: string }).sessionId === sessionId);
+
+          it('ending the subscription detaches its shells for the reattach grace, fenced as reverse, instead of killing them', async () => {
+            await spawnAndUnsubscribe('rs1');
+            expect(ptyManagerModule.killShell).not.toHaveBeenCalledWith('rs1');
+            expect(annexServer._testing.shellOwners.has('rs1')).toBe(false);
+            expect(annexServer._testing.detachedShells.get('rs1')?.device).toEqual({
+              fingerprint: MEMBER.fingerprint, pin: MEMBER.tlsCertificateFingerprint, via: 'reverse',
+            });
+          }, 15_000);
+
+          it('the same member takes its shell back over a new subscription: the same process, its screen, and no spawn', async () => {
+            await spawnAndUnsubscribe('rs1');
+            vi.mocked(ptyManagerModule.spawnShell).mockClear();
+            const next = subscribed();
+            await vi.waitFor(() => expect(next.frames()[0]).toMatchObject({ type: 'snapshot' }));
+            next.client({ type: 'pty:reattach-shell', payload: { sessionId: 'rs1', cols: 100, rows: 30 } });
+            await vi.waitFor(() => expect(reattachReplies(next, 'rs1')).toHaveLength(1));
+            expect(reattachReplies(next, 'rs1')[0]).toMatchObject({ type: 'pty:reattach-shell:ack', payload: { sessionId: 'rs1', buffer: 'screen of rs1', outputSeq: 7 } });
+            expect(annexServer._testing.shellOwners.get('rs1')).toBe(next.virtual().at(-1));
+            expect(annexServer._testing.detachedShells.has('rs1')).toBe(false);
+            expect(ptyManagerModule.spawnShell).not.toHaveBeenCalled();
+          }, 15_000);
+
+          it('never reattaches a shell that is not running, and a session id alone is never enough', async () => {
+            const sub = await ready();
+            vi.mocked(ptyManagerModule.spawnShell).mockClear();
+            sub.client({ type: 'pty:reattach-shell', payload: { sessionId: 'never-spawned' } });
+            await vi.waitFor(() => expect(reattachReplies(sub, 'never-spawned')).toHaveLength(1));
+            expect(reattachReplies(sub, 'never-spawned')[0]).toMatchObject({ type: 'error', payload: { code: 'session_not_found' } });
+            expect(ptyManagerModule.spawnShell).not.toHaveBeenCalled();
+          }, 15_000);
+
+          it('another device cannot reattach, read or drive the reverse-detached shell', async () => {
+            await spawnAndUnsubscribe('rs1');
+            const OTHER = { ...TEST_CONTROLLER, fingerprint: 'aa:aa:aa:aa', alias: 'Other', tlsCertificateFingerprint: '11:11:11:11' };
+            vi.mocked(annexPeers.getPeer).mockImplementation(((fp: string) => (fp === MEMBER.fingerprint ? current : fp === OTHER.fingerprint ? OTHER : undefined)) as any);
+            const other = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn() });
+            annexServer._testing.wsAuthTypes.set(other as never, 'mtls');
+            annexServer._testing.registerPeerSocket(other as never, OTHER.fingerprint, OTHER.tlsCertificateFingerprint);
+            annexServer._testing.wss!.emit('connection', other);
+            other.emit('message', JSON.stringify({ type: 'pty:reattach-shell', payload: { sessionId: 'rs1' } }));
+            other.emit('message', JSON.stringify({ type: 'pty:input', payload: { agentId: 'rs1', data: 'x' } }));
+            await vi.waitFor(() => expect(other.send.mock.calls.some(([raw]) => String(raw).includes('pty:reattach-shell'))).toBe(true));
+            const replies = other.send.mock.calls.map(([raw]) => JSON.parse(String(raw)) as { type: string; payload?: { code?: string; op?: string } });
+            expect(replies.find((r) => r.payload?.op === 'pty:reattach-shell')).toMatchObject({ type: 'error', payload: { code: 'session_not_found' } });
+            expect(ptyManagerModule.write).not.toHaveBeenCalledWith('rs1', 'x');
+            expect(annexServer._testing.detachedShells.has('rs1')).toBe(true);
+          }, 15_000);
+
+          for (const [name, change] of [
+            ['removed', () => undefined],
+            ['made pending', () => ({ ...MEMBER, networkPending: true })],
+            ['re-pinned', () => ({ ...MEMBER, tlsCertificateFingerprint: 'AB:CD:EF:02' })],
+          ] as const) {
+            it(`ends a reverse-detached shell on the next sweep once its member is ${name}`, async () => {
+              await spawnAndUnsubscribe('rs1');
+              expect(annexServer._testing.detachedShells.has('rs1')).toBe(true);
+              current = change();
+              annexServer._testing.endUnauthorizedDetachedShells();
+              expect(annexServer._testing.detachedShells.has('rs1')).toBe(false);
+              expect(ptyManagerModule.killShell).toHaveBeenCalledWith('rs1');
+            }, 15_000);
+          }
+
+          it('SECURITY: a member revoked while its reattach snapshot is read loses the shell and gets no screen', async () => {
+            await spawnAndUnsubscribe('rs1');
+            const next = subscribed();
+            await vi.waitFor(() => expect(next.frames()[0]).toMatchObject({ type: 'snapshot' }));
+            let release!: () => void;
+            holdSnapshot = new Promise<void>((resolve) => { release = resolve; });
+            next.client({ type: 'pty:reattach-shell', payload: { sessionId: 'rs1' } });
+            await vi.waitFor(() => expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledWith('rs1', expect.anything()));
+            current = { ...MEMBER, networkPending: true };
+            release();
+            await vi.waitFor(() => expect(ptyManagerModule.killShell).toHaveBeenCalledWith('rs1'));
+            expect(JSON.stringify(next.frames())).not.toContain('screen of rs1');
+            expect(annexServer._testing.shellOwners.has('rs1')).toBe(false);
+            expect(annexServer._testing.detachedShells.has('rs1')).toBe(false);
+          }, 15_000);
+        });
 
         it('a subscriber that lost access: its input never reaches the terminal', async () => {
           const sub = await ready();
