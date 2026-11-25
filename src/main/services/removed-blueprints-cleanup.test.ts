@@ -88,14 +88,14 @@ describe('cleanupRemovedBlueprintData', () => {
 
     touch(path.join(projectA, '.clubhouse', 'blueprints', 'again.json'));
     const second = await run();
-    expect(second).toEqual({ ran: false, removed: [], keptTracked: [], failed: [] });
+    expect(second).toEqual({ ran: false, removed: [], keptTracked: [], keptLinked: [], failed: [] });
     expect(fs.existsSync(path.join(projectA, '.clubhouse', 'blueprints', 'again.json'))).toBe(true);
   });
 
   it('is a no-op that still writes the marker when there is nothing to delete', async () => {
     touch(path.join(projectA, '.clubhouse', 'settings.json'));
     const result = await run();
-    expect(result).toEqual({ ran: true, removed: [], keptTracked: [], failed: [] });
+    expect(result).toEqual({ ran: true, removed: [], keptTracked: [], keptLinked: [], failed: [] });
     expect(fs.existsSync(markerFile)).toBe(true);
     expect(listTree(projectA)).toEqual(['.clubhouse/settings.json']);
   });
@@ -131,7 +131,26 @@ describe('cleanupRemovedBlueprintData', () => {
     expect(fs.existsSync(markerFile)).toBe(true);
   });
 
-  it('keeps the folder, without retrying, when git cannot say whether it is tracked', async () => {
+  it('never acts through a linked .clubhouse folder', async () => {
+    const elsewhere = path.join(root, 'elsewhere');
+    touch(path.join(elsewhere, 'blueprints', 'precious.json'));
+    fs.mkdirSync(projectA, { recursive: true });
+    try {
+      fs.symlinkSync(elsewhere, path.join(projectA, '.clubhouse'), 'junction');
+    } catch {
+      return; // symlinks not permitted on this machine
+    }
+    const isTracked = vi.fn(async () => 'not-a-repo' as const);
+    const result = await cleanupRemovedBlueprintData({ projects: [{ path: projectA }], markerFile, isTracked });
+    expect(result.keptLinked).toEqual([path.join(projectA, '.clubhouse', 'blueprints')]);
+    expect(result.removed).toEqual([]);
+    expect(isTracked).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(elsewhere, 'blueprints', 'precious.json'))).toBe(true);
+    expect(appLog).toHaveBeenCalledWith('core:startup', 'info', expect.stringContaining('link'), expect.anything());
+    expect(fs.existsSync(markerFile)).toBe(true);
+  });
+
+  it('keeps the folder and retries next startup when git cannot say whether it is tracked', async () => {
     touch(path.join(projectA, '.clubhouse', 'blueprints', 'team.json'));
     const result = await cleanupRemovedBlueprintData({
       projects: [{ path: projectA }], markerFile,
@@ -224,5 +243,20 @@ describe('cleanupRemovedBlueprintData in a git repository', () => {
 
     expect(result.removed).toEqual([path.join(plain, '.clubhouse', 'blueprints')]);
     expect(fs.existsSync(path.join(plain, '.clubhouse', 'blueprints'))).toBe(false);
+  });
+
+  it('keeps the folder when git itself is missing, and retries next startup', async () => {
+    touch(path.join(dir(), 'team.json'));
+    const savedPath = process.env.PATH;
+    process.env.PATH = path.join(root, 'no-git-here');
+    try {
+      await expect(gitTrackedCheck(repo, '.clubhouse/blueprints')).rejects.toThrow();
+      const result = await run();
+      expect(result.failed).toEqual([dir()]);
+    } finally {
+      process.env.PATH = savedPath;
+    }
+    expect(fs.existsSync(path.join(dir(), 'team.json'))).toBe(true);
+    expect(fs.existsSync(markerFile)).toBe(false);
   });
 });

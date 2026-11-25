@@ -34,6 +34,8 @@ export interface RemovedBlueprintsCleanupResult {
   removed: string[];
   /** Folders left in place because git tracks a file in them. */
   keptTracked: string[];
+  /** Folders left in place because the project's `.clubhouse` is a link to somewhere else. */
+  keptLinked: string[];
   failed: string[];
 }
 
@@ -43,7 +45,9 @@ interface GitRun { ok: boolean; stdout: string; stderr: string; error?: Error }
 
 function runGit(cwd: string, args: string[]): Promise<GitRun> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // C locale: 'not a git repository' is matched in English.
+    const env = { ...process.env, LC_ALL: 'C', LANGUAGE: 'C' };
+    execFile('git', args, { cwd, env, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
       resolve({ ok: !error, stdout: String(stdout), stderr: String(stderr), error: error ?? undefined });
     });
   });
@@ -75,6 +79,18 @@ async function lstatOrNull(p: string) {
   }
 }
 
+/**
+ * `<parent>/<name>` is a directory itself, not a symlink or junction, and
+ * resolves to the same place under the parent's real path.
+ */
+async function isRealChildDir(parent: string, name: string): Promise<boolean> {
+  const child = path.join(parent, name);
+  const stat = await lstatOrNull(child);
+  if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) return false;
+  const [realParent, realChild] = await Promise.all([fsp.realpath(parent), fsp.realpath(child)]);
+  return realChild === path.join(realParent, name);
+}
+
 /** The folder this cleanup deletes for a project. */
 export function blueprintsDirFor(projectPath: string): string {
   return path.join(projectPath, '.clubhouse', 'blueprints');
@@ -88,7 +104,7 @@ export function blueprintsDirFor(projectPath: string): string {
  * retried on the next startup.
  */
 export async function cleanupRemovedBlueprintData(opts: RemovedBlueprintsCleanupOptions): Promise<RemovedBlueprintsCleanupResult> {
-  const result: RemovedBlueprintsCleanupResult = { ran: false, removed: [], keptTracked: [], failed: [] };
+  const result: RemovedBlueprintsCleanupResult = { ran: false, removed: [], keptTracked: [], keptLinked: [], failed: [] };
   const isTracked = opts.isTracked ?? gitTrackedCheck;
   try {
     if (await lstatOrNull(opts.markerFile)) return result;
@@ -99,6 +115,12 @@ export async function cleanupRemovedBlueprintData(opts: RemovedBlueprintsCleanup
       try {
         const stat = await lstatOrNull(dir);
         if (!stat) continue;
+        // Never act through a linked .clubhouse: the folder would be another
+        // place's, and its git state is not this project's.
+        if (!(await isRealChildDir(project.path, '.clubhouse'))) {
+          result.keptLinked.push(dir);
+          continue;
+        }
         if (await isTracked(project.path, '.clubhouse/blueprints') === 'tracked') {
           result.keptTracked.push(dir);
           continue;
@@ -124,9 +146,14 @@ export async function cleanupRemovedBlueprintData(opts: RemovedBlueprintsCleanup
         meta: { kept: result.keptTracked },
       });
     }
+    if (result.keptLinked.length > 0) {
+      appLog('core:startup', 'info', 'Left saved blueprints in place because the project\'s .clubhouse folder is a link', {
+        meta: { kept: result.keptLinked },
+      });
+    }
     if (result.failed.length === 0) {
       await fsp.mkdir(path.dirname(opts.markerFile), { recursive: true });
-      await fsp.writeFile(opts.markerFile, JSON.stringify({ completedAt: new Date().toISOString(), removed: result.removed, keptTracked: result.keptTracked }), 'utf-8');
+      await fsp.writeFile(opts.markerFile, JSON.stringify({ completedAt: new Date().toISOString(), removed: result.removed, keptTracked: result.keptTracked, keptLinked: result.keptLinked }), 'utf-8');
     }
   } catch (err) {
     appLog('core:startup', 'warn', 'Blueprint data cleanup failed', {

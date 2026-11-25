@@ -625,7 +625,7 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
   - `agents.json`: the legacy `structuredMode` flag is dropped on read and the cleaned list is persisted, so those agents start in the terminal.
   - Experimental settings: `structuredMode` is dropped. If it was on, the renderer shows one info toast, then clears its marker: "Structured mode was removed. Agents that used it now open in the terminal."
   - Headless settings: a legacy `structured` spawn mode, as the default or a per-project override, becomes `interactive`.
-  - Persona patterns, blueprints and templates: the field is ignored on read and no longer written. The blueprint types keep `structured?` as `@deprecated` so older files still parse.
+  - Persona patterns, blueprints and templates: the field is ignored on read and no longer written. (Blueprints were later removed entirely, #3874.)
   - Plugin API: `agents.createDurable({ structuredMode })` is accepted, ignored and logs a deprecation warning. It's removed at the next plugin API major.
   - Agents running in structured mode at upgrade time are killed by the update, as before, and come back as sleeping terminal agents.
 - **Annex:** desktop satellites on older versions may still send `structured:event`, and the client still passes it through. The iOS app hasn't shipped, so nothing needed versioning.

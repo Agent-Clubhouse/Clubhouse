@@ -30,12 +30,8 @@ export function removeGroupProjectCanvasReferences(
     for (const field of ['selectedViewId', 'zoomedViewId', 'layoutCenterId']) {
       if (typeof result[field] === 'string' && removed.has(result[field] as string)) result[field] = null;
     }
-    if (Array.isArray(raw.deferredWires)) {
-      result.deferredWires = raw.deferredWires.filter((wire) => {
-        if (!record(wire)) throw new Error('Canvas inventory is incomplete. Repair the canvas before deleting.');
-        return !removed.has(String(wire.sourceViewId)) && !removed.has(String(wire.targetViewId));
-      });
-    }
+    // Deferred blueprint wires were removed with blueprints; drop the field, never validate it.
+    delete result.deferredWires;
     return result;
   });
   const nextWires = wires.filter((wire) => {
@@ -75,8 +71,7 @@ export function stripDeletedGroupProjectsFromCanvasKey(key: string, value: unkno
     for (const field of ['selectedViewId', 'zoomedViewId', 'layoutCenterId']) {
       if (typeof result[field] === 'string' && removed.has(result[field] as string)) result[field] = null;
     }
-    if (Array.isArray(raw.deferredWires)) result.deferredWires = raw.deferredWires.filter((wire) => !record(wire)
-      || (!removed.has(String(wire.sourceViewId)) && !removed.has(String(wire.targetViewId))));
+    delete result.deferredWires;
     return result;
   });
   return value.filter((wire) => !record(wire) || typeof wire.targetId !== 'string' || !deleted.has(wire.targetId)

@@ -18,6 +18,7 @@ import { WireDragOverlay } from './WireDragOverlay';
 import { WireConfigPopover } from './WireConfigPopover';
 import { CanvasMinimap } from './CanvasMinimap';
 import { useWiring, type ZoneWireCallback } from './useWiring';
+import { useFileDropGuard } from './useFileDropGuard';
 import type { ZoneWireDefinition } from './zone-wire-store';
 import { expandZoneWires, diffZoneBindings, classifyZoneAdds, type ExpandedBinding } from './zone-wire-expansion';
 import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
@@ -266,6 +267,8 @@ export function CanvasWorkspace({
 }: CanvasWorkspaceProps) {
   const [deleteGroup, setDeleteGroup] = useState<{ id: string; name: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // No file drop target here: keep a dropped file from opening in the window.
+  useFileDropGuard(containerRef);
   const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange, viewport);
   const [isPanning, setIsPanning] = useState(false);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });

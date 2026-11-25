@@ -13,12 +13,18 @@ describe('group project canvas cleanup', () => {
     const zones = [{ targetType: 'group-project', targetId: 'gp' }, { targetType: 'group-project', targetId: 'other' }];
     const result = removeGroupProjectCanvasReferences(instances, wires, zones, 'gp');
     expect(result.instances).toEqual([
-      { id: 'one', views: [gp('b', 'other'), { id: 'z', type: 'zone', containedViewIds: ['b'] }], selectedViewId: null, zoomedViewId: 'b', deferredWires: [{ sourceViewId: 'x', targetViewId: 'b' }], future: 42 },
+      { id: 'one', views: [gp('b', 'other'), { id: 'z', type: 'zone', containedViewIds: ['b'] }], selectedViewId: null, zoomedViewId: 'b', future: 42 },
       { id: 'two', views: [], layoutCenterId: null },
     ]);
     expect(result.wires).toEqual(wires.slice(1));
     expect(result.zoneWires).toEqual(zones.slice(1));
     expect(instances[0].views).toHaveLength(3);
+  });
+
+  it('drops deferred blueprint wires, even malformed ones, instead of refusing the delete', () => {
+    const instances = [{ id: 'old', views: [gp('a', 'gp')], deferredWires: [null, 'junk', { sourceViewId: 'a' }] }];
+    const result = removeGroupProjectCanvasReferences(instances, [], [], 'gp');
+    expect(result.instances).toEqual([{ id: 'old', views: [] }]);
   });
 
   it('refuses incomplete inventory rather than silently dropping it', () => {
