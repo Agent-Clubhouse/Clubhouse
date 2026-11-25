@@ -76,6 +76,10 @@ export function removeAgentsFromState(
   const agentLaunchFailure = omitRecordKeys(state.agentLaunchFailure, ids);
   const cancelledAgentIds = omitRecordKeys(state.cancelledAgentIds, ids);
   const agentIcons = omitRecordKeys(state.agentIcons, ids);
+  // A removed agent's after-update resume row goes too, so its button can't bring it back.
+  const resumingAgents = omitRecordKeys(state.resumingAgents, ids);
+  const resumeAgentNames = omitRecordKeys(state.resumeAgentNames, ids);
+  const resumeErrors = omitRecordKeys(state.resumeErrors, ids);
 
   let projectActiveAgent = state.projectActiveAgent;
   for (const agentId of Object.values(state.projectActiveAgent)) {
@@ -108,6 +112,9 @@ export function removeAgentsFromState(
     cancelledAgentIds,
     projectActiveAgent,
     agentIcons,
+    resumingAgents,
+    resumeAgentNames,
+    resumeErrors,
     sessionNamePromptFor,
   };
 }

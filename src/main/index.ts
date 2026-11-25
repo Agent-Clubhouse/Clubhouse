@@ -218,7 +218,7 @@ const createWindow = (): void => {
   });
 
   // Apply security guards (will-navigate, setWindowOpenHandler, will-attach-webview)
-  applyWindowSecurityGuards(mainWindow);
+  applyWindowSecurityGuards(mainWindow, MAIN_WINDOW_WEBPACK_ENTRY);
 
 
   // Clean up file watchers when the window is about to close (before webContents is destroyed)

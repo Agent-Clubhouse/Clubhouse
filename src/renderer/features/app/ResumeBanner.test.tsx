@@ -85,3 +85,38 @@ describe('ResumeBanner card variant (new chrome)', () => {
   });
 });
 
+
+describe('ResumeBanner Retry buttons', () => {
+  it.each(['bar', 'card'] as const)('%s: Retry on a timed-out or failed session calls onManualResume', (variant) => {
+    const onManualResume = vi.fn();
+    render(
+      <ResumeBanner
+        variant={variant}
+        sessions={[
+          { agentId: 't', agentName: 'slow-owl', status: 'timed_out' },
+          { agentId: 'f', agentName: 'bad-newt', status: 'failed', error: 'CLI not installed' },
+        ]}
+        onManualResume={onManualResume}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('CLI not installed')).toBeDefined();
+    const retries = screen.getAllByRole('button', { name: 'Retry' });
+    expect(retries).toHaveLength(2);
+    fireEvent.click(retries[0]);
+    fireEvent.click(retries[1]);
+    expect(onManualResume.mock.calls).toEqual([['t'], ['f']]);
+  });
+});
+
+describe('ResumeBanner hook order', () => {
+  it('survives going from no sessions to some and back (hooks run before the empty return)', () => {
+    const props = { onManualResume: vi.fn(), onDismiss: vi.fn() };
+    const { rerender, container } = render(<ResumeBanner sessions={[]} {...props} />);
+    expect(container.firstChild).toBeNull();
+    rerender(<ResumeBanner sessions={[{ agentId: 'a', agentName: 'x', status: 'manual' }]} {...props} />);
+    expect(screen.getByText('x')).toBeDefined();
+    rerender(<ResumeBanner sessions={[]} {...props} />);
+    expect(container.firstChild).toBeNull();
+  });
+});

@@ -532,7 +532,7 @@ Chat should land on its own schedule, in either the current chrome or the refres
 
 - **Chrome:** chat is an agent-pane component. Its header, approval dock, composer, Changes panel and agent map all live inside the pane. Nothing goes in the title bar or sidebar.
   - It talks to the rest of the app through existing state: `agentStatusSlice` status, the permission queue, and notifications. Today's agent list shows "needs permission" for a chat agent the same way it does for a terminal agent, and the refresh's "Needs you" section reads the same state.
-  - The per-provider runtime setting lives in the existing `OrchestratorSettingsView` row. The unused `OrchestratorSettings.defaultExecutionMode` field can back it. The Experimental entry uses the existing `preview-eligible` beta gating.
+  - The per-provider runtime setting lives in the existing `OrchestratorSettingsView` row. The Experimental entry uses the existing `preview-eligible` beta gating.
   - The mockups show the refreshed sidebar only as context. The pane works the same next to today's 566px of chrome.
 - **Telemetry:** chat publishes its normalized events on a main-process bus that it owns, and nothing in chat imports telemetry.
   - When the telemetry pipeline lands, it subscribes to that bus. Whichever lands second does the mapping in §8.1. If chat lands first, the drivers already emit the drift and stall signals as log lines and events, ready to map.

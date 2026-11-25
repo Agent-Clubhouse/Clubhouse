@@ -21,6 +21,7 @@ export function resumeBannerSessions(
   agents: Record<string, Agent>,
   names: Record<string, string>,
   dispatcher: DispatcherState | null,
+  errors: Record<string, string> = {},
 ): ResumeBannerSession[] {
   return Object.entries(statuses).map(([agentId, status]) => {
     const name = [agents[agentId]?.name, names[agentId]].find((value) => value && value !== agentId);
@@ -29,6 +30,7 @@ export function resumeBannerSessions(
       agentName: name && name !== agentId ? name
         : agentId === dispatcher?.chatAgentId ? dispatcher.config?.name || 'Dispatcher' : agentId,
       status,
+      ...(errors[agentId] ? { error: errors[agentId] } : {}),
     };
   });
 }
@@ -37,8 +39,12 @@ export function useResumeBannerSessions(): ResumeBannerSession[] {
   const statuses = useAgentStore((s) => s.resumingAgents);
   const agents = useAgentStore((s) => s.agents);
   const names = useAgentStore((s) => s.resumeAgentNames);
+  const errors = useAgentStore((s) => s.resumeErrors);
   const dispatcher = useDispatcherStore((s) => s.state);
-  return useMemo(() => resumeBannerSessions(statuses, agents, names, dispatcher), [statuses, agents, names, dispatcher]);
+  return useMemo(
+    () => resumeBannerSessions(statuses, agents, names, dispatcher, errors),
+    [statuses, agents, names, dispatcher, errors],
+  );
 }
 
 interface ResumeBannerProps {
@@ -78,9 +84,7 @@ const CARD_STATUS: Record<ResumeStatus, [NoticeTone, string]> = {
 };
 
 export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'bar' }: ResumeBannerProps) {
-  if (sessions.length === 0) return null;
-
-  const allSucceeded = sessions.every((s) => s.status === 'resumed');
+  const allSucceeded = sessions.length > 0 && sessions.every((s) => s.status === 'resumed');
 
   // Auto-dismiss 3 seconds after ALL sessions resumed successfully.
   // If any failed or timed out, keep the banner visible so the user can see.
@@ -89,6 +93,8 @@ export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'b
     const timer = setTimeout(onDismiss, 3000);
     return () => clearTimeout(timer);
   }, [allSucceeded, onDismiss]);
+
+  if (sessions.length === 0) return null;
 
   if (variant === 'card') {
     const anyFailed = sessions.some((s) => s.status === 'failed');
@@ -110,7 +116,7 @@ export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'b
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${NOTICE_DOT[tone]}`} aria-hidden="true" />
                   <span className="min-w-0 truncate text-ctp-text">{s.agentName}</span>
                   <span className="flex-shrink-0">{word}</span>
-                  {(s.status === 'manual' || s.status === 'timed_out') && (
+                  {(s.status === 'manual' || s.status === 'timed_out' || s.status === 'failed') && (
                     <Button kind="ghost" className="ml-auto !h-6" onClick={() => onManualResume(s.agentId)}>
                       {s.status === 'manual' ? 'Resume' : 'Retry'}
                     </Button>
@@ -163,7 +169,7 @@ export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'b
               {s.error || 'Failed'}
             </span>
           )}
-          {s.status === 'timed_out' && (
+          {(s.status === 'timed_out' || s.status === 'failed') && (
             <button
               onClick={() => onManualResume(s.agentId)}
               className="px-2 py-0.5 rounded-md bg-ctp-peach/15 border border-ctp-peach/30 text-ctp-peach

@@ -1,4 +1,5 @@
 import { installContentContextMenu } from './content-context-menu';
+import { installFileDropGuard } from './file-drop-guard';
 import { IPC } from '../shared/ipc-channels';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { settingsChannels } from '../shared/settings-definitions';
@@ -90,6 +91,11 @@ export const api = {
 export type ClubhouseAPI = typeof api;
 
 contextBridge.exposeInMainWorld('clubhouse', api);
+
+// A file dropped where no surface takes it must not navigate the app window.
+if (typeof globalThis.document !== 'undefined') {
+  installFileDropGuard(globalThis.document);
+}
 
 // Only the app's top frame installs the native content-menu fallback.
 if (typeof globalThis.window !== 'undefined' && globalThis.window.top === globalThis.window) {

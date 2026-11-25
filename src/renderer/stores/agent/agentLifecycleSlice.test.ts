@@ -23,6 +23,7 @@ function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
     cancelledAgentIds: {},
     resumingAgents: {},
     resumeAgentNames: {},
+    resumeErrors: {},
     agentIcons: {},
     pendingRecovery: null,
     ...overrides,
@@ -58,6 +59,17 @@ describe('resume notice names', () => {
     slice.clearResumingAgents();
     expect(state().resumeAgentNames).toEqual({});
     expect(state().resumingAgents).toEqual({});
+  });
+
+  it('keeps a failure message until the next status, and clears it with the notice', () => {
+    const { state, slice } = createTestStore();
+    slice.setResumeStatus('chat', 'failed', undefined, 'CLI not installed');
+    expect(state().resumeErrors).toEqual({ chat: 'CLI not installed' });
+    slice.setResumeStatus('chat', 'resuming');
+    expect(state().resumeErrors).toEqual({});
+    slice.setResumeStatus('chat', 'failed', undefined, 'again');
+    slice.clearResumingAgents();
+    expect(state().resumeErrors).toEqual({});
   });
 });
 

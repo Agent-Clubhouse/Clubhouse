@@ -18,6 +18,7 @@ import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 import { UpdateBanner } from './features/app/UpdateBanner';
 import { ResumeBanner, useResumeBannerSessions } from './features/app/ResumeBanner';
+import { resumeFromBanner } from './services/resume-queue';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
@@ -311,9 +312,7 @@ export function App() {
           <UpdateBanner />
           <ResumeBanner
             sessions={resumeSessions}
-            onManualResume={(agentId) => {
-              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
-            }}
+            onManualResume={resumeFromBanner}
             onDismiss={() => useAgentStore.getState().clearResumingAgents()}
           />
           <PluginUpdateBanner />
@@ -370,9 +369,7 @@ export function App() {
           <UpdateBanner />
           <ResumeBanner
             sessions={resumeSessions}
-            onManualResume={(agentId) => {
-              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
-            }}
+            onManualResume={resumeFromBanner}
             onDismiss={() => useAgentStore.getState().clearResumingAgents()}
           />
           <PluginUpdateBanner />
@@ -402,9 +399,7 @@ export function App() {
           <UpdateBanner />
           <ResumeBanner
             sessions={resumeSessions}
-            onManualResume={(agentId) => {
-              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
-            }}
+            onManualResume={resumeFromBanner}
             onDismiss={() => useAgentStore.getState().clearResumingAgents()}
           />
           <PluginUpdateBanner />
@@ -433,9 +428,7 @@ export function App() {
         <UpdateBanner />
         <ResumeBanner
           sessions={resumeSessions}
-          onManualResume={(agentId) => {
-            console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
-          }}
+          onManualResume={resumeFromBanner}
           onDismiss={() => useAgentStore.getState().clearResumingAgents()}
         />
         <PluginUpdateBanner />

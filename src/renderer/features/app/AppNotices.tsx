@@ -5,6 +5,7 @@ import { PermissionViolationBanner } from '../plugins/PermissionViolationBanner'
 import { PluginUpdateBanner } from '../plugins/PluginUpdateBanner';
 import { UpdateBanner } from './UpdateBanner';
 import { ResumeBanner, useResumeBannerSessions } from './ResumeBanner';
+import { resumeFromBanner } from '../../services/resume-queue';
 
 /**
  * The app-wide notices in the new chrome (#2014): update ready, resume
@@ -14,16 +15,13 @@ import { ResumeBanner, useResumeBannerSessions } from './ResumeBanner';
  */
 export function AppNotices({ variant }: { variant: 'bar' | 'card' }) {
   const sessions = useResumeBannerSessions();
-  const onManualResume = useCallback((agentId: string) => {
-    console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
-  }, []);
   const onDismiss = useCallback(() => useAgentStore.getState().clearResumingAgents(), []);
 
   const notices = (
     <>
       <PermissionViolationBanner variant={variant} />
       <UpdateBanner variant={variant} />
-      <ResumeBanner sessions={sessions} onManualResume={onManualResume} onDismiss={onDismiss} variant={variant} />
+      <ResumeBanner sessions={sessions} onManualResume={resumeFromBanner} onDismiss={onDismiss} variant={variant} />
       <PluginUpdateBanner variant={variant} />
     </>
   );
