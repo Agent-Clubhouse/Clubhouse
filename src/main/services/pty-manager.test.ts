@@ -97,7 +97,7 @@ import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferS
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { getShellCwd } from './pty-manager';
-import { processIdentity } from './pty-manager';
+import { processIdentity, unknownBufferSnapshot } from './pty-manager';
 import { closeAgentWork, reopenLaunches } from './launch-gate';
 import { onAgentExit } from './agent-exit-broadcast';
 import * as headlessTerminal from './pty-headless-terminal';
@@ -285,6 +285,14 @@ describe('pty-manager', () => {
   });
 
   describe('getSerializedBufferSnapshot', () => {
+    it('answers an id with no terminal exactly as unknownBufferSnapshot does (#3843 R1)', async () => {
+      await spawnAndActivate('agent_unknown_hw');
+      mockProcess.onData.mock.calls[0][0]('output that moves the high water');
+      vi.mocked(headlessTerminal).snapshot.mockResolvedValueOnce(null);
+      expect(await getSerializedBufferSnapshot('no_such_terminal')).toEqual(unknownBufferSnapshot());
+      expect(unknownBufferSnapshot()).toEqual({ data: '', seq: getBufferSnapshot('no_such_terminal').seq });
+    });
+
     it("returns the mirror's state with its seq and the PTY size", async () => {
       await spawnAndActivate('agent_sersnap');
       resize('agent_sersnap', 90, 20);

@@ -1,0 +1,145 @@
+{
+  "cases": [
+    {
+      "name": "reattach",
+      "replies": [
+        {
+          "payload": {
+            "buffer": "\u001b[1mready\u001b[0m\r\n$ ",
+            "cols": 120,
+            "cwd": "/work/app",
+            "outputSeq": 42,
+            "rows": 40,
+            "sessionId": "shell_r1"
+          },
+          "type": "pty:reattach-shell:ack"
+        }
+      ],
+      "request": {
+        "payload": {
+          "cols": 80,
+          "rows": 40,
+          "sessionId": "shell_r1"
+        },
+        "type": "pty:reattach-shell"
+      }
+    },
+    {
+      "name": "reattach over a socket still holding it",
+      "replies": [
+        {
+          "payload": {
+            "buffer": "\u001b[1mready\u001b[0m\r\n$ ",
+            "cols": 120,
+            "cwd": "/work/app",
+            "outputSeq": 42,
+            "rows": 40,
+            "sessionId": "shell_r2"
+          },
+          "type": "pty:reattach-shell:ack"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": "shell_r2"
+        },
+        "type": "pty:reattach-shell"
+      }
+    },
+    {
+      "name": "superseded socket: session_in_use",
+      "replies": [
+        {
+          "payload": {
+            "code": "session_in_use",
+            "message": "session_in_use",
+            "op": "pty:reattach-shell",
+            "sessionId": "shell_r2"
+          },
+          "type": "error"
+        }
+      ]
+    },
+    {
+      "name": "reattach: session_not_found",
+      "replies": [
+        {
+          "payload": {
+            "code": "session_not_found",
+            "message": "session_not_found",
+            "op": "pty:reattach-shell",
+            "sessionId": "shell_never"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": "shell_never"
+        },
+        "type": "pty:reattach-shell"
+      }
+    },
+    {
+      "name": "reattach: invalid_session_id",
+      "replies": [
+        {
+          "payload": {
+            "code": "invalid_session_id",
+            "message": "invalid_session_id",
+            "op": "pty:reattach-shell",
+            "sessionId": ""
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": ""
+        },
+        "type": "pty:reattach-shell"
+      }
+    },
+    {
+      "name": "reattach: session_exited",
+      "replies": [
+        {
+          "payload": {
+            "code": "session_exited",
+            "exitCode": 130,
+            "message": "session_exited",
+            "op": "pty:reattach-shell",
+            "sessionId": "shell_r3"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": "shell_r3"
+        },
+        "type": "pty:reattach-shell"
+      }
+    },
+    {
+      "name": "reattach: session_expired",
+      "replies": [
+        {
+          "payload": {
+            "code": "session_expired",
+            "message": "session_expired",
+            "op": "pty:reattach-shell",
+            "sessionId": "shell_r4"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": "shell_r4"
+        },
+        "type": "pty:reattach-shell"
+      }
+    }
+  ]
+}
