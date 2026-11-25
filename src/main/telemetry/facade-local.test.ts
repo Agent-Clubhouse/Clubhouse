@@ -8,7 +8,6 @@ import {
   _setExportWithoutLocalForTests,
   EXPORT_WITHOUT_LOCAL_RECORDING,
   abortPending,
-  currentTraceIds,
   currentTraceparent,
   currentRequestTraceparent,
   withRemoteParent,
@@ -125,16 +124,6 @@ describe('facade with local recording and telemetry off', () => {
     expect(written).not.toContain('boom');
     expect(written).not.toContain('raw text');
     expect(written).not.toContain('sam-tester');
-  });
-
-  it('gives appLog lines the local trace ids inside a flow', () => {
-    installRecorder();
-    let ids: unknown;
-    tel.flow('clubhouse.agent.spawn', {}, () => {
-      ids = currentTraceIds();
-    });
-    expect(ids).toMatchObject({ traceId: expect.stringMatching(/^[0-9a-f]{32}$/) });
-    expect(currentTraceIds()).toBeUndefined();
   });
 
   it('tags error types for classification', () => {

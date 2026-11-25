@@ -44,8 +44,6 @@ vi.mock('../services/agent-config', () => ({
 
 vi.mock('../services/agent-creation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../services/agent-creation')>(),
-  startDurableCreation: vi.fn(async () => ({ agentId: 'agent-2', config: { id: 'agent-2', name: 'Helper', creation: { state: 'creating' } }, done: Promise.resolve('ready') })),
-  cancelDurableCreation: vi.fn(async () => true),
   onDurableCreationEvent: vi.fn(() => () => {}),
 }));
 
@@ -58,11 +56,9 @@ vi.mock('../services/agent-system', () => ({
   killAgent: vi.fn(async () => {}),
   resolveOrchestrator: vi.fn(async () => ({
     getModelOptions: vi.fn(() => [{ id: 'default', label: 'Default' }]),
-    toolVerb: vi.fn((name: string) => name === 'known' ? 'Editing' : null),
   })),
   checkAvailability: vi.fn(async () => ({ available: true })),
   getAvailableOrchestrators: vi.fn(() => ['claude-code', 'aider']),
-  isHeadlessAgent: vi.fn(() => false),
   getRunningAgentIds: vi.fn((ids: string[]) => ids.filter((id) => id === 'running_one')),
   isAgentRunning: vi.fn(() => false),
 }));
@@ -91,7 +87,6 @@ vi.mock('../services/orchestration-policy', () => ({
   getOrchestrationPolicy: vi.fn(async () => ({ orchestrate: true })),
   setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
   turnOffOrchestration: vi.fn(async () => ({ ok: true, message: 'Kept 1 helper(s)', helperIds: ['h1'] })),
-  getHelperSummary: vi.fn(async () => ({ hasHelpers: false, helperIds: [] })),
   resolveHelperLaunchSettings: vi.fn(async () => ({ freeAgentMode: false, level: 'standard', ceiling: 'standard', clamped: false })),
   checkHelperLimitFor: vi.fn(async () => ({ ok: true })),
   withAgentLock: vi.fn(async (_p: string, _id: string, fn: () => Promise<unknown>) => fn()),
@@ -128,7 +123,6 @@ import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handle
 import { recordStartRequest, _resetStartRequestsForTesting } from '../services/helper-start-requests';
 import { removeDisposedHelpersOf } from '../services/disposed-helper-cleanup';
 import * as agentConfig from '../services/agent-config';
-import * as agentCreation from '../services/agent-creation';
 import * as agentDelete from '../services/agent-delete';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
@@ -170,11 +164,10 @@ describe('agent-handlers', () => {
       IPC.AGENT.SPAWN_AGENT, IPC.AGENT.KILL_AGENT,
       IPC.AGENT.READ_QUICK_SUMMARY, IPC.AGENT.GET_MODEL_OPTIONS,
       IPC.AGENT.CHECK_ORCHESTRATOR, IPC.AGENT.GET_ORCHESTRATORS,
-      IPC.AGENT.GET_TOOL_VERB, IPC.AGENT.GET_SUMMARY_INSTRUCTION,
+      IPC.AGENT.GET_SUMMARY_INSTRUCTION,
       IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.GET_TRANSCRIPT_INFO,
-      IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.READ_TRANSCRIPT_FROM, IPC.AGENT.IS_HEADLESS_AGENT,
+      IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.READ_TRANSCRIPT_FROM,
       IPC.AGENT.GET_RUNNING_STATUSES,
-      IPC.AGENT.START_DURABLE_CREATION, IPC.AGENT.CANCEL_DURABLE_CREATION,
       IPC.AGENT.FINISHED_QUICK_HYDRATE, IPC.AGENT.FINISHED_QUICK_APPLY,
     ];
     for (const channel of expectedChannels) {
@@ -236,46 +229,6 @@ describe('agent-handlers', () => {
     expect(vi.mocked(agentConfig.createDurable).mock.lastCall?.[10]).toEqual({});
   });
 
-  describe('START_DURABLE_CREATION (#2226)', () => {
-    it('returns the id and creating config without the done promise', async () => {
-      const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
-      const result = await handler({}, '/project', { name: 'Helper', color: 'indigo', folderName: 'helper-1', branchFrom: 'main', model: 'default' });
-      expect(result).toEqual({ agentId: 'agent-2', config: { id: 'agent-2', name: 'Helper', creation: { state: 'creating' } } });
-      expect(agentCreation.startDurableCreation).toHaveBeenCalledWith(
-        '/project',
-        expect.objectContaining({ name: 'Helper', color: 'indigo', folderName: 'helper-1', branchFrom: 'main' }),
-      );
-      const params = vi.mocked(agentCreation.startDurableCreation).mock.calls[0][1];
-      expect(params).not.toHaveProperty('model');
-    });
-
-    it('ignores a persona it is given: personas were retired (#2901)', async () => {
-      const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
-      await handler({}, '/project', { name: 'Helper', color: 'indigo', persona: 'qa' });
-      const [, params, opts] = vi.mocked(agentCreation.startDurableCreation).mock.calls[0];
-      expect(params).not.toHaveProperty('persona');
-      expect(opts).toBeUndefined();
-    });
-
-    it.each([
-      [{ color: 'indigo' }, /params.name/],
-      [{ name: 'a', color: 3 }, /params.color/],
-      [{ name: 'a', color: 'indigo', branchFrom: 7 }, /params.branchFrom/],
-      [{ name: 'a', color: 'indigo', mcpIds: [1] }, /params.mcpIds/],
-      [{ name: 'a', color: 'indigo', useWorktree: 'yes' }, /params.useWorktree/],
-    ])('refuses malformed params %j', async (params, message) => {
-      const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
-      await expect(handler({}, '/project', params)).rejects.toThrow(message);
-      expect(agentCreation.startDurableCreation).not.toHaveBeenCalled();
-    });
-
-    it('CANCEL_DURABLE_CREATION delegates to cancelDurableCreation', async () => {
-      const handler = handlers.get(IPC.AGENT.CANCEL_DURABLE_CREATION)!;
-      expect(await handler({}, '/project', 'agent-2')).toBe(true);
-      expect(agentCreation.cancelDurableCreation).toHaveBeenCalledWith('/project', 'agent-2');
-    });
-  });
-
   describe('Dispatcher singleton guards (#2535)', () => {
     it('DELETE_DURABLE refuses the Dispatcher by id or by folder', async () => {
       await expect(handlers.get(IPC.AGENT.DELETE_DURABLE)!({}, 'dispatcher-folder', 'any')).rejects.toThrow("The Dispatcher can't be deleted.");
@@ -297,11 +250,8 @@ describe('agent-handlers', () => {
     });
 
     it('refuses a duplicate in its folder', async () => {
-      const start = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
-      await expect(start({}, 'dispatcher-folder', { name: 'copy', color: 'indigo' })).rejects.toThrow(/duplicated/);
       const create = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
       await expect(create({}, 'dispatcher-folder', 'copy', 'indigo')).rejects.toThrow(/duplicated/);
-      expect(agentCreation.startDurableCreation).not.toHaveBeenCalled();
       expect(agentConfig.createDurable).not.toHaveBeenCalled();
     });
 
@@ -668,12 +618,8 @@ describe('agent-handlers', () => {
       await handlers.get(IPC.AGENT.SET_ORCHESTRATION_POLICY)!({}, '/project', 'agent-1', { orchestrate: true });
       expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/project', 'agent-1', { orchestrate: true });
       expect(broadcastSnapshotRefresh).toHaveBeenCalled();
-      await handlers.get(IPC.AGENT.GET_HELPER_SUMMARY)!({}, '/project', 'agent-1');
-      expect(orchestrationPolicy.getHelperSummary).toHaveBeenCalledWith('/project', 'agent-1');
       await handlers.get(IPC.AGENT.RESOLVE_HELPER_ACCESS)!({}, '/project', 'agent-1', 'copilot-cli');
       expect(orchestrationPolicy.resolveHelperLaunchSettings).toHaveBeenCalledWith('/project', 'agent-1', { helperProvider: 'copilot-cli' });
-      await handlers.get(IPC.AGENT.CHECK_HELPER_LIMIT)!({}, '/project', 'agent-1');
-      expect(orchestrationPolicy.checkHelperLimitFor).toHaveBeenCalledWith('/project', 'agent-1');
     });
 
     it('turns orchestration off with a helper choice', async () => {
@@ -893,13 +839,6 @@ describe('agent-handlers', () => {
     expect(result).toEqual(['claude-code', 'aider']);
   });
 
-  it('GET_TOOL_VERB returns provider toolVerb result or fallback', async () => {
-    const handler = handlers.get(IPC.AGENT.GET_TOOL_VERB)!;
-    const result = await handler({}, 'unknown-tool', '/project');
-    // toolVerb returns null for unknown → fallback to `Using ${toolName}`
-    expect(result).toBe('Using unknown-tool');
-  });
-
   it('GET_SUMMARY_INSTRUCTION delegates to buildSummaryInstruction', async () => {
     const handler = handlers.get(IPC.AGENT.GET_SUMMARY_INSTRUCTION)!;
     const result = await handler({}, 'a1');
@@ -933,13 +872,6 @@ describe('agent-handlers', () => {
     const result = await handler({}, 'a1', 1024);
     expect(headlessManager.readTranscriptFrom).toHaveBeenCalledWith('a1', 1024);
     expect(result).toMatchObject({ cursor: 42 });
-  });
-
-  it('IS_HEADLESS_AGENT delegates to agentSystem.isHeadlessAgent', async () => {
-    const handler = handlers.get(IPC.AGENT.IS_HEADLESS_AGENT)!;
-    const result = await handler({}, 'a1');
-    expect(agentSystem.isHeadlessAgent).toHaveBeenCalledWith('a1');
-    expect(result).toBe(false);
   });
 
   // --- Input validation ---

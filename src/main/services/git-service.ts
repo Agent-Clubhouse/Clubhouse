@@ -472,13 +472,6 @@ export async function discardFile(dirPath: string, filePath: string, isUntracked
   });
 }
 
-export async function createBranch(dirPath: string, branchName: string): Promise<GitOpResult> {
-  return gitOp('create_branch', () => {
-    validateBranchName(branchName);
-    return runResultDetailed(['checkout', '-b', branchName], dirPath, undefined, 'create_branch');
-  });
-}
-
 export async function stash(dirPath: string): Promise<GitOpResult> {
   return opRun('stash', ['stash'], dirPath);
 }
