@@ -64,11 +64,10 @@ export function antigravityAcpArgs(opts: { extraArgs: readonly string[]; level?:
 
 export function antigravityAcpLaunchSpec(launch: AntigravityLaunchOptions = {}): AcpLaunchSpec {
   return {
-    // Not in CHAT_DRIVER_IDS until registration (the integrator adds it with the telemetry enum).
     id: ANTIGRAVITY_CHAT_DRIVER_ID as ChatDriverId,
     provider: ANTIGRAVITY_PROVIDER_ID,
-    // Only when the person picks it, until the real-login gates (#3802) pass.
-    optIn: true,
+    // Not opt-in: chat is Antigravity's primary runtime (#3786). The provider
+    // itself stays behind its experimental flag and toggle until #3785 is accepted.
     args: (opts) => antigravityAcpArgs(opts, launch),
     claims: {
       // "When the agent asks a question, clients that support ACP elicitation forms show a native form."
