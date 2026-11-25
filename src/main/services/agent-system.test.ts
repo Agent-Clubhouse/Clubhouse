@@ -3058,6 +3058,7 @@ describe('agent-system', () => {
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
         expect.any(Function), // display observation of the created headless session
+        expect.objectContaining({ provider: 'claude-code' }), // run settings, for the usage line
       );
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
@@ -3213,6 +3214,7 @@ describe('agent-system', () => {
         undefined, // createEventNormalizer
         undefined, // beforeSpawn: no fence given
         expect.any(Function), // display observation of the created headless session
+        expect.objectContaining({ provider: 'claude-code' }), // run settings, for the usage line
       );
     });
 
