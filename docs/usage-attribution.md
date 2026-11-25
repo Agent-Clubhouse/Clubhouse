@@ -51,6 +51,30 @@ node scripts/usage-rollup.mjs [--by day,provider,role,agentId] [--since YYYY-MM-
   - It covers only turns that fit the recorder's diag budget.
   - A day with logging off reads as no turns, not as zero use.
 
+### Settings › Usage
+
+The Usage page (`src/renderer/features/settings/UsageSettingsView.tsx`) shows
+the same totals inside the app, for today or the last 7 days (UTC). The main
+process reads them from the local log through the same aggregator
+(`src/main/services/usage-summary.ts`).
+
+- **Plan limits.** One row per provider descriptor. A provider whose
+  descriptor says `quota: 'reader'` shows its token-free reading, such as
+  "62% of the weekly limit used". Every other provider, and any reading that
+  failed or is unknown, shows "unknown", never a percentage.
+- **Tokens used.** One row per provider. A row has turns, input (with
+  cached), output and reasoning. A figure no turn reported reads "unknown".
+  A provider with no lines reads "No usage logged".
+  Turns whose line had no turn id are named too ("N turns had no id and
+  may be counted twice"), since a repeat of one can't be detected.
+- **Cost.** The page reads only files written during the period and parses
+  only lines stamped within it. It makes one pass for the provider and role
+  rows.
+- **By role.** Turns by role, covering the Dispatcher, orchestrators,
+  helpers, quick agents and other agents.
+- **No lines for the period.** The page says so, and says whether the
+  logging settings let usage lines be written. It never shows zeros.
+
 ### Not covered
 
 - **Terminal (TUI) agents** publish no chat events. When a terminal run ends,

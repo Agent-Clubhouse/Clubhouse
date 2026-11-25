@@ -5,6 +5,8 @@
 //   sends one chunk, closes its own stdin and stays alive without answering
 //   (it exits on its own after 15s, so that path is distinguishable from a
 //   20s test timeout);
+//   "stop-reading-alive" stops reading without closing anything and stays
+//   alive (120s), reporting its pid;
 //   any other prompt streams its text back in two chunks, split across
 //   writes, then end_turn.
 import { closeSync } from 'node:fs';
@@ -20,6 +22,18 @@ rl.on('line', (line) => {
     const text = msg.params.prompt.map((b) => b.text ?? '').join('');
     const exit = /^exit:(\d+)$/.exec(text);
     if (exit) process.exit(Number(exit[1]));
+    if (text === 'stop-reading-alive') {
+      // Stops reading while staying alive: nothing is closed, so a write to
+      // its stdin gets no error, it only stays unread. Reports its pid so the
+      // test can check the process is gone after Stop. Exits by itself only
+      // after 120s, far past any test's bound.
+      rl.close();
+      process.stdin.pause();
+      process.stdin.removeAllListeners('data');
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'stdio-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `pid:${process.pid}` } } } });
+      setTimeout(() => process.exit(0), 120_000);
+      return;
+    }
     if (text === 'stop-reading') {
       write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'stdio-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reading stopped' } } } });
       rl.close();

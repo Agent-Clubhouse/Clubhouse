@@ -26,6 +26,8 @@ export type UsageRollupRow = Partial<Record<UsageRollupDimension, string>> & Usa
 export interface UsageRollup {
   groupBy: UsageRollupDimension[];
   rows: UsageRollupRow[];
+  /** Rows for each `alsoGroupBy` grouping, from the same pass, in order. */
+  also: UsageRollupRow[][];
   totals: UsageRollupTotals;
   /** No turn line was found (logging off, nothing ran, or a build without usage lines): not zero use. */
   noLines: boolean;
@@ -39,5 +41,5 @@ export interface UsageRollup {
 
 export declare function rollupUsage(
   records: Iterable<unknown>,
-  options?: { groupBy?: UsageRollupDimension[]; since?: string; until?: string },
+  options?: { groupBy?: UsageRollupDimension[]; alsoGroupBy?: UsageRollupDimension[][]; since?: string; until?: string },
 ): UsageRollup;

@@ -68,7 +68,7 @@ const ANY_OF = new Set<string>(['dispatcher.update', 'dispatcher.setModels']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   key === 'contractVersion' || (type === 'agent.start' && (key === 'expectedState' || key === 'expectedNextWake')) ? true : ANY_OF.has(type) ? true : type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
-      : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
+      : OPTIONAL.has(key);
 const BOOLEAN_FIELDS = new Set(['managed', 'blank', 'waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled', 'byHand', 'copilotAuto']);
 /** Fields agent.update clears with null. */
 export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration', 'contextWindow']);
@@ -82,6 +82,8 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   const type = value.type as MobileCommand['type'];
   const fields = MOBILE_COMMAND_FIELDS[type];
   if (Object.keys(value).some((k) => !['version', 'commandId', 'epoch', 'type', ...fields].includes(k))) throw new MobileControlError('invalid_command', 400);
+  // `model` may be left out to change the effort alone, but not both.
+  if (type === 'chat.setModel' && value.model === undefined && value.effort === undefined) throw new MobileControlError('invalid_command', 400);
   for (const key of fields) {
     const v = value[key];
     if (isOptionalCommandField(type, key) && v === undefined) continue;
@@ -244,6 +246,8 @@ export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undef
       startModel = startModel ?? d.model ?? null;
       if (d.model !== undefined) { model = d.model; modelUnknown = d.model === null; }
       models = d.models ?? models; efforts = d.efforts ?? efforts; levelNames = d.levelNames ?? levelNames;
+      // A reported effort is a chosen one; null leaves whether it's the default as it was (as the chat store does).
+      if (d.effort !== undefined) { effort = d.effort; if (d.effort !== null) effortIsDefault = false; effortReported = true; }
       limits = d.contextLimits ?? limits;
     } else if (event.type === 'usage' && event.data.context) {
       usageContext = event.data.context;
@@ -327,6 +331,7 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
 
 /** The composer's model and effort pills (#2462): only what they would offer. */
 async function setModel(command: Extract<MobileCommand, { type: 'chat.setModel' }>, runtime: AgentRuntime, now: MobileChatControls) {
+  if (command.model === undefined) return setEffortOnly(command.effort, runtime, now);
   if (!runtime.setModel) throw new MobileControlError('model_switch_not_supported');
   const switching = command.model !== now.model;
   if (switching && (now.modelSwitch === 'none' || now.models.length === 0)) throw new MobileControlError('model_switch_not_supported');
@@ -341,6 +346,16 @@ async function setModel(command: Extract<MobileCommand, { type: 'chat.setModel' 
   if (!switching && effort === undefined) return { model: command.model, effort: now.effortIsDefault ? null : now.effort, changed: false };
   await runtime.setModel(command.model, effort);
   return { model: command.model, effort: effort ?? null, changed: true };
+}
+
+/** No model given: the effort alone, for an agent that offers no model choice (the composer's effort pill). */
+async function setEffortOnly(effort: string | null | undefined, runtime: AgentRuntime, now: MobileChatControls) {
+  if (effort === undefined) return { model: now.model, effort: now.effortIsDefault ? null : now.effort, changed: false };
+  if (!runtime.setEffort || now.effortSwitch === 'none') throw new MobileControlError('effort_switch_not_supported');
+  if (effort === null && !now.effortDefault) throw new MobileControlError('effort_default_not_supported');
+  if (typeof effort === 'string' && !now.efforts.includes(effort)) throw new MobileControlError('unknown_effort');
+  await runtime.setEffort(effort);
+  return { model: now.model, effort, changed: true };
 }
 
 /** The composer's level menu (#2462): any level the driver switches to live. A paired phone has full control. */

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createDisposableProfile, seedProfile, type DisposableProfile } from './app-profile';
+import { closeWithDiagnostics } from './close-diagnostics';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
@@ -48,8 +49,20 @@ let profile: DisposableProfile | undefined;
 let fakes: FakeClis | undefined;
 const tempDirs: string[] = [];
 
+/** Close the app; if the quit is slow, attach the process tree and the app's log tails (#3850). */
+async function closeApp(target: LaunchedApp): Promise<void> {
+  const testInfo = test.info();
+  await closeWithDiagnostics(target.electronApp, {
+    userDataDir: target.userDataDir,
+    report: async (text) => {
+      console.log(`[e2e close-diagnostics] ${text}`);
+      await testInfo.attach('close-diagnostics', { body: text, contentType: 'text/plain' });
+    },
+  });
+}
+
 test.afterEach(async () => {
-  await app?.electronApp.close().catch(() => {});
+  if (app) await closeApp(app).catch(() => {});
   app = undefined;
   profile?.dispose();
   profile = undefined;
@@ -251,7 +264,7 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   expect(argv).toContain(LAST_SESSION);
   expect(argv).not.toContain('stream-json');
 
-  await electronApp.close();
+  await closeApp(app);
   app = undefined;
 
   expect(await readUntouched(profile)).toEqual(seeded);
@@ -397,7 +410,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
     const saved = JSON.parse(localStorage.getItem(key) ?? '{}');
     localStorage.setItem(key, JSON.stringify({ ...saved, sidebarWidth: width }));
   }, { key: CHROME_STORAGE_KEY, width: SAVED_SIDEBAR_WIDTH });
-  await app.electronApp.close();
+  await closeApp(app);
   const savedFiles = [
     path.join(profile.userDataDir, 'experimental-settings.json'),
     path.join(profile.userDataDir, 'dispatcher-settings.json'),
@@ -418,7 +431,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   expect(await wakesInChat(w, projectDir)).toBe(true);
   expect(await savedLayoutWidth(w)).toBe(SAVED_SIDEBAR_WIDTH);
-  await app.electronApp.close();
+  await closeApp(app);
   expect(await Promise.all(savedFiles.map(readText))).toEqual(saved);
 
   // Preview on again: everything comes back.

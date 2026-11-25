@@ -384,7 +384,7 @@ export function effortWord(effort: string): string {
 }
 
 /** Reasoning effort for the current model (#2091); absent when the model has none. */
-function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = true, capabilities, onChange }: {
+function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = true, capabilities, onChange, onEffortOnly }: {
   efforts: string[];
   model: string | null;
   effort: string | null;
@@ -395,6 +395,8 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
   capabilities: ChatCapabilities | null;
   /** null returns the effort to the provider's default. */
   onChange: (modelId: string, effort: string | null) => void;
+  /** Used when there's no model (an agent with no model choice): the effort alone. */
+  onEffortOnly?: (effort: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -403,7 +405,8 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
   if (!efforts.length && !effort) return null;
   // Not reported yet: "Default effort" now would flash before the real level.
   if (!effortReported && effort === null) return null;
-  const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
+  const canChange = (!!model || !!onEffortOnly) && efforts.length > 0 && effortSwitch !== 'none';
+  const apply = (e: string | null) => { if (model) onChange(model, e); else onEffortOnly?.(e); };
   const note = switchNote('none', effortSwitch);
   // On the default the level still shows, since that's what applies.
   const onDefault = effort === null || !!effortIsDefault;
@@ -426,7 +429,7 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
         <span className="truncate min-w-0">{label}</span>
         {canChange && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
       </button>
-      {open && model && (
+      {open && canChange && (
         <div role="menu" className={`${menuClass} w-[220px]`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-effort-menu">
           <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Effort</div>
           {capabilities?.effortDefault && (
@@ -434,7 +437,7 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
               type="button"
               role="menuitemradio"
               aria-checked={onDefault}
-              onClick={() => { setOpen(false); if (!onDefault) onChange(model, null); }}
+              onClick={() => { setOpen(false); if (!onDefault) apply(null); }}
               className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${onDefault ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
               data-testid="chat-effort-default"
             >
@@ -452,7 +455,7 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
               role="menuitemradio"
               aria-checked={e === chosen}
               // Choosing the level the default resolved to pins it, so it isn't a no-op.
-              onClick={() => { setOpen(false); if (e !== chosen) onChange(model, e); }}
+              onClick={() => { setOpen(false); if (e !== chosen) apply(e); }}
               className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${e === chosen ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
             >
               <Radio on={e === chosen} />
@@ -532,6 +535,8 @@ export interface ComposerProps {
   onLevelChange: (level: PermissionLevel) => void;
   /** Omitted effort keeps the current one; null returns it to the provider's default (capabilities.effortDefault). */
   onModelChange?: (modelId: string, effort?: string | null) => void;
+  /** Effort alone, for an agent that offers no model choice (no model to pass to onModelChange). */
+  onEffortChange?: (effort: string | null) => void;
   /**
    * How much room there is (#2018): 'narrow' folds the permission pill to its
    * shield, 'line' (a popout near its minimum height) is one row with attach,
@@ -789,13 +794,14 @@ export function Composer(props: ComposerProps) {
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />
       <EffortPill
-        efforts={props.onModelChange ? props.efforts ?? [] : []}
+        efforts={props.onModelChange || props.onEffortChange ? props.efforts ?? [] : []}
         model={props.model}
         effort={props.effort}
         effortIsDefault={props.effortIsDefault}
         effortReported={props.effortReported}
         capabilities={capabilities}
         onChange={(m, e) => props.onModelChange?.(m, e)}
+        onEffortOnly={props.onEffortChange}
       />
       </>)}
     </>

@@ -1404,6 +1404,13 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.requireSession().setModel(modelId, effort);
   }
 
+  /** Effort alone, for a session with no model choice; refused by drivers that change effort only with a model. */
+  async setEffort(effort: string | null): Promise<void> {
+    const session = this.requireSession();
+    if (!session.setEffort) throw new Error('This agent changes effort only together with its model');
+    await session.setEffort(effort);
+  }
+
   async readTranscript(opts?: { tail?: number; afterSeq?: number; passive?: boolean }): Promise<RuntimeTranscriptSlice> {
     await this.emitChain;
     const events = opts?.passive ? await readPassiveChatTranscript(this.agentId, this.sessionId, opts.tail ?? 2001) : await readChatTranscript(this.agentId, {

@@ -82,6 +82,12 @@ describe('chatControls snapshot fields', () => {
     const c = chatControls([sessionEvents()[0], event('session_info', { model: null })], caps());
     expect(c).toMatchObject({ model: null, modelUnknown: true, effort: null, effortReported: false, switchNote: null });
   });
+  it('a null effort from session_info leaves whether the effort is the default as it was (#3797)', () => {
+    const c = chatControls([...sessionEvents(), event('model_changed', { modelId: 'opus', effort: 'low', effortIsDefault: true }), event('session_info', { effort: null })], caps());
+    expect(c).toMatchObject({ effort: null, effortIsDefault: true, effortReported: true });
+    const chosen = chatControls([...sessionEvents(), event('model_changed', { modelId: 'opus', effort: 'low', effortIsDefault: true }), event('session_info', { effort: 'high' })], caps());
+    expect(chosen).toMatchObject({ effort: 'high', effortIsDefault: false });
+  });
   it('a new session clears the last one\'s lists', () => {
     const c = chatControls([...sessionEvents(), event('session_started', { driver: 'copilot_sdk', provider: 'x', cwd: '/', resumed: true, capabilities: caps() })], caps());
     expect(c).toMatchObject({ models: [], efforts: [], levelNames: {}, model: 'opus', level: 'ask' });
@@ -154,5 +160,49 @@ describe('chat.setLevel', () => {
   it('refuses a runtime without level control', async () => {
     const rt = { ...runtime(), setLevel: undefined } as unknown as AgentRuntime;
     expect(await code(executeChatCommand(setLevel('plan'), rt, async () => true))).toBe('level_switch_not_supported');
+  });
+});
+
+// Gate 3 (#3797): an agent that offers effort but no model choice.
+describe('chat.setModel without a model (effort only)', () => {
+  const effortOnlyEvents = (): ChatEvent[] => [
+    event('session_started', { driver: 'antigravity_acp', provider: 'antigravity-cli', cwd: '/p', resumed: false, level: 'ask', capabilities: caps({ modelSwitch: 'none', effortDefault: undefined }) }),
+    event('session_info', { model: null, models: [], efforts: ['low', 'high'], effort: 'low' }),
+  ];
+  const effortRuntime = (withSetEffort = true) => {
+    const rt = runtime(effortOnlyEvents(), caps({ modelSwitch: 'none', effortDefault: undefined }));
+    if (withSetEffort) Object.assign(rt, { setEffort: vi.fn().mockResolvedValue(undefined) });
+    return rt as typeof rt & { setEffort?: ReturnType<typeof vi.fn> };
+  };
+
+  it('parses with an effort and no model, but not with neither', () => {
+    expect(setModel({ effort: 'high' })).toMatchObject({ type: 'chat.setModel', effort: 'high' });
+    expect(() => parseMobileCommand({ ...base, type: 'chat.setModel' })).toThrow();
+  });
+  it('reports the effort from session_info when no model goes with it', () => {
+    expect(chatControls(effortOnlyEvents(), caps({ modelSwitch: 'none' }))).toMatchObject({ model: null, effort: 'low', effortReported: true, efforts: ['low', 'high'] });
+  });
+  it('changes the effort alone through setEffort, never setModel', async () => {
+    const rt = effortRuntime();
+    expect(await executeChatCommand(setModel({ effort: 'high' }), rt, async () => true)).toEqual({ model: null, effort: 'high', changed: true });
+    expect(rt.setEffort).toHaveBeenCalledWith('high');
+    expect(rt.setModel).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['unknown_effort', { effort: 'max' }, true],
+    ['effort_default_not_supported', { effort: null }, true],
+    ['effort_switch_not_supported', { effort: 'high' }, false],
+  ])('refuses with %s', async (expected, extra, withSetEffort) => {
+    const rt = effortRuntime(withSetEffort);
+    expect(await code(executeChatCommand(setModel(extra), rt, async () => true))).toBe(expected);
+    expect(rt.setEffort ?? vi.fn()).not.toHaveBeenCalled();
+    expect(rt.setModel).not.toHaveBeenCalled();
+  });
+  it('a model with its own option still goes through setModel, unchanged', async () => {
+    const rt = runtime();
+    Object.assign(rt, { setEffort: vi.fn() });
+    await executeChatCommand(setModel({ model: 'opus', effort: 'low' }), rt, async () => true);
+    expect(rt.setModel).toHaveBeenCalledWith('opus', 'low');
+    expect((rt as unknown as { setEffort: ReturnType<typeof vi.fn> }).setEffort).not.toHaveBeenCalled();
   });
 });

@@ -297,6 +297,7 @@ export const IPC = {
     ANSWER_QUESTION: 'chat:answer-question',
     SET_LEVEL: 'chat:set-level',
     SET_MODEL: 'chat:set-model',
+    SET_EFFORT: 'chat:set-effort',
     GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
     SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
     GET_AGENT_RUNTIME: 'chat:get-agent-runtime',
@@ -397,6 +398,8 @@ export const IPC = {
     ORCHESTRATION_SETTINGS_CHANGED: 'app:orchestration-settings-changed',
     GET_HELPER_ROUTING: 'app:get-helper-routing',
     UPDATE_HELPER_ROUTING: 'app:update-helper-routing',
+    /** Settings › Usage: plan limits and local usage totals (docs/usage-attribution.md). */
+    GET_USAGE_SUMMARY: 'app:get-usage-summary',
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',

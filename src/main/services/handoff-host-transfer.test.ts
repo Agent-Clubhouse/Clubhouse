@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { transitionHandoff } from '../../shared/handoffs';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
@@ -51,6 +51,28 @@ import { handoffTransferDiagnostic } from '../../shared/handoff-transfer-diagnos
 import { handoffHost, localHandoffAgent, stopHandoffs, defaultHandoffReceivingAgent } from './handoff-host';
 import { prepareCallerHandoff, _resetHandoffPreparationsForTesting } from './handoff-preparations';
 const git = (cwd: string, ...args: string[]) => promisify(execFile)('git', args, { cwd });
+// The two repositories (a sender with a base commit, and a clone of it with no remote) cost seven Git
+// processes, and the per-test hook that built them is slow on hosted Windows. Build them once; each test
+// gets its own copy. The budget is for those seven processes on a loaded runner.
+let templates: string;
+const TEMPLATE_BUILD_BUDGET_MS = 60_000;
+beforeAll(async () => {
+  templates = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-live-host-template-')));
+  const config = path.join(templates, 'empty-config'); fs.writeFileSync(config, '');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
+  try {
+    const source = path.join(templates, 'source'); const destination = path.join(templates, 'destination');
+    fs.mkdirSync(source); await git(source, 'init', '-b', 'main'); await git(source, 'config', 'user.name', 'Fixture'); await git(source, 'config', 'user.email', 'test@example.invalid');
+    fs.writeFileSync(path.join(source, 'work.txt'), 'base'); fs.writeFileSync(path.join(source, '.gitignore'), '.clubhouse/\n');
+    await git(source, 'add', '.'); await git(source, '-c', `core.hooksPath=${path.join(templates, 'no-hooks')}`, 'commit', '-qm', 'Base');
+    await git(templates, 'clone', source, destination);
+    // A local shared commit identifies the destination even without a remote.
+    await git(destination, 'remote', 'remove', 'origin');
+  } finally { vi.unstubAllEnvs(); }
+}, TEMPLATE_BUILD_BUDGET_MS);
+afterAll(() => { removeDirectory(templates); });
+// Windows holds folders open briefly after a process exits (EBUSY/EPERM/ENOTEMPTY): retry with a short bounded backoff.
+const removeDirectory = (directory: string) => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 beforeEach(async () => {
   state.dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-live-host-'))); state.sender = path.join(state.dir, 'source'); state.receiver = path.join(state.dir, 'destination'); state.asleep = true;
   const config = path.join(state.dir, 'empty-config'); fs.writeFileSync(config, ''); vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
@@ -59,15 +81,11 @@ beforeEach(async () => {
   state.allowed = true;
   state.targetMode = state.wakeMode = state.messageMode = 'allow'; state.dispatcherConnected = true; state.disabledTools = []; state.enabledTools = ['wake_agent']; state.savedDirection = true; state.bindingEnabled = ['wake_agent']; state.bindingDisabled = []; state.policyRevision = 0; state.configGeneration = 0; state.grantEpoch = 0; state.onGrants = () => {}; state.onLocate = () => {};
   state.wake.mockImplementation(async () => { state.asleep = false; });
-  fs.mkdirSync(state.sender); await git(state.sender, 'init', '-b', 'main'); await git(state.sender, 'config', 'user.name', 'Fixture'); await git(state.sender, 'config', 'user.email', 'test@example.invalid');
-  fs.writeFileSync(path.join(state.sender, 'work.txt'), 'base'); fs.writeFileSync(path.join(state.sender, '.gitignore'), '.clubhouse/\n');
-  await git(state.sender, 'add', '.'); await git(state.sender, '-c', `core.hooksPath=${path.join(state.dir, 'no-hooks')}`, 'commit', '-qm', 'Base');
-  await git(state.dir, 'clone', state.sender, state.receiver);
-  // A local shared commit identifies the destination even without a remote.
-  await git(state.receiver, 'remote', 'remove', 'origin');
+  fs.cpSync(path.join(templates, 'source'), state.sender, { recursive: true });
+  fs.cpSync(path.join(templates, 'destination'), state.receiver, { recursive: true });
   fs.writeFileSync(path.join(state.sender, 'work.txt'), 'final bytes'); fs.writeFileSync(path.join(state.receiver, 'work.txt'), 'dirty person bytes');
 });
-afterEach(async () => { await stopHandoffs(); vi.unstubAllEnvs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
+afterEach(async () => { await stopHandoffs(); vi.unstubAllEnvs(); removeDirectory(state.dir); });
 it('binds a real preparation, accepts locally and automatically wakes the sleeping receiver after publishing', async () => {
   const prepared = await prepareCallerHandoff('sender', 'worktree');
   const host = handoffHost(); await host.ready;

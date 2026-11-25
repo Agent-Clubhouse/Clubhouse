@@ -13,6 +13,15 @@ afterEach(() => {
   sandbox = undefined;
 });
 
+/**
+ * Budget for the one case below: it starts three processes (git init, git add,
+ * then the script, which runs git itself). That is 0.3s locally and has taken
+ * over the 5s default on a loaded hosted Windows runner, where process creation
+ * is slow. Process creation is the whole cost, so it cannot be made cheaper
+ * without dropping the real Git the script reads.
+ */
+const GIT_SANDBOX_BUDGET_MS = 30_000;
+
 describe('test coverage ratchet', () => {
   it('fails when marker occurrences exceed the baseline, including in one file', () => {
     sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'coverage-ratchet-test-'));
@@ -27,5 +36,5 @@ describe('test coverage ratchet', () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('marker count increased');
-  });
+  }, GIT_SANDBOX_BUDGET_MS);
 });

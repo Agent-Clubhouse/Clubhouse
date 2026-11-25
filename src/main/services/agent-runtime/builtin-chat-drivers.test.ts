@@ -46,6 +46,24 @@ describe('registerBuiltinChatDrivers', () => {
     expect(listChatDrivers().filter((d) => d.provider === 'copilot-cli')).toHaveLength(1);
   });
 
+  it('registers no Antigravity driver unless asked, exactly as before', () => {
+    registerBuiltinChatDrivers();
+    registerBuiltinChatDrivers({ antigravity: false });
+    expect(resolveChatDriver('antigravity-cli')).toBeUndefined();
+    expect(listChatDrivers().some((d) => d.provider === 'antigravity-cli')).toBe(false);
+  });
+
+  it('registers the Antigravity ACP driver with its provider: chosen by default, not opt-in (#3797)', () => {
+    const unregister = registerBuiltinChatDrivers({ antigravity: true, logDir: '/logs', clientVersion: '9.9.9' });
+    const agy = resolveChatDriver('antigravity-cli');
+    expect(agy?.id).toBe('antigravity_acp');
+    expect(agy?.optIn).toBeFalsy();
+    // The existing providers' drivers are unchanged.
+    expect(listChatDrivers().filter((d) => d.provider !== 'antigravity-cli').map((d) => d.id)).toEqual(['claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk']);
+    unregister();
+    expect(resolveChatDriver('antigravity-cli')).toBeUndefined();
+  });
+
   it('unregisters what it registered', () => {
     const unregister = registerBuiltinChatDrivers();
     unregister();

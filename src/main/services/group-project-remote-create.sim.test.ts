@@ -218,12 +218,22 @@ const answer = async (m: Machine, requestId: string, allow: boolean) => {
   await vi.waitFor(async () => {
     const answers = JSON.parse(await fsp.readFile(path.join(m.home, '.clubhouse-dev', 'group-projects', 'network-create-answers.json'), 'utf-8')) as { items: Array<{ grantRequestId?: string; answer: { status: string } }> };
     expect(answers.items.some((e) => e.grantRequestId === requestId && e.answer.status === 'waiting')).toBe(false);
-  });
+  }, SETTLE);
 };
 const answersFile = (m: Machine) => path.join(m.home, '.clubhouse-dev', 'group-projects', 'network-create-answers.json');
 const hosted = (m: Machine) => as(m, async () => (await m.host!.groupProjectHost.list()).filter((p) => !m.host!.groupProjectHost.isReplica(p)));
 
-describe('creating a group project on another computer (#3547)', () => {
+/**
+ * Budgets for this multi-computer simulation, whose steps (create, save, start,
+ * answer) trail one another through real files. A poll that succeeds returns on
+ * its first success, so the larger poll budget only bounds a failure; the default
+ * 1s missed on a loaded runner ('an Allow stays an Allow…'). The describe budget
+ * is what lets such a poll run its course: the whole file takes about 7s locally.
+ */
+const SETTLE = { timeout: 10_000 };
+const SIM_TEST_BUDGET_MS = 30_000;
+
+describe('creating a group project on another computer (#3547)', { timeout: SIM_TEST_BUDGET_MS }, () => {
   it('a person\'s request waits for approval on the host, never created on the request alone, and Allow creates it once', async () => {
     const asked = await ask(A, B, 'Launch');
     expect(asked).toMatchObject({ status: 'waiting', host: B.fp, hostName: 'Studio' });
@@ -273,7 +283,7 @@ describe('creating a group project on another computer (#3547)', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 24 * 60 * 60 * 1000 + 1000 });
     expect(await waitingOn(B)).toEqual([]);
     vi.useRealTimers();
-    await vi.waitFor(async () => expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'expired', reason: expect.stringContaining('in time') }));
+    await vi.waitFor(async () => expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'expired', reason: expect.stringContaining('in time') }), SETTLE);
     expect(await hosted(B)).toEqual([]);
   });
 
@@ -335,7 +345,7 @@ describe('creating a group project on another computer (#3547)', () => {
     expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
     expect(await hosted(B)).toHaveLength(1);
     // Recovered, it is started once, then never again.
-    await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]));
+    await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]), SETTLE);
     await unload(B);
     await load(B);
     await retry(A, B, asked.requestId);
@@ -348,6 +358,14 @@ describe('creating a group project on another computer (#3547)', () => {
       const [request] = await waitingOn(B);
       const waitingFile = await fsp.readFile(answersFile(B), 'utf-8');
       await answer(B, request.requestId, true);
+      // Allow records the create, then starts the group and records that, in the background. Wait for that
+      // last write: a late one would replace the stale file below, and the crash this simulates (the create
+      // made, its answer not saved) would be lost, so recovery would find nothing to start (#3824).
+      await vi.waitFor(async () => {
+        const { items } = JSON.parse(await fsp.readFile(answersFile(B), 'utf-8')) as { items: Array<{ answer: { status: string }; started?: boolean }> };
+        expect(items.some((e) => e.answer.status === 'created')).toBe(true);
+        expect(items.some((e) => e.started === false)).toBe(false);
+      }, SETTLE);
       await fsp.writeFile(answersFile(B), waitingFile);
       startedOn.clear();
       await unload(B);
@@ -378,7 +396,7 @@ describe('creating a group project on another computer (#3547)', () => {
       expect(startedOn.get('Studio')).toBeUndefined();
       lookup.heal();
       expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: made.id });
-      await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]));
+      await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]), SETTLE);
       await retry(A, B, asked.requestId); await settle();
       await unload(B); await load(B); await retry(A, B, asked.requestId); await settle();
       expect(startedOn.get('Studio')).toEqual([made.id]);
@@ -391,7 +409,7 @@ describe('creating a group project on another computer (#3547)', () => {
       expect(startedOn.get('Studio')).toBeUndefined();
       await unload(B); await load(B); // the reload drops the failing spy: the restart's lookups succeed
       await retry(A, B, asked.requestId);
-      await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]));
+      await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]), SETTLE);
       await unload(B); await load(B); await retry(A, B, asked.requestId); await settle();
       expect(startedOn.get('Studio')).toEqual([made.id]);
     });
@@ -428,8 +446,8 @@ describe('creating a group project on another computer (#3547)', () => {
     const [request] = await waitingOn(B);
     const flush = vi.spyOn(B.host!.groupProjectHost, 'flushRegistry').mockRejectedValueOnce(new Error('disk full'));
     await as(B, () => { B.grants!.takeGrantRequest(request.requestId, true); B.grants!.finishGrantAnswer(request.requestId); });
-    await vi.waitFor(() => expect(flush).toHaveBeenCalled());
-    await vi.waitFor(async () => expect(await hosted(B)).toHaveLength(1));
+    await vi.waitFor(() => expect(flush).toHaveBeenCalled(), SETTLE);
+    await vi.waitFor(async () => expect(await hosted(B)).toHaveLength(1), SETTLE);
     flush.mockRestore();
     expect(startedOn.get('Studio')).toBeUndefined();
     expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
@@ -447,7 +465,7 @@ describe('creating a group project on another computer (#3547)', () => {
       B.grants!.dropCallApprovalsFor('dispatcher');
       B.grants!.finishGrantAnswer(request.requestId);
     });
-    await vi.waitFor(async () => expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' }));
+    await vi.waitFor(async () => expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' }), SETTLE);
   });
 
   it('the mark can\'t be written by an update, here or from another computer, so it can\'t forge a created answer', async () => {

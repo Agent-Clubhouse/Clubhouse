@@ -20,6 +20,7 @@ import {
   type PermissionOption,
   type RequestPermissionResponse,
   type SessionConfigOption,
+  type SessionModeState,
   type SessionUpdate,
   type StopReason,
   type ToolCallFields,
@@ -34,6 +35,10 @@ export interface ScriptedAgentOptions {
   newSessionError?: { code: number; message: string };
   /** Updates sent for a new session before `session/new` is answered. */
   beforeNewReply?: SessionUpdate[];
+  /** Session modes sent with every setup answer; `session/set_mode` switches among them. */
+  modes?: SessionModeState;
+  /** Answer `session/set_config_option` with this error instead. */
+  setConfigError?: { code: number; message: string };
 }
 
 export interface ScriptedPrompt {
@@ -72,6 +77,7 @@ export class ScriptedAcpAgent {
   private nextId = 1;
   private readonly sessions: Record<string, SessionUpdate[]>;
   private configOptions: SessionConfigOption[];
+  private modes: SessionModeState | undefined;
   private readonly prompts: ScriptedPrompt[] = [];
   private readonly promptWaiters: Array<Waiter<ScriptedPrompt>> = [];
   private readonly outgoing = new Map<JsonRpcId, Waiter<JsonRpcMessage>>();
@@ -81,6 +87,7 @@ export class ScriptedAcpAgent {
   constructor(private readonly opts: ScriptedAgentOptions = {}) {
     this.sessions = { ...opts.sessions };
     this.configOptions = opts.configOptions ?? [];
+    this.modes = opts.modes;
     this.connector = (handlers) => {
       this.connections++;
       this.client = handlers;
@@ -214,20 +221,26 @@ export class ScriptedAcpAgent {
         const sessionId = `session-${this.nextSession++}`;
         this.sessions[sessionId] = [];
         for (const update of this.opts.beforeNewReply ?? []) this.update(sessionId, update);
-        return this.reply(id, { sessionId, configOptions: this.configOptions });
+        return this.reply(id, { sessionId, configOptions: this.configOptions, ...(this.modes && { modes: this.modes }) });
       }
       case ACP_AGENT_METHODS.sessionLoad: {
         const history = this.sessions[params.sessionId as string];
         if (!history) return this.replyError(id, ACP_ERROR_CODES.resourceNotFound, 'Session not found');
         for (const update of history) this.update(params.sessionId as string, update);
-        return this.reply(id, { configOptions: this.configOptions });
+        return this.reply(id, { configOptions: this.configOptions, ...(this.modes && { modes: this.modes }) });
       }
       case ACP_AGENT_METHODS.sessionResume:
         if (!this.sessions[params.sessionId as string]) return this.replyError(id, ACP_ERROR_CODES.resourceNotFound, 'Session not found');
-        return this.reply(id, { configOptions: this.configOptions });
+        return this.reply(id, { configOptions: this.configOptions, ...(this.modes && { modes: this.modes }) });
+      case ACP_AGENT_METHODS.sessionSetMode: {
+        if (!this.modes?.availableModes.some((m) => m.id === params.modeId)) return this.replyError(id, ACP_ERROR_CODES.invalidParams, 'Unknown mode');
+        this.modes = { ...this.modes, currentModeId: params.modeId as string };
+        return this.reply(id, {});
+      }
       case ACP_AGENT_METHODS.sessionClose:
         return this.reply(id, {});
       case ACP_AGENT_METHODS.sessionSetConfigOption: {
+        if (this.opts.setConfigError) return this.replyError(id, this.opts.setConfigError.code, this.opts.setConfigError.message);
         const option = this.configOptions.find((o) => o.id === params.configId);
         if (!option || option.type !== 'select') return this.replyError(id, ACP_ERROR_CODES.invalidParams, 'Unknown config option');
         this.configOptions = this.configOptions.map((o) => (o.id === option.id ? { ...option, currentValue: params.value as string } : o));

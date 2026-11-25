@@ -1,6 +1,6 @@
 # Antigravity CLI
 
-Antigravity CLI is Google's `agy` command line agent. Clubhouse runs it in a terminal (the CLI view). Chat through its Agent Client Protocol (ACP) server is built but not offered yet. It turns on once its remaining checks pass. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
+Antigravity CLI is Google's `agy` command line agent. Clubhouse runs it in chat, through its Agent Client Protocol (ACP) server, or in a terminal (the CLI view), as you choose for each agent. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
 
 This page paraphrases Google's documentation as read on 2026-11-23. Google changes these pages without dated notes, so follow the links when a detail matters to you.
 
@@ -8,7 +8,7 @@ This page paraphrases Google's documentation as read on 2026-11-23. Google chang
 
 1. **Install it.** Follow Google's [getting started guide](https://antigravity.google/docs/getting-started/), then run `agy --version` in a terminal to check that it works.
 2. **Sign in once.** Run `agy` in a terminal and finish its sign-in. Chat reuses that sign-in. Over SSH or on a computer without a browser, run `agy acp --login` instead. Clubhouse does not sign in for you, and it never reads, copies or stores your Antigravity credentials.
-3. **Turn it on.** It takes two steps. First switch on **Antigravity CLI provider** in **Settings > Experimental** and restart Clubhouse. Until then Antigravity CLI is hidden. Then open **Settings > Agents & providers**, where it shows an Experimental badge, and switch it on once Clubhouse finds the `agy` command. A project or agent chooses it through its **Runs on** setting like any other provider. Clubhouse never turns it on or picks it for you.
+3. **Turn it on.** It takes two steps. First switch on **Antigravity CLI provider** in **Settings > Experimental** and restart Clubhouse. Until then Antigravity CLI is hidden. Then open **Settings > Agents & providers**, where it shows an Experimental badge, and switch it on once Clubhouse finds the `agy` command. A project or agent chooses it through its **Runs on** setting like any other provider. With both switches on, its agents open in chat; switch an agent to the CLI view if you'd rather use the terminal. Clubhouse never turns it on or picks it for you.
 
 Clubhouse does not change Antigravity's trust list. The first time `agy` opens a folder it has not seen, it asks whether you trust that folder. A new agent folder counts as a new folder, so answer the prompt in the agent's CLI view.
 
@@ -17,8 +17,10 @@ Clubhouse does not change Antigravity's trust list. The first time `agy` opens a
 | View | Needs | Notes |
 |------|-------|-------|
 | CLI view | `agy` installed and signed in | The `agy` terminal app runs as it does in your own terminal. |
-| Chat | Not offered yet | When chat is offered, it needs `agy` with ACP support and a cached sign-in. Google's changelog shows `agy acp` added in 1.5.0. Chat will need 1.5.10 or newer, because earlier releases have documented ACP cancel and permission fixes, and Clubhouse checks the version before it opens chat. |
+| Chat | `agy` with ACP support and a cached sign-in | Google's changelog shows `agy acp` added in 1.5.0. Chat needs 1.5.10 or newer, because earlier releases have documented ACP cancel and permission fixes, and Clubhouse checks the version before it opens chat. |
 | Headless | Not offered | See **Why headless is not offered**. |
+
+In chat, `agy` reports some errors from Google's service as an ordinary reply that ends the turn normally. Such a turn can show as finished, with the error in its text. Clubhouse does not read Antigravity's own session files to tell these apart, because their format is not documented.
 
 Chat and the CLI view never stand in for each other. If chat can't start, the agent says so and you choose whether to retry or open it in the CLI view. Clubhouse does not replay a message into a different view.
 
@@ -33,7 +35,7 @@ Google's pages say different things about third-party clients, and Clubhouse doe
 - The [FAQ](https://antigravity.google/docs/faq/) says using third-party software to access Antigravity breaks Google's Terms of Service and can lead to account suspension or termination, and recommends a Gemini Enterprise or Google AI Studio API key for third-party coding agents.
 - The [ACP guide](https://antigravity.google/docs/ide/extensions/acp/) says any ACP client can launch `agy acp` in the project folder, and that it reuses the sign-in cached by an interactive `agy` session.
 
-Clubhouse runs your own `agy`. Chat through `agy acp` is the primary way, once it is offered, and the CLI view is the fallback. Clubhouse does not use headless mode.
+Clubhouse runs your own `agy`. Chat through `agy acp` is the primary way, and the CLI view is the fallback you can pick for any agent. Clubhouse does not use headless mode.
 
 Clubhouse makes no promise about which plans, models or quotas you can use here. Read both pages and decide for yourself. Clubhouse does not rotate or switch accounts.
 

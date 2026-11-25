@@ -45,9 +45,11 @@ export function registerAllHandlers(): void {
   enableSettingsAudit();
   // Register orchestrator providers before anything else. Experimental
   // providers follow their flag as saved at startup; changing it needs a restart.
-  registerBuiltinProviders({ antigravity: getExperimentalSettings()[ANTIGRAVITY_EXPERIMENTAL_FLAG] === true });
+  const antigravity = getExperimentalSettings()[ANTIGRAVITY_EXPERIMENTAL_FLAG] === true;
+  registerBuiltinProviders({ antigravity });
   // Chat drivers only make chat available; the experimental Chat flag still decides.
-  registerBuiltinChatDrivers();
+  // Antigravity's driver exists only with its provider (#3797).
+  registerBuiltinChatDrivers({ antigravity });
 
   // Auto-detect available CLIs on first run so users only see providers
   // they actually have installed.  Fire-and-forget: store.save() updates
