@@ -12,8 +12,6 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, settingsHelp } from './SettingsLayout';
 import { pluginMetaText, usePluginEnableToggle } from './PluginListSettings';
 import { PluginStatusLines } from './PluginStatusLines';
-import { RetiredPluginSection } from './RetiredPluginSection';
-import { isRetiredPlugin } from '../../../shared/retired-plugins';
 
 const CROSS_PROJECT_PERMISSIONS: readonly PluginPermission[] = [
   'agent-config.cross-project',
@@ -155,7 +153,6 @@ export function PluginDetailSettings() {
         <PluginStatusLines entry={entry} />
       </div>
 
-      {isRetiredPlugin(pluginSettingsId) && entry.source !== 'builtin' && <RetiredPluginSection pluginId={pluginSettingsId} />}
 
       <SettingsSection title="Settings">
         {isDeclarative && entry.manifest.contributes?.settings && (

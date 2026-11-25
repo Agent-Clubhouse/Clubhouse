@@ -1,10 +1,11 @@
 import { create } from 'zustand';
+import { REMOVED_SHORTCUT_IDS, SHORTCUT_OVERRIDES_KEY } from '../services/removed-home-data';
 import { isNewChromeEnabled } from '../chrome/chromeFlag';
 import { CHROME_STORAGE_KEY } from '../chrome/storageKey';
 import { reportChromeActionFailed } from '../chrome/telemetry';
 
 /** The legacy shell's overrides. The new shell never writes it (docs/chrome-redesign-spec.md §5.3). */
-const OVERRIDES_KEY = 'clubhouse_keyboard_shortcut_overrides';
+const OVERRIDES_KEY = SHORTCUT_OVERRIDES_KEY;
 const CHROME_SHORTCUTS_VERSION = 1;
 
 export interface ShortcutDefinition {
@@ -60,6 +61,8 @@ function loadOverrides(writeBack = true): ShortcutOverrides {
     const raw = localStorage.getItem(OVERRIDES_KEY);
     if (raw) {
       const parsed: ShortcutOverrides = JSON.parse(raw);
+      // Removed with Home (#2943); removeHomeViewData deletes it from storage.
+      for (const id of REMOVED_SHORTCUT_IDS) delete parsed[id];
       // Migrate legacy "Comma" → "," in stored overrides
       let migrated = false;
       for (const [id, binding] of Object.entries(parsed)) {

@@ -108,7 +108,7 @@ describe('new-shell shortcuts', () => {
     store().setBinding('command-palette', 'Meta+P');
     await useShell(false);
     const { shortcuts, overrides } = store();
-    expect(overrides).toEqual({ 'switch-agent-1': 'Meta+Shift+1', 'go-home': 'Meta+H' });
+    expect(overrides).toEqual({ 'switch-agent-1': 'Meta+Shift+1' });
     expect(shortcuts['switch-agent-1'].currentBinding).toBe('Meta+Shift+1');
     expect(shortcuts['switch-agent-2'].currentBinding).toBe('Meta+2');
     expect(shortcuts['switch-project-1'].currentBinding).toBe('Meta+Alt+1');

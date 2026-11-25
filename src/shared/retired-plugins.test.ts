@@ -10,10 +10,10 @@ describe('retired Workshop plugins (#2756)', () => {
     expect(isRetiredPlugin('constructor')).toBe(false);
   });
 
-  it('says the plugin was retired, that its data is kept, and what replaces Lounge', () => {
+  it('says the plugin was retired, that it and its data are removed, and what replaces Lounge', () => {
     const message = retiredPluginMessage('lounge');
     expect(message).toContain('Lounge was retired');
-    expect(message).toContain('data is kept');
+    expect(message).toContain('removes it and its data');
     expect(message).toContain('sidebar project tree and Needs you');
     expect(message).toContain('Custom circles');
     expect(retiredPluginMessage('pomodoro')).toBe('');

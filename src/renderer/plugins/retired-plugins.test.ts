@@ -31,6 +31,13 @@ describe('retired-plugins', () => {
       });
     });
 
+    it('removes the retired Workshop plugins, even when an entry for them is registered', () => {
+      expect(stripRetiredPluginIds(['lounge', 'kanboss', 'bug-report', 'pomodoro'], () => true)).toEqual({
+        ids: ['pomodoro'],
+        changed: true,
+      });
+    });
+
     it('does not touch IDs that merely contain a retired ID', () => {
       expect(stripRetiredPluginIds(['my-hub', 'hub-tools']).ids).toEqual(['my-hub', 'hub-tools']);
     });
@@ -46,6 +53,11 @@ describe('retired-plugins', () => {
       expect(migrateRetiredExplorerTab('assistant')).toBe('agents');
       expect(migrateRetiredExplorerTab('plugin:sessions')).toBe('agents');
       expect(migrateRetiredExplorerTab('plugin:app:agent-queue')).toBe('agents');
+    });
+
+    it('maps retired Workshop plugin tabs to agents', () => {
+      expect(migrateRetiredExplorerTab('plugin:kanboss', () => true)).toBe('agents');
+      expect(migrateRetiredExplorerTab('plugin:app:lounge')).toBe('agents');
     });
 
     it('leaves other tabs alone', () => {

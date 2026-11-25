@@ -241,9 +241,6 @@ vi.stubGlobal('clubhouse', {
     listOrphanedPluginIds: async () => [],
     registerManifest: asyncNoop,
     refreshManifestFromDisk: async () => null,
-    findRetiredData: async () => ({ installed: false, locations: [] }),
-    exportRetiredData: async () => ({ canceled: true }),
-    revealRetiredData: asyncNoop,
     loadModuleSource: async () => '',
   },
   marketplace: {

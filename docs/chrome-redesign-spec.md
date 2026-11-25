@@ -14,7 +14,7 @@ Today, on a 1400px window, the navigation chrome takes 556px of width in three c
 
 Each agent row is 90px tall, so about 8 agents fit on screen. The redesign replaces this with one resizable sidebar (264px by default), 30px agent rows, and project tabs in the existing 38px title bar.
 
-In scope: the project rail, explorer column, agent list, title bar, Settings navigation, the Home view, the first-run state, and window chrome on macOS, Windows and Linux.
+In scope: the project rail, explorer column, agent list, title bar, Settings navigation, the first-run state, and window chrome on macOS, Windows and Linux.
 
 Out of scope:
 - The agent pane (terminal and chat views) and plugin content views. They render unchanged.
@@ -106,7 +106,7 @@ Status as of 2026-10-16:
 | `src/renderer/App.tsx` | Picks the shell. The project-switch telemetry span moves to the selection path (§8). |
 | `src/renderer/features/agents/AgentAvatar.tsx` | New `2xs` size (18px). The orchestrator glyph becomes neutral. |
 | `src/renderer/features/agents/AgentListItem.tsx` | Context-menu actions move into a shared hook used by both rows. The legacy row is otherwise unchanged. |
-| `src/renderer/stores/uiStore.ts` | `projectExplorerTab` stays the source of the last tab per project. `explorerTab` values map to title-bar tabs. `showHome` is ignored in the new shell. |
+| `src/renderer/stores/uiStore.ts` | `projectExplorerTab` stays the source of the last tab per project. `explorerTab` values map to title-bar tabs. `showHome` was removed with Home (#2943). |
 | `src/renderer/stores/keyboardShortcutsStore.ts` | Definitions and defaults become per shell, so `buildShortcuts(definitions, overrides)` takes the active shell's set. The new shell's overrides live under `clubhouse_chrome_v2` (§5.3). |
 | `src/renderer/features/command-palette/` | Adds commands for projects, agents, hosts and tabs. The palette replaces “switch to project N”. |
 | `src/renderer/plugins/builtin/terminal` | In the new shell, follows the scope from `chromeStore`. The targets list is hidden. |
@@ -123,8 +123,8 @@ Status as of 2026-10-16:
 
 - `panels/ProjectRail.tsx`, `panels/ExplorerRail.tsx`, `components/RailSection.tsx`, and the explorer half of `components/ProjectPanelLayout.tsx`.
 - `features/projects/Dashboard.tsx` and the rail pin.
-- The `showHome` setting. While both shells exist, the Home row in `features/settings/DisplaySettingsView.tsx:8` is hidden when the new shell is active and still shown in the legacy shell. Both the row and `uiStore.showHome` are deleted with the legacy shell.
-- The legacy shortcut set (`go-home`, `switch-project-*`, `toggle-accessory`) and the legacy overrides key `clubhouse_keyboard_shortcut_overrides`, after its still-valid entries have been carried into the new shell's overrides.
+- The `showHome` setting. Removed with Home (#2943) in both shells; the old `clubhouse_view_prefs` value is deleted at startup.
+- The legacy shortcut set (`switch-project-*`, `toggle-accessory`; `go-home` was removed with Home, and a saved `go-home` binding is deleted at startup) and the legacy overrides key `clubhouse_keyboard_shortcut_overrides`, after its still-valid entries have been carried into the new shell's overrides.
 - The legacy `AgentList` / `AgentListItem` views, once the row actions hook is the only consumer.
 
 ### 4.5 Scope model
@@ -167,17 +167,17 @@ All new state lives under new keys. The legacy shell keeps reading its own keys 
 - `sidebarCollapsed` defaults to false.
 - `railPinned` and `railWidth` are ignored by the new shell. The legacy keys are deleted when the legacy shell is removed.
 
-### 5.2 View preferences (`clubhouse_view_prefs`)
+### 5.2 View preferences
 
 - `projectExplorerTab[projectId]` is reused as the last tab per project. `agents` maps to the Agents tab. Values for plugins that no longer exist fall back to Agents (the #1915 pattern).
-- `showHome` is ignored by the new shell, and its Display setting row is hidden there (§4.4). It is removed with the legacy shell. With `activeProjectId === null` and at least one project, startup opens the most recently active project's Agents tab instead of Home.
+- `showHome` and its `clubhouse_view_prefs` key were removed with Home (#2943); the key is deleted at startup. With `activeProjectId === null` and at least one project, startup opens the most recently active project's Agents tab instead of Home.
 
 ### 5.3 Keyboard shortcuts
 
-The legacy key `clubhouse_keyboard_shortcut_overrides` is a flat `Record<string, string>` (`keyboardShortcutsStore.ts:11`). It has no room for a version marker, and the legacy shell and older app versions both read it. It stays untouched while the legacy shell exists, so turning the flag off, or downgrading, restores the user's bindings exactly.
+The legacy key `clubhouse_keyboard_shortcut_overrides` is a flat `Record<string, string>` (`keyboardShortcutsStore.ts:11`). It has no room for a version marker, and the legacy shell and older app versions both read it. It stays untouched while the legacy shell exists, so turning the flag off, or downgrading, restores the user's bindings exactly. The one exception is the removed `go-home` binding, which is deleted at startup.
 
 - **Per-shell definitions.** `buildShortcuts` is global today. It becomes `buildShortcuts(definitions, overrides)`, and the active shell supplies both arguments. The Keyboard Shortcuts settings page edits the active shell's set.
-- **Legacy set (unchanged).** `switch-agent-N` = `Meta+N`, `switch-project-N` = `Meta+Alt+N`, `go-home` = `Meta+Shift+H`, `toggle-accessory` = `Meta+Shift+B`, plus the shared actions below.
+- **Legacy set (unchanged).** `switch-agent-N` = `Meta+N`, `switch-project-N` = `Meta+Alt+N`, `toggle-accessory` = `Meta+Shift+B`, plus the shared actions below.
 - **New-shell set:**
   - `tab-1`…`tab-9` = `Meta+1…9`. `tab-1` is Agents.
   - `switch-agent-1…9` = `Meta+Alt+1…9`, in sidebar order. Note that `Meta+Alt+N` means switch to project N in the legacy shell and switch to agent N in the new one.

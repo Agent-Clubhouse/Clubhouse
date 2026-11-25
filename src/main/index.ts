@@ -39,7 +39,6 @@ import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
-import { noteRetiredPlugins } from './services/retired-plugin-data';
 import { cleanupRemovedBlueprintData } from './services/removed-blueprints-cleanup';
 import { removeSavedChatCliDenylist } from './services/retired-chat-cli-denylist';
 import * as projectStore from './services/project-store';
@@ -461,8 +460,8 @@ app.on('ready', async () => {
   // Plugin companion agents were removed in Clubhouse 1.0: delete their workspaces.
   void removeCompanionState(app.getPath('home'));
 
-  // Delete plugin data left behind by removed built-in plugins (Hub, Sessions,
-  // Agent Queue).
+  // Delete what removed plugins left behind: built-ins (Hub, Sessions, Agent
+  // Queue) and the retired Workshop plugins (Lounge, KanBoss, Bug Report).
   projectStore.list()
     .then((projects) => cleanupRetiredPluginData({
       globalPluginDataDir: getGlobalPluginDataDir(),
@@ -471,19 +470,6 @@ app.on('ready', async () => {
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-
-  // Retired Workshop plugins (Lounge, KanBoss, Bug Report; #2756) keep their
-  // data: log once where it is, never delete it.
-  projectStore.list()
-    .then((projects) => noteRetiredPlugins({
-      globalPluginDataDir: getGlobalPluginDataDir(),
-      communityPluginsDir: getCommunityPluginsDir(),
-      projects,
-      markerFile: path.join(getGlobalPluginDataDir(), '_system', 'retired-plugins-noted.json'),
-    }))
-    .catch((err) => {
-      appLog('core:plugins', 'warn', `Retired plugin check failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
   // Blueprints were removed: delete each project's saved `.clubhouse/blueprints/`
