@@ -240,7 +240,7 @@ export type UsageSource = (typeof USAGE_SOURCES)[number];
 export const USAGE_SAMPLE_KINDS = ['turn', 'final'] as const;
 
 /** How repeats were told apart. `none` means they could not be, and the sample says so. */
-export const USAGE_DEDUPS = ['turn_id', 'message_id', 'thread_cumulative', 'content_equal', 'none'] as const;
+export const USAGE_DEDUPS = ['turn_id', 'message_id', 'response_id', 'thread_cumulative', 'content_equal', 'none'] as const;
 export type UsageDedup = (typeof USAGE_DEDUPS)[number];
 
 /** Which activity a figure covers. Samples of different scopes are never added together. */

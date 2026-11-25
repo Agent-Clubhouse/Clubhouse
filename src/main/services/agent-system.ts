@@ -22,6 +22,7 @@ import { isManagedStartRefused } from './managed-agents/start-refused';
 import { appLog } from './log-service';
 import { recordBreadcrumb } from './breadcrumbs';
 import * as headlessManager from './headless-manager';
+import { recordTerminalRunUsage } from './terminal-usage';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
@@ -1425,6 +1426,9 @@ async function captureSession(
   let source: SessionCaptureSource = 'none';
   const record = (result: SessionCaptureResult) =>
     recordSessionCapture({ orchestrator: provider.id, agentId, runtime: 'pty', result, source, exitCode });
+  // The run's own session and bounds, for its usage line (terminal-usage.ts).
+  let usageSessionId: string | undefined;
+  const exitedAt = Date.now();
   try {
     // The tail only: a long session's own conversation may mention such errors.
     if (failedResume && isSessionNotFound(buffer?.slice(-RESUME_ERROR_TAIL))) {
@@ -1502,6 +1506,7 @@ async function captureSession(
       return undefined;
     }
     const capturedId = sessionId;
+    usageSessionId = capturedId;
     const now = new Date().toISOString();
     return await addSessionEntry(params.projectPath, agentId, {
       sessionId: capturedId,
@@ -1530,6 +1535,8 @@ async function captureSession(
     return undefined;
   } finally {
     if (resumedId) recordResumeOutcome(provider.id, agentId, resumeResult, 'pty');
+    // Not awaited: reading the CLI's session file never holds up the exit.
+    void recordTerminalRunUsage({ agentId, provider, cwd: params.cwd, nativeSessionId: usageSessionId, captureSource: source, startedAt: exitedAt - runMs, endedAt: exitedAt, exitCode });
   }
 }
 
