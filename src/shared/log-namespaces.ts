@@ -72,7 +72,6 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'marketplace:custom',
   'marketplace:updates',
   'store:commandPalette',
-  'store:onboarding',
   'store:quickAgent',
   'store:ui',
   'telemetry:control',

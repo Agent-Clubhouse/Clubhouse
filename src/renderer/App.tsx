@@ -20,7 +20,6 @@ import { UpdateBanner } from './features/app/UpdateBanner';
 import { ResumeBanner, useResumeBannerSessions } from './features/app/ResumeBanner';
 import { resumeFromBanner } from './services/resume-queue';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
-import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
 import { FeedbackDialogHost } from './features/feedback/FeedbackDialogHost';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
@@ -293,7 +292,6 @@ export function App() {
         <QuickPrompt />
         <QuickAgentDialog />
         <WhatsNewDialog />
-        <OnboardingModal />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -325,7 +323,6 @@ export function App() {
         <CommandPalette />
         <QuickAgentDialog />
         <WhatsNewDialog />
-        <OnboardingModal />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -380,7 +377,6 @@ export function App() {
         <CommandPalette />
         <QuickAgentDialog />
         <WhatsNewDialog />
-        <OnboardingModal />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -410,7 +406,6 @@ export function App() {
         <CommandPalette />
         <QuickAgentDialog />
         <WhatsNewDialog />
-        <OnboardingModal />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -440,7 +435,6 @@ export function App() {
       <CommandPalette />
       <QuickAgentDialog />
       <WhatsNewDialog />
-      <OnboardingModal />
       <FeedbackDialogHost />
       <FilePreviewHost />
       <ToastContainer />

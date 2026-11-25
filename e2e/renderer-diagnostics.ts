@@ -59,7 +59,7 @@ export async function reportActionFailure(app: ElectronApp, page: Page, control:
           now,
           monitor,
           lastFrameAgeMs: monitor ? now - (monitor.lastFrameAt ?? monitor.startedAt) : null,
-          controls: ['nav-add-project', 'onboarding-backdrop', 'onboarding-skip', 'rail-container'].map((id) => {
+          controls: ['nav-add-project', 'rail-container'].map((id) => {
             const el = document.querySelector(`[data-testid="${id}"]`);
             if (!el) return { id, present: false };
             const rect = el.getBoundingClientRect();

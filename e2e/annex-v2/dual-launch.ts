@@ -4,7 +4,7 @@
  * Launches two isolated Clubhouse Electron instances, each against its own
  * disposable profile, allowing end-to-end testing of the desktop-to-desktop
  * remote control protocol. Both go through the shared `launchApp` primitive,
- * so window selection, onboarding suppression and auto-update disabling match
+ * so window selection and auto-update disabling match
  * single-instance launches. Each launches on the run's layout (the new one, or
  * classic in the Classic layout E2E job), and checks it got that layout.
  */
