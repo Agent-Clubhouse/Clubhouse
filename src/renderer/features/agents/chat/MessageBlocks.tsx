@@ -384,7 +384,8 @@ const STOP_LABELS: Partial<Record<TurnEndItem['stopReason'], string>> = {
   cancelled: 'Stopped',
   max_tokens: 'Stopped at the output limit',
   max_turns: 'Stopped at the turn limit',
-  refusal: 'The model declined to continue',
+  // Providers use this end for different reasons (a model refusal, Antigravity's is undocumented), so it names no cause.
+  refusal: 'Refused by the provider',
   timeout: 'Timed out',
   error: 'Turn failed',
 };

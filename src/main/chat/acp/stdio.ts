@@ -25,6 +25,8 @@ export interface AcpStdioOpts {
   log?: AcpLog;
   /** Called with the tail of stderr when the process ends, for an error message. */
   onStderrTail?(tail: string): void;
+  /** Called with the child once spawned (tests hold its handle to check and clean up that exact process). */
+  onSpawn?(child: ChildProcessWithoutNullStreams): void;
 }
 
 export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
@@ -47,6 +49,7 @@ export function stdioConnector(opts: AcpStdioOpts): AcpConnector {
       queueMicrotask(() => onEnd({ code: null, signal: null, error, spawn: true }));
       return { send() { /* never started */ }, async close() { /* nothing to stop */ } };
     }
+    opts.onSpawn?.(child);
     const redactor = new LogRedactor(opts.command.args).startRun();
 
     let ended = false;

@@ -376,6 +376,16 @@ export function registerChatHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.CHAT.SET_EFFORT, withValidatedArgs(
+    [stringArg(), effortArg],
+    async (_event, agentId, effort) => {
+      if (effort === undefined) throw new Error('No effort given');
+      const runtime = requireChatRuntime(agentId);
+      if (!runtime.setEffort) throw new Error('This agent cannot change effort on its own');
+      await runtime.setEffort(effort);
+    },
+  ));
+
   // Lets the agent pane pick ChatView or the terminal, and offer the
   // Chat / CLI switch only when the provider has a chat driver. With the
   // project path and `starting`, a waking agent's answer is the runtime it is

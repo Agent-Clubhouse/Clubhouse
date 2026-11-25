@@ -182,6 +182,37 @@ describe('recordChatStart', () => {
     expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['terminal']);
   });
 
+  describe('a failed start with no terminal fallback (#3800)', () => {
+    const two = [{ driver: 'claude_agent_sdk' as const, checkMs: 5, reason: 'start_failed' as const }, { driver: 'claude_stream_json' as const, checkMs: 5, reason: 'handshake_failed' as const }];
+
+    it('reports the last driver as going nowhere, never to the terminal, and the earlier one to the next driver', () => {
+      recordChatStart(1000, 'failed', { attempts: two, reason: 'handshake_failed' }, { ...ctx, noTerminalFallback: true }, 1100);
+      expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver', 'none']);
+      expect(bag(spans()[0].attrs)).toMatchObject({ 'clubhouse.chat.start.result': 'failed', 'clubhouse.chat.start.reason': 'handshake_failed' });
+      expect(spans()[0]).toMatchObject({ outcome: 'error', errorType: 'chat_start_failed' });
+      expectNoFreeText();
+    });
+
+    it('leaves every existing case as it was when the flag is absent or the start did not fail', () => {
+      recordChatStart(1000, 'failed', { attempts: two, reason: 'error' }, ctx, 1100);
+      expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver', 'terminal']);
+      event.mockClear();
+      recordChatStart(1000, 'terminal', { attempts: two, reason: 'handshake_failed' }, { ...ctx, noTerminalFallback: true }, 1100);
+      expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver', 'terminal']);
+      event.mockClear();
+      recordChatStart(1000, 'cancelled', { attempts: two, reason: 'superseded' }, { ...ctx, noTerminalFallback: true }, 1100);
+      // One event per attempt with a reason; a cancelled start sends none of them to the terminal.
+      expect(fallbacks().map((f) => f['clubhouse.chat.fallback.to'])).toEqual(['driver', 'driver']);
+    });
+
+    it('keeps the closed sets: none is a fallback value, failed was already a start result', () => {
+      expect(getAttributeSpec('clubhouse.chat.fallback.to')?.values).toEqual(['driver', 'terminal', 'none']);
+      expect(getAttributeSpec('clubhouse.chat.start.result')?.values).toEqual(['chat', 'fallback', 'terminal', 'cancelled', 'failed']);
+      expect(ATTR.chatFallbackTo('none').value).toBe('none');
+      expect(ATTR.chatFallbackTo('somewhere' as 'none').value).toBe('other');
+    });
+  });
+
   it('records a start that threw as failed', () => {
     recordChatStart(1000, 'failed', { attempts: [], reason: 'error' }, ctx, 1100);
     expect(event).not.toHaveBeenCalled();
