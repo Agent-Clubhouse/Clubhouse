@@ -1,3 +1,5 @@
+import { readUsageSummary } from '../services/usage-summary';
+import { USAGE_SUMMARY_DAYS, type UsageSummaryDays } from '../../shared/usage-summary';
 import { execSync } from 'child_process';
 import { ACCESS_LEVELS, isAccessLevel } from '../../shared/agent-access';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
@@ -260,6 +262,14 @@ export function registerAppHandlers(): void {
       },
     })],
     (_event, options) => helperRouting.readHelperRouting(options),
+  ));
+
+  ipcMain.handle(IPC.APP.GET_USAGE_SUMMARY, withValidatedArgs(
+    [numberArg({ integer: true, min: 1 })],
+    (_event, days) => {
+      if (!(USAGE_SUMMARY_DAYS as readonly number[]).includes(days)) throw new Error('days must be 1 or 7');
+      return readUsageSummary(days as UsageSummaryDays);
+    },
   ));
 
   ipcMain.handle(IPC.APP.UPDATE_HELPER_ROUTING, withValidatedArgs(
