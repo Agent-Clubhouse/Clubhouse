@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { createHash, randomUUID } from 'crypto';
-import { afterEach, beforeEach, expect, it, onTestFailed, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, onTestFailed, vi } from 'vitest';
 import { quarantineFailureCapture } from '../../../test/handoff-quarantine-diagnostics';
 import * as logging from './log-service';
 import { HANDOFF_TRANSFER_DEFAULTS, canonicalHandoffManifest } from '../../shared/handoff-manifest';
@@ -38,17 +38,36 @@ let root: string; let sender: string; let receiver: string; let staging: string;
 let crossDriveRoot: string | undefined;
 const url = 'https://example.invalid/team/project.git';
 const git = (cwd: string, ...args: string[]) => exec('git', args, { cwd });
-async function initialize(repo: string, message: string) {
+async function initialize(repo: string, message: string, hooksParent: string) {
   fs.mkdirSync(repo); await git(repo, 'init', '-b', 'main'); await git(repo, 'config', 'user.name', 'Fixture'); await git(repo, 'config', 'user.email', 'test@example.invalid');
-  fs.writeFileSync(path.join(repo, 'public.txt'), message); await git(repo, 'add', '.'); await git(repo, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', message);
+  fs.writeFileSync(path.join(repo, 'public.txt'), message); await git(repo, 'add', '.'); await git(repo, '-c', `core.hooksPath=${path.join(hooksParent, 'no-hooks')}`, 'commit', '-qm', message);
   await git(repo, 'config', 'remote.origin.url', url);
+}
+// The two fixture repositories cost 12 Git processes to build, and the per-test hook
+// that built them hit its 10 s hook timeout on hosted Windows (process creation is
+// slow there). Build them once; each test gets its own copy, so nothing is shared.
+let templates: string;
+const TEMPLATE_BUILD_BUDGET_MS = 60_000;
+beforeAll(async () => {
+  templates = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-commit-template-')));
+  const config = path.join(templates, 'empty-config'); fs.writeFileSync(config, '');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
+  try {
+    await initialize(path.join(templates, 'sender'), 'Sender base', templates);
+    await initialize(path.join(templates, 'receiver'), 'Receiver original', templates);
+  } finally { vi.unstubAllEnvs(); }
+}, TEMPLATE_BUILD_BUDGET_MS);
+afterAll(async () => { await remove(templates); });
+// An absent file remote fails locally and deterministically; no test reaches the internet.
+async function copyRegisteredReceiver(destination: string) {
+  fs.cpSync(path.join(templates, 'receiver'), destination, { recursive: true });
+  await git(destination, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, url);
 }
 beforeEach(async () => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-commit-'))); sender = path.join(root, 'sender'); receiver = path.join(root, 'receiver'); staging = path.join(root, 'stage'); fs.mkdirSync(staging);
   const config = path.join(root, 'empty-config'); fs.writeFileSync(config, ''); vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
-  await initialize(sender, 'Sender base'); await initialize(receiver, 'Receiver original');
-  // An absent file remote fails locally and deterministically; no test reaches the internet.
-  await git(receiver, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, url);
+  fs.cpSync(path.join(templates, 'sender'), sender, { recursive: true });
+  await copyRegisteredReceiver(receiver);
 });
 // Every receive is tracked: a case that times out leaves its receive (and Git
 // children) running, and they would otherwise hold folders open during cleanup.
@@ -149,8 +168,7 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
   if (process.platform === 'win32' && path.parse(process.cwd()).root.toLowerCase() !== path.parse(root).root.toLowerCase()) {
     crossDriveRoot = await fs.promises.mkdtemp(path.join(process.cwd(), '.handoff-receiver-'));
     receiver = path.join(crossDriveRoot, 'receiver');
-    await initialize(receiver, 'Receiver original');
-    await git(receiver, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, url);
+    await copyRegisteredReceiver(receiver);
     options.projectRoot = receiver;
   }
   const canonical = await fs.promises.realpath(root);
