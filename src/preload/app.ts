@@ -1,3 +1,4 @@
+import type { UsageSummary, UsageSummaryDays } from '../shared/usage-summary';
 import type { HelperRoutingReadOptions, HelperRoutingSettings, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../shared/helper-routing';
 import type { AccessLevel } from '../shared/agent-access';
 import type { AppUpdateRequest } from '../shared/app-update';
@@ -111,6 +112,9 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_HELPER_ROUTING, options),
   updateHelperRouting: (update: HelperRoutingUpdate): Promise<HelperRoutingUpdateResult> =>
     ipcRenderer.invoke(IPC.APP.UPDATE_HELPER_ROUTING, update),
+  /** Settings › Usage: each provider's plan limits and the tokens agents used, from the local log. */
+  getUsageSummary: (days: UsageSummaryDays): Promise<UsageSummary> =>
+    ipcRenderer.invoke(IPC.APP.GET_USAGE_SUMMARY, days),
   setDockBadge: (count: number) =>
     ipcRenderer.invoke(IPC.APP.SET_DOCK_BADGE, count),
   getBadgeSettings: () =>

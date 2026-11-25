@@ -397,6 +397,8 @@ export const IPC = {
     ORCHESTRATION_SETTINGS_CHANGED: 'app:orchestration-settings-changed',
     GET_HELPER_ROUTING: 'app:get-helper-routing',
     UPDATE_HELPER_ROUTING: 'app:update-helper-routing',
+    /** Settings › Usage: plan limits and local usage totals (docs/usage-attribution.md). */
+    GET_USAGE_SUMMARY: 'app:get-usage-summary',
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',

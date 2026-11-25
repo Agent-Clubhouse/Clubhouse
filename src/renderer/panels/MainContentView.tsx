@@ -30,6 +30,7 @@ import { ExperimentalSettingsView } from '../features/settings/ExperimentalSetti
 import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { HelpersSettingsView } from '../features/settings/HelpersSettingsView';
 import { SmartSelectionSettingsView } from '../features/settings/SmartSelectionSettingsView';
+import { UsageSettingsView } from '../features/settings/UsageSettingsView';
 import { ActionsSettingsView } from '../features/actions/ActionsSettingsView';
 import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
 import { PartLibraryView } from '../features/managed/PartLibraryView';
@@ -284,6 +285,7 @@ export function MainContentView() {
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'helpers') return <HelpersSettingsView />;
     if (settingsSubPage === 'smart-selection') return <SmartSelectionSettingsView />;
+    if (settingsSubPage === 'usage') return <UsageSettingsView />;
     if (settingsSubPage === 'dispatcher') return <DispatcherSettingsView />;
     if (settingsSubPage === 'actions') return <ActionsSettingsView />;
     if (settingsSubPage === 'group-projects') return <GroupProjectsSettingsView />;
