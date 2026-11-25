@@ -525,6 +525,8 @@ function bulkMeta(kind: BulkKind, id: string, meta: Record<string, unknown>): Co
   return parsed.ok ? parsed.message : null;
 }
 let bulkTokenLimitForTests: number | undefined;
+/** Test-only: what the accepting side supports, to stand in for an older desktop. */
+let acceptedFeaturesForTests: readonly string[] | undefined;
 
 function pruneCancelledRequests(link: Link): void {
   const cutoff = Date.now() - CANCELLED_REQUEST_TTL_MS;
@@ -793,7 +795,7 @@ function onHello(link: Link, message: ControlMessage): void {
   const known = new Set<string>(CONTROL_FEATURES);
   if (link.direction === 'in') {
     // The opener's offer. Answer with what both support; nothing else is ever sent on this connection.
-    const agreed = new Set(message.features.filter((f): f is ControlFeature => known.has(f)));
+    const agreed = new Set(message.features.filter((f): f is ControlFeature => known.has(f) && (!acceptedFeaturesForTests || acceptedFeaturesForTests.includes(f))));
     link.features = agreed;
     rawSend(link, { v: 1, type: 'hello', features: [...agreed] });
   } else {
@@ -1665,6 +1667,7 @@ export function resetControlForTests(): void {
   activeRuns.clear();
   targetTimeoutMs = TARGET_TIMEOUT_MS;
   bulkTokenLimitForTests = undefined;
+  acceptedFeaturesForTests = undefined;
   inboundAuthority = null;
   target = null;
   nextLinkEpoch = 0;
@@ -1703,3 +1706,5 @@ export function _activeRunsForTesting(fingerprint: string, pin: string): number 
 
 /** Test helper: exercise lifetime exhaustion without allocating the production history budget. */
 export function _setBulkTokenLimitForTesting(limit: number): void { bulkTokenLimitForTests = limit; }
+/** For testing only: answer future control hellos with at most `features`, as an older desktop would; undefined restores. */
+export function _setAcceptedFeaturesForTesting(features?: readonly string[]): void { acceptedFeaturesForTests = features; }
