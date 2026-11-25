@@ -3010,7 +3010,7 @@ describe('annex-server', () => {
         release();
       });
 
-      it('SECURITY: the buffer route serves no other device\'s shell or desktop terminal, answering as for an unknown id (R1)', async () => {
+      it('SECURITY: the buffer route serves no other device\'s shell, answering as for an unknown id (R1)', async () => {
         const shells = fakeShells();
         // An unknown id's answer as the real pty-manager gives it: nothing, at the output high water.
         const unknown = () => ({ data: '', seq: 777 });
@@ -3043,10 +3043,12 @@ describe('annex-server', () => {
         const expected = await read('never-existed');
         expect(expected).toMatchObject({ status: 200, body: '' });
         vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockClear();
-        for (const id of ['other-live', 'other-detached', 'desk-term']) expect(await read(id)).toEqual(expected);
+        for (const id of ['other-live', 'other-detached']) expect(await read(id)).toEqual(expected);
         expect(ptyManagerModule.getSerializedBufferSnapshot).not.toHaveBeenCalled();
-        // An agent's terminal is still served.
+        // An agent's terminal is still served, and so is a desktop terminal: every controller already gets its
+        // output as broadcast pty:data and may type into it, and a desktop controller redraws it from here.
         expect(await read('agent-pty')).toMatchObject({ status: 200, body: 'agent screen' });
+        expect(await read('desk-term')).toMatchObject({ status: 200, body: 'desktop secret' });
         // So is a device's own shell, attached or detached: a desktop controller redraws its remote terminal from it.
         const mine = await connectAs(PHONE);
         await spawn(mine, { sessionId: 'mine', projectId: 'p' });

@@ -1540,7 +1540,7 @@ When a phone's connection drops, for example while it is in the background to op
 
 `session_expired` and `session_exited` are remembered for an hour, at most 256 per device (and 4096 in all), and only for the device that owned the shell. After that, or after a desktop restart, the answer is `session_not_found`.
 
-`GET /api/v1/agents/:id/buffer` serves a shell only to the device that spawned it (attached or detached). Asked for any other device's shell, or a desktop terminal, it answers exactly as for an id with no terminal: 200 with an empty body. `agent:kill` for another connection's shell answers `agent_not_found`, as for an unknown id.
+`GET /api/v1/agents/:id/buffer` serves a controller's shell only to the device that spawned it (attached or detached). Asked for any other device's shell, it answers exactly as for an id with no terminal: 200 with an empty body. Agent and desktop terminals are served as before. `agent:kill` for another connection's shell answers `agent_not_found`, as for an unknown id.
 
 A desktop controller (another computer controlling this one) gets the same detachment as a phone. It never reattaches, so its shells wait out the grace, or are replaced when it spawns the same id again.
 

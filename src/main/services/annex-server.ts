@@ -3139,13 +3139,15 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
 }
 
 /**
- * Whether `principal` may read terminal `id` over REST. A shell is private, as on
- * the WebSocket: a desktop terminal to everyone, a controller's shell (attached or
- * detached) to every device but the one that spawned it, which reads its own to
- * redraw it.
+ * Whether `principal` may read terminal `id` over REST. A controller's shell
+ * (attached or detached) is private to the device that spawned it, as on the
+ * WebSocket, and that device reads its own to redraw it. Agent terminals and
+ * desktop terminals stay readable: every controller already gets their output as
+ * broadcast `pty:data` and may type into them, and a desktop controller redraws a
+ * remote desktop terminal from this route.
  */
 function terminalReadableBy(id: string, principal: AnnexPrincipal | undefined): boolean {
-  if (ptyManager.getShellCwd(id) === undefined) return true;
+  if (!shellOwners.has(id) && !detachedShells.has(id)) return true;
   if (!principal) return false;
   const asker: ShellDevice = { fingerprint: principal.fingerprint, pin: principal.pin };
   const detached = detachedShells.get(id);
