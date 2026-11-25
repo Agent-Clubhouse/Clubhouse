@@ -246,7 +246,8 @@ export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undef
       startModel = startModel ?? d.model ?? null;
       if (d.model !== undefined) { model = d.model; modelUnknown = d.model === null; }
       models = d.models ?? models; efforts = d.efforts ?? efforts; levelNames = d.levelNames ?? levelNames;
-      if (d.effort !== undefined) { effort = d.effort; effortIsDefault = false; effortReported = true; }
+      // A reported effort is a chosen one; null leaves whether it's the default as it was (as the chat store does).
+      if (d.effort !== undefined) { effort = d.effort; if (d.effort !== null) effortIsDefault = false; effortReported = true; }
       limits = d.contextLimits ?? limits;
     } else if (event.type === 'usage' && event.data.context) {
       usageContext = event.data.context;

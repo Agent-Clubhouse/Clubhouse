@@ -149,6 +149,12 @@ describe('capabilities', () => {
     expect(err).toMatchObject({ code: 'model_unavailable', message: expect.stringContaining('model-b is not available for this account') });
   });
 
+  it('with no model option, a saved model doesn\'t refuse the start: it runs on its own model, with a notice', async () => {
+    const { session, drafts } = await open({ configOptions: [OPTIONS[1]] }, { model: 'model-a' });
+    expect(session).toBeTruthy();
+    await vi.waitFor(() => expect(drafts.some((d) => d.type === 'notice' && (d.data as { code?: string }).code === 'model_not_applied')).toBe(true));
+  });
+
   it('switches model and thinking level live', async () => {
     const { session, agent } = await open();
     await session.setModel('model-b', 'high');

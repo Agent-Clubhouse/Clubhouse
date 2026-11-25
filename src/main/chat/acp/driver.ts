@@ -467,7 +467,9 @@ class AcpDriverSession implements ChatDriverSession {
       && !configChoices(this.facts.configOptions).models.some((m) => m.id === opts.model)) {
       throw new AcpModelUnavailableError(opts.model);
     }
-    if (opts.model && this.spec.unofferedModel === 'refuse') {
+    // Refusing needs a model option to judge by: a session with none (effort
+    // only) keeps the not-applied notice below and runs on its own model.
+    if (opts.model && this.spec.unofferedModel === 'refuse' && selectOption(this.facts.configOptions, 'model')) {
       // Under 'refuse' the requested model is applied or the start fails: never
       // a session quietly running on a model the person didn't choose.
       await this.setConfig('model', opts.model).catch((err: Error) => {

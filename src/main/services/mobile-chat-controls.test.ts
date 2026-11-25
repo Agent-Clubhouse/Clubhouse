@@ -82,6 +82,12 @@ describe('chatControls snapshot fields', () => {
     const c = chatControls([sessionEvents()[0], event('session_info', { model: null })], caps());
     expect(c).toMatchObject({ model: null, modelUnknown: true, effort: null, effortReported: false, switchNote: null });
   });
+  it('a null effort from session_info leaves whether the effort is the default as it was (#3797)', () => {
+    const c = chatControls([...sessionEvents(), event('model_changed', { modelId: 'opus', effort: 'low', effortIsDefault: true }), event('session_info', { effort: null })], caps());
+    expect(c).toMatchObject({ effort: null, effortIsDefault: true, effortReported: true });
+    const chosen = chatControls([...sessionEvents(), event('model_changed', { modelId: 'opus', effort: 'low', effortIsDefault: true }), event('session_info', { effort: 'high' })], caps());
+    expect(chosen).toMatchObject({ effort: 'high', effortIsDefault: false });
+  });
   it('a new session clears the last one\'s lists', () => {
     const c = chatControls([...sessionEvents(), event('session_started', { driver: 'copilot_sdk', provider: 'x', cwd: '/', resumed: true, capabilities: caps() })], caps());
     expect(c).toMatchObject({ models: [], efforts: [], levelNames: {}, model: 'opus', level: 'ask' });
