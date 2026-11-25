@@ -15,8 +15,7 @@ const {
   mockLoadSessionSettings,
   mockLoadUpdateSettings,
   mockCheckWhatsNew,
-  mockStartOnboarding,
-  mockDismissOnboarding,
+  mockCleanupRemovedOnboarding,
   mockInitBadgeSideEffects,
   mockInitializePluginSystem,
 } = vi.hoisted(() => ({
@@ -32,8 +31,7 @@ const {
   mockLoadSessionSettings: vi.fn().mockResolvedValue(undefined),
   mockLoadUpdateSettings: vi.fn().mockResolvedValue(undefined),
   mockCheckWhatsNew: vi.fn(),
-  mockStartOnboarding: vi.fn(),
-  mockDismissOnboarding: vi.fn(),
+  mockCleanupRemovedOnboarding: vi.fn(() => false),
   mockInitBadgeSideEffects: vi.fn(),
   mockInitializePluginSystem: vi.fn().mockResolvedValue(undefined),
 }));
@@ -112,15 +110,8 @@ vi.mock('./stores/pluginUpdateStore', () => ({
   initPluginUpdateListener: vi.fn(() => vi.fn()),
 }));
 
-let mockOnboardingCompleted = true;
-vi.mock('./stores/onboardingStore', () => ({
-  useOnboardingStore: Object.assign(vi.fn(), {
-    getState: vi.fn(() => ({
-      completed: mockOnboardingCompleted,
-      startOnboarding: mockStartOnboarding,
-      dismissOnboarding: mockDismissOnboarding,
-    })),
-  }),
+vi.mock('./removed-onboarding-cleanup', () => ({
+  cleanupRemovedOnboardingState: mockCleanupRemovedOnboarding,
 }));
 
 vi.mock('./plugins/plugin-loader', () => ({
@@ -128,7 +119,6 @@ vi.mock('./plugins/plugin-loader', () => ({
 }));
 
 import { initApp } from './app-initializer';
-import { useChromeFlagStore } from './chrome/chromeFlag';
 import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
 import { initPluginUpdateListener } from './stores/pluginUpdateStore';
@@ -140,7 +130,7 @@ describe('initApp', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers();
-    mockOnboardingCompleted = true;
+    mockCleanupRemovedOnboarding.mockClear();
     for (const key of Object.keys(mockOrchestratorAvailability)) {
       delete mockOrchestratorAvailability[key];
     }
@@ -200,9 +190,8 @@ describe('initApp', () => {
     expect(mockCheckWhatsNew).toHaveBeenCalled();
   });
 
-  it('should NOT start onboarding when already completed', () => {
-    vi.advanceTimersByTime(1000);
-    expect(mockStartOnboarding).not.toHaveBeenCalled();
+  it('deletes the removed onboarding modal\'s saved state once per startup', () => {
+    expect(mockCleanupRemovedOnboarding).toHaveBeenCalledTimes(1);
   });
 
   it('should return a cleanup function', () => {
@@ -258,57 +247,6 @@ describe('initApp – ordering', () => {
     vi.useRealTimers();
   });
 });
-
-describe('initApp – onboarding', () => {
-  let cleanup: () => void;
-
-  beforeEach(async () => {
-    vi.useFakeTimers();
-    mockOnboardingCompleted = false;
-    mockInitializePluginSystem.mockResolvedValue(undefined);
-    (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    cleanup = await initApp();
-  });
-
-  afterEach(() => {
-    cleanup();
-    vi.useRealTimers();
-  });
-
-  it('should start onboarding after 500ms when not completed', () => {
-    expect(mockStartOnboarding).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(500);
-    expect(mockStartOnboarding).toHaveBeenCalled();
-    expect(mockDismissOnboarding).not.toHaveBeenCalled();
-  });
-});
-
-describe('initApp – onboarding in the new shell', () => {
-  it('never starts the onboarding modal, and saves onboarding as done: the first-run page is the welcome', async () => {
-    vi.useFakeTimers();
-    mockOnboardingCompleted = false;
-    mockInitializePluginSystem.mockResolvedValue(undefined);
-    (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    useChromeFlagStore.setState({ enabled: true });
-    const cleanup = await initApp();
-    try {
-      vi.advanceTimersByTime(1000);
-      expect(mockStartOnboarding).not.toHaveBeenCalled();
-      expect(mockDismissOnboarding).toHaveBeenCalledTimes(1);
-    } finally {
-      cleanup();
-      useChromeFlagStore.setState({ enabled: false });
-      vi.useRealTimers();
-    }
-  });
-});
-
 
 describe('initApp – theme changes during startup', () => {
   it.each(['initial read', 'plugin startup', 'reconciliation'] as const)('applies the latest theme when it changes during %s', async (when) => {

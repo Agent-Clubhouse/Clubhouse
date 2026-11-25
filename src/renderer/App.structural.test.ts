@@ -344,7 +344,6 @@ describe('App.tsx – global dialog presence in all return paths', () => {
 
   const additionalGlobalComponents = [
     'WhatsNewDialog',
-    'OnboardingModal',
     'PermissionViolationBanner',
     'UpdateBanner',
     'ToastContainer',
@@ -405,7 +404,6 @@ describe('App.tsx – selector discipline', () => {
       'useLoggingStore',
       'useHeadlessStore',
       'useBadgeSettingsStore',
-      'useOnboardingStore',
       'useUpdateStore',
       'useNotificationStore',
     ];
@@ -481,9 +479,10 @@ describe('app-initializer.ts – initialization order', () => {
     expect(initializerSource).toContain('initPluginUpdateListener()');
   });
 
-  it('should handle What\'s New and onboarding checks', () => {
+  it('should handle the What\'s New check and delete the removed onboarding state', () => {
     expect(initializerSource).toContain('checkWhatsNew()');
-    expect(initializerSource).toContain('startOnboarding()');
+    expect(initializerSource).toContain('cleanupRemovedOnboardingState()');
+    expect(initializerSource).not.toContain('startOnboarding');
   });
 });
 

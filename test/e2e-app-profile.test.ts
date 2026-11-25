@@ -41,7 +41,6 @@ import {
   type DisposableProfile,
 } from '../e2e/app-profile';
 import { launchApp } from '../e2e/launch';
-import { reportActionFailure } from '../e2e/renderer-diagnostics';
 
 let sandbox: string;
 const mockChildren: ChildProcess[] = [];
@@ -253,15 +252,12 @@ describe('buildLaunchEnv', () => {
 const RENDERER_URL = 'file:///app/.webpack/x64/renderer/main_window/index.html';
 
 function fakePage(url = RENDERER_URL) {
-  const backdrop = { waitFor: vi.fn(async () => {}) };
-  const skip = { click: vi.fn(async () => {}) };
   return {
     url: () => url,
     waitForLoadState: vi.fn(async () => {}),
     waitForTimeout: vi.fn(async () => {}),
-    evaluate: vi.fn(async () => ({ newChrome: false, preseeded: true, completed: true })),
+    evaluate: vi.fn(async () => undefined),
     reload: vi.fn(async () => {}),
-    locator: vi.fn((selector: string) => selector.includes('onboarding-skip') ? skip : backdrop),
     addLocatorHandler: vi.fn(async (_locator: unknown, _handler: () => Promise<void>) => {}),
   };
 }
@@ -304,8 +300,9 @@ describe('launchApp', () => {
     expect(launched.userDataDir).toBe(userData);
     expect(launchMock.mock.calls[0][0].env.CLUBHOUSE_DISABLE_AUTO_UPDATE).toBe('1');
     expect(launched.window).toBe(page);
-    // Onboarding is dismissed by default.
-    expect(page.evaluate).toHaveBeenCalled();
+    // Nothing is dismissed or reloaded: there is no onboarding modal any more.
+    expect(page.reload).not.toHaveBeenCalled();
+    expect(page.addLocatorHandler).not.toHaveBeenCalled();
     launched.profile.dispose();
   });
 
@@ -401,7 +398,7 @@ describe('launchApp', () => {
     const receipts = () => output.mock.calls
       .filter(call => call[0] === '[e2e owned-process]')
       .map(call => JSON.parse(String(call[1])));
-    app.context().addInitScript.mockImplementation(async () => {
+    app.waitForEvent.mockImplementation(async () => {
       expect(receipts()[0]).toMatchObject({ phase: 'launch-returned', pid: 45678 });
       throw undefined;
     });
@@ -427,7 +424,7 @@ describe('launchApp', () => {
   it('registers a launched child before setup can fail and retains the profile when setup close leaves it live', async () => {
     const app = fakeApp([], true);
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    app.context().addInitScript.mockRejectedValue(new Error('setup failed'));
+    app.waitForEvent.mockRejectedValue(new Error('setup failed'));
     app.close.mockRejectedValue(new Error('close failed'));
     launchMock.mockResolvedValue(app);
 
@@ -455,86 +452,13 @@ describe('launchApp', () => {
     profile.dispose();
   });
 
-  it("leaves onboarding alone with onboarding: 'show'", async () => {
+  it('preserves the first load: no init script, no reload', async () => {
     const page = fakePage();
-    const app = fakeApp([page]);
-    launchMock.mockResolvedValue(app);
-    const launched = await launchApp({ onboarding: 'show' });
-    expect(page.evaluate).not.toHaveBeenCalled();
-    expect(page.addLocatorHandler).not.toHaveBeenCalled();
-    expect(app.context().addInitScript).not.toHaveBeenCalled();
-    expect(page.reload).not.toHaveBeenCalled();
-    launched.profile.dispose();
-  });
-
-  it.each([
-    { newChrome: true, preseeded: false, completed: false },
-    { newChrome: false, preseeded: true, completed: true },
-    { newChrome: false, preseeded: false, completed: true },
-  ])('preserves the first load when no classic fallback is needed: %j', async (state) => {
-    const page = fakePage();
-    page.evaluate.mockResolvedValue(state);
     const app = fakeApp([page]);
     launchMock.mockResolvedValue(app);
     const launched = await launchApp({ preserveFirstLoad: true });
-    expect(app.context().addInitScript).toHaveBeenCalledOnce();
-    expect(app.context().addInitScript.mock.invocationCallOrder[0]).toBeLessThan(page.waitForLoadState.mock.invocationCallOrder[0]);
+    expect(app.context().addInitScript).not.toHaveBeenCalled();
     expect(page.reload).not.toHaveBeenCalled();
-    launched.profile.dispose();
-  });
-
-  it('reloads only when the first-script seed missed incomplete classic onboarding', async () => {
-    const page = fakePage();
-    page.evaluate.mockResolvedValue({ newChrome: false, preseeded: false, completed: false });
-    launchMock.mockResolvedValue(fakeApp([page]));
-    const launched = await launchApp();
-    expect(page.evaluate).toHaveBeenCalledTimes(2);
-    expect(page.evaluate.mock.invocationCallOrder[1]).toBeLessThan(page.reload.mock.invocationCallOrder[0]);
-    expect(page.reload).toHaveBeenCalledOnce();
-    expect(page.reload.mock.invocationCallOrder[0]).toBeLessThan(page.addLocatorHandler.mock.invocationCallOrder[0]);
-    launched.profile.dispose();
-  });
-
-  it('fails explicitly if seeding missed a startup spec instead of testing a second init', async () => {
-    const page = fakePage();
-    page.evaluate.mockResolvedValue({ newChrome: false, preseeded: false, completed: false });
-    const app = fakeApp([page]);
-    launchMock.mockResolvedValue(app);
-    await expect(launchApp({ preserveFirstLoad: true })).rejects.toThrow('preserveFirstLoad forbids reloading startup');
-    expect(page.reload).not.toHaveBeenCalled();
-    expect(app.close).toHaveBeenCalled();
-    expect(reportActionFailure).toHaveBeenCalledWith(app, page, 'onboarding-preseed', expect.any(Error));
-  });
-
-  it('handles onboarding that appears after the old three-second visibility window', async () => {
-    vi.useFakeTimers();
-    try {
-      const page = fakePage();
-      launchMock.mockResolvedValue(fakeApp([page]));
-      const launched = await launchApp();
-      const [backdrop, handleBackdrop] = page.addLocatorHandler.mock.calls[0];
-      expect(page.locator).toHaveBeenCalledWith('[data-testid="onboarding-backdrop"]');
-      expect(backdrop).toEqual({ waitFor: expect.any(Function) });
-      await vi.advanceTimersByTimeAsync(10_000);
-      await handleBackdrop();
-      expect(page.locator).toHaveBeenCalledWith('[data-testid="onboarding-skip"]');
-      expect((page.locator('[data-testid="onboarding-skip"]') as { click: ReturnType<typeof vi.fn> }).click).toHaveBeenCalledOnce();
-      launched.profile.dispose();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('reports and propagates a failed Skip click instead of continuing with a modal', async () => {
-    const page = fakePage();
-    const cause = new Error('waiting for element to be visible, enabled and stable');
-    (page.locator('[data-testid="onboarding-skip"]') as { click: ReturnType<typeof vi.fn> }).click.mockRejectedValue(cause);
-    const app = fakeApp([page]);
-    launchMock.mockResolvedValue(app);
-    const launched = await launchApp();
-    const handleBackdrop = page.addLocatorHandler.mock.calls[0][1];
-    await expect(handleBackdrop()).rejects.toThrow('Onboarding dismissal failed; cannot continue with a blocking modal. Error: waiting for element to be visible, enabled and stable');
-    expect(reportActionFailure).toHaveBeenCalledWith(app, page, 'onboarding-skip', cause);
     launched.profile.dispose();
   });
 

@@ -1,7 +1,7 @@
 /**
  * Settings and feature-usage events from main-process call sites (spec
  * §4.14). Keys and static ids only: never setting values, names or paths.
- * Renderer-side events (settings pages, command palette, onboarding, help)
+ * Renderer-side events (settings pages, command palette, help)
  * belong to the chrome refresh (§9.1).
  */
 import { ATTR, BUILTIN_THEME_IDS, SETTINGS_KEYS, countBucket } from '../../shared/telemetry/attributes';

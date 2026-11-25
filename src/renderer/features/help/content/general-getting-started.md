@@ -4,7 +4,7 @@ Clubhouse is a desktop environment for managing AI coding agents. You organize p
 
 ## First Launch
 
-On first launch, a short onboarding flow appears based on your experience level. After that, Clubhouse opens your most recent project, or offers **Add Project** if you have none.
+Clubhouse opens your most recent project, or offers **Add Project** if you have none.
 
 ## Quick Start
 

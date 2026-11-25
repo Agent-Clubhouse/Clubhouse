@@ -600,7 +600,6 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.settings.changed` | `c.settings.key` (the managed-settings key, e.g. `editor`, `mcp`, `goobers`, `logging`, `annex`, `theme`, …; a static list), `c.settings.field` (top-level field name from a per-key allowlist, otherwise omitted). Never the value, except for allowlisted enum/bool fields. |
 | `c.settings.page_viewed` | `c.settings.page` (`SettingsSubPage` union, `shared/types.ts:570`) |
 | `c.command_palette.executed` | `c.command.prefix` (text before the first `:`, e.g. `toggle-settings`, `project`, `agent`, `plugin-cmd`), `c.command.category` |
-| `c.onboarding.*` | `started`/`cohort_selected` (`new-dev`/`experienced-dev`/`seasoned-dev`)/`completed`/`dismissed` |
 | `c.help.topic_viewed` | `c.help.topic` (static IDs from `help-content.ts`). **Search text is never sent.** |
 | `c.blueprint.*` | `export` (destination enum), `import` (match-status counts), `create_from_builtin` (`small-squad`/`large-squad`) |
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
