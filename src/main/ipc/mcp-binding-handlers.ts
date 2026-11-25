@@ -424,7 +424,7 @@ export function registerMcpBindingHandlers(): void {
   ipcMain.handle(IPC.MCP_BINDING.REGISTER_WEBVIEW, withValidatedArgs(
     [stringArg(), stringArg()],
     (_event, widgetId, webContentsId) => {
-      registerWebview(widgetId as string, parseInt(webContentsId as string, 10));
+      return registerWebview(widgetId as string, parseInt(webContentsId as string, 10));
     },
   ));
 

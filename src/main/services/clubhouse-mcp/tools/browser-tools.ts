@@ -3,7 +3,8 @@
  * Phase 3 implementation.
  */
 
-import { BrowserWindow, dialog, webContents } from 'electron';
+import { BrowserWindow, dialog, session, webContents } from 'electron';
+import { BROWSER_WEBVIEW_PARTITION } from '../../../../shared/browser-partition';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import type { McpToolResult } from '../types';
@@ -49,9 +50,39 @@ const attachedDebuggers = new Map<number, boolean>();
 const consoleBuffers = new Map<number, Array<{ level: string; text: string; timestamp: number }>>();
 const MAX_CONSOLE_ENTRIES = 500;
 
-export function registerWebview(widgetId: string, webContentsId: number): void {
+/**
+ * Point a Browser widget's agent tools at a webContents. The renderer sends the
+ * id, so only a live Browser webview guest in the Browser's own session is
+ * accepted. Anything else (the app window, a popout, another session) would let
+ * an agent's click or evaluate reach a privileged page (#3869).
+ */
+/** Widgets whose last registration was refused, and why: the tools say so instead of "not ready". */
+const refusedRegistrations = new Map<string, string>();
+
+function notReadyMessage(widgetId: string): string {
+  const reason = refusedRegistrations.get(widgetId);
+  return reason
+    ? `Browser widget registration was refused (${reason}): the app only lets agent tools reach a Browser webview`
+    : 'Browser widget not found or not ready';
+}
+
+export function registerWebview(widgetId: string, webContentsId: number): boolean {
+  const refuse = (reason: string): false => {
+    // Drop any earlier registration too, so a refused id never leaves a stale target.
+    unregisterWebview(widgetId);
+    refusedRegistrations.set(widgetId, reason);
+    appLog('core:security', 'warn', 'Browser webview registration refused', { meta: { widgetId, webContentsId, reason } });
+    return false;
+  };
+  if (!Number.isInteger(webContentsId)) return refuse('invalid-id');
+  const wc = webContents.fromId(webContentsId);
+  if (!wc || wc.isDestroyed?.()) return refuse('not-found');
+  if (wc.getType() !== 'webview') return refuse('not-a-webview');
+  if (wc.session !== session.fromPartition(BROWSER_WEBVIEW_PARTITION)) return refuse('wrong-session');
+  refusedRegistrations.delete(widgetId);
   webviewRegistry.set(widgetId, webContentsId);
   appLog('core:mcp', 'debug', 'Webview registered', { meta: { widgetId, webContentsId } });
+  return true;
 }
 
 export function unregisterWebview(widgetId: string): void {
@@ -160,6 +191,7 @@ function assertAgentBoundToWidget(agentId: string, widgetId: string): void {
 /** For testing: clear all internal state. */
 export function _resetForTesting(): void {
   webviewRegistry.clear();
+  refusedRegistrations.clear();
   attachedDebuggers.clear();
   consoleBuffers.clear();
 }
@@ -187,7 +219,7 @@ export function registerBrowserTools(): void {
       return errorResult('URL must start with http:// or https://');
     }
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     try {
       await wc.loadURL(url);
@@ -209,7 +241,7 @@ export function registerBrowserTools(): void {
     handler: async (targetId, agentId) => {
     assertAgentBoundToWidget(agentId, targetId);
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     try {
       const image = await wc.capturePage();
@@ -247,7 +279,7 @@ export function registerBrowserTools(): void {
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     await ensureDebuggerAttached(wc);
     const buffer = consoleBuffers.get(wc.id) || [];
@@ -275,7 +307,7 @@ export function registerBrowserTools(): void {
     assertAgentBoundToWidget(agentId, targetId);
     const selector = requireString(args, 'selector');
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     try {
       await ensureDebuggerAttached(wc);
@@ -324,7 +356,7 @@ export function registerBrowserTools(): void {
     const selector = requireString(args, 'selector');
     const text = requireString(args, 'text');
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     try {
       await ensureDebuggerAttached(wc);
@@ -370,7 +402,7 @@ export function registerBrowserTools(): void {
     assertAgentBoundToWidget(agentId, targetId);
     const expression = requireString(args, 'expression');
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     // SEC-03: Read-only expressions skip the confirmation dialog
     if (!isSafeExpression(expression)) {
@@ -434,7 +466,7 @@ export function registerBrowserTools(): void {
     assertAgentBoundToWidget(agentId, targetId);
     const selector = stringWithDefault(args, 'selector', 'body');
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     try {
       await ensureDebuggerAttached(wc);
@@ -476,7 +508,7 @@ export function registerBrowserTools(): void {
     assertAgentBoundToWidget(agentId, targetId);
     const depth = Math.min(Math.max(Math.floor(numberWithDefault(args, 'depth', 5)), 1), 10);
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found or not ready');
+    if (!wc) return errorResult(notReadyMessage(targetId));
 
     try {
       await ensureDebuggerAttached(wc);

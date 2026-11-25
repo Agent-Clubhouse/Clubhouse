@@ -28,6 +28,7 @@ import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
+import { installBrowserSessionGuard } from './browser-session-guard';
 import { installClientCertificatePolicy } from './client-certificate-policy';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { createBeforeQuitHandler } from './shutdown-guard';
@@ -389,6 +390,9 @@ app.on('ready', async () => {
 
     return net.fetch(request as unknown as Request, { bypassCustomProtocolHandlers: true });
   });
+
+  // The Browser's webview session gets its own file:// gate (#3869).
+  installBrowserSessionGuard();
 
   // Serve plugin modules over the custom same-origin `clubhouse-plugin:` scheme
   // (Part B). The path is resolved + validated symlink-safely against the
