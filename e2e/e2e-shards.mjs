@@ -42,7 +42,6 @@ export const E2E_SHARDS = {
     'mermaid-preview.spec.ts',
     'navigation.spec.ts',
     'open-project.spec.ts',
-    'plugin-mcp-tools.spec.ts',
     'smoke-agent-lifecycle.spec.ts',
     'start-agent.spec.ts',
     'telemetry-export.spec.ts',

@@ -2,6 +2,7 @@ import type { PluginManifest } from './plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from './plugin-types';
 import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS, unsupportedPluginApiMessage } from './marketplace-types';
 import { isRetiredPlugin, retiredPluginMessage } from './retired-plugins';
+import { REMOVED_PLUGIN_KIND, REMOVED_PLUGIN_PERMISSIONS, removedFeaturesWarning } from './removed-plugin-features';
 
 export { DEPRECATED_PLUGIN_API_VERSIONS };
 
@@ -94,14 +95,10 @@ export function validateManifest(raw: unknown): ValidationResult {
   const engineObj = m.engine as Record<string, unknown> | undefined;
   const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
   const isPack = m.kind === 'pack';
-  const isWorkspace = m.kind === 'workspace';
 
   if (m.kind !== undefined) {
-    if (m.kind !== 'plugin' && m.kind !== 'pack' && m.kind !== 'workspace') {
-      errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin", "pack", or "workspace"`);
-    }
-    if (isWorkspace && apiVersion < 0.9) {
-      errors.push('Workspace plugins require API >= 0.9');
+    if (m.kind !== 'plugin' && m.kind !== 'pack' && m.kind !== REMOVED_PLUGIN_KIND) {
+      errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin" or "pack"`);
     }
   }
 
@@ -192,6 +189,7 @@ export function validateManifest(raw: unknown): ValidationResult {
         errors.push(`permissions[${i}] must be a string`);
         continue;
       }
+      if ((REMOVED_PLUGIN_PERMISSIONS as readonly string[]).includes(perm)) continue;
       if (!(ALL_PLUGIN_PERMISSIONS as readonly string[]).includes(perm)) {
         errors.push(`permissions[${i}]: unknown permission "${perm}"`);
         continue;
@@ -266,16 +264,6 @@ export function validateManifest(raw: unknown): ValidationResult {
     // Annex permission requires API >= 0.8
     if (permissions.includes('annex') && apiVersion < 0.8) {
       errors.push('Annex permission requires API >= 0.8');
-    }
-
-    // Companion permission requires API >= 0.9
-    if (permissions.includes('companion') && apiVersion < 0.9) {
-      errors.push('Companion permission requires API >= 0.9');
-    }
-
-    // MCP tools permission requires API >= 0.9
-    if (permissions.includes('mcp.tools') && apiVersion < 0.9) {
-      errors.push('mcp.tools permission requires API >= 0.9');
     }
   }
 
@@ -490,40 +478,6 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
-  // Workspace plugins must be app-scoped and have companion permission
-  if (isWorkspace) {
-    if (m.scope !== 'app') {
-      errors.push('Workspace plugins must be app-scoped');
-    }
-    if (!Array.isArray(m.permissions) || !(m.permissions as string[]).includes('companion')) {
-      errors.push('Workspace plugins require the "companion" permission');
-    }
-  }
-
-  // Companion config validation (v0.9+)
-  if (m.companion !== undefined) {
-    if (apiVersion < 0.9) {
-      errors.push('companion config requires API >= 0.9');
-    }
-    if (!m.companion || typeof m.companion !== 'object') {
-      errors.push('companion must be an object');
-    } else {
-      const comp = m.companion as Record<string, unknown>;
-      if (typeof comp.enabled !== 'boolean') {
-        errors.push('companion.enabled must be a boolean');
-      }
-      if (comp.defaultModel !== undefined && typeof comp.defaultModel !== 'string') {
-        errors.push('companion.defaultModel must be a string');
-      }
-      if (comp.systemPrompt !== undefined && typeof comp.systemPrompt !== 'string') {
-        errors.push('companion.systemPrompt must be a string');
-      }
-    }
-    if (!Array.isArray(m.permissions) || !(m.permissions as string[]).includes('companion')) {
-      errors.push('companion config requires the "companion" permission');
-    }
-  }
-
   // Pack plugins must have at least one pack contribution
   if (isPack && m.contributes && typeof m.contributes === 'object') {
     const contrib = m.contributes as Record<string, unknown>;
@@ -541,8 +495,35 @@ export function validateManifest(raw: unknown): ValidationResult {
 
   return {
     valid: true,
-    manifest: raw as PluginManifest,
+    manifest: withoutRemovedFeatures(m, warnings),
     errors: [],
     warnings,
   };
+}
+
+/**
+ * Companion agents, the `workspace` plugin kind and `mcp.tools` were removed
+ * in Clubhouse 1.0. A manifest that still declares them loads without them,
+ * with a warning that the loader logs.
+ */
+function withoutRemovedFeatures(m: Record<string, unknown>, warnings: string[]): PluginManifest {
+  const removed: string[] = [];
+  const out: Record<string, unknown> = { ...m };
+  if (Array.isArray(m.permissions)) {
+    const declared = (m.permissions as string[]).filter((p) => (REMOVED_PLUGIN_PERMISSIONS as readonly string[]).includes(p));
+    if (declared.length > 0) {
+      removed.push(...declared.map((p) => `the "${p}" permission`));
+      out.permissions = (m.permissions as string[]).filter((p) => !declared.includes(p));
+    }
+  }
+  if (m.kind === REMOVED_PLUGIN_KIND) {
+    removed.push('the "workspace" plugin kind');
+    out.kind = 'plugin';
+  }
+  if (m.companion !== undefined) {
+    removed.push('companion config');
+    delete out.companion;
+  }
+  if (removed.length > 0) warnings.push(removedFeaturesWarning(removed));
+  return out as unknown as PluginManifest;
 }

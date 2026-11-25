@@ -296,8 +296,6 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(await tryStartChatAgent(params, provider, undefined, null, onStarting)).toBe('terminal');
     mode.value = { mode: 'chat' };
     expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, null, onStarting)).toBe('terminal');
-    // A companion stays in the terminal even when flagged interactive; only quick agents opt in.
-    expect(await tryStartChatAgent({ ...params, kind: 'companion', interactive: true }, provider, undefined, null, onStarting)).toBe('terminal');
     clearChatDrivers();
     expect(await tryStartChatAgent(params, provider, undefined, null, onStarting)).toBe('terminal');
     expect(registry.setRuntime).not.toHaveBeenCalled();

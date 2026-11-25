@@ -140,12 +140,11 @@ describe('moveProject', () => {
 });
 
 describe('groupProjectAgents and projectRollup', () => {
-  it('splits durable, sleeping and quick agents and ignores companions', () => {
+  it('splits durable, sleeping and quick agents', () => {
     const groups = groupProjectAgents([
       agent('d1'),
       agent('d2', { status: 'sleeping' }),
       agent('q1', { kind: 'quick' }),
-      agent('c1', { kind: 'companion' }),
     ]);
     expect(groups.durable.map((a) => a.id)).toEqual(['d1']);
     expect(groups.sleeping.map((a) => a.id)).toEqual(['d2']);

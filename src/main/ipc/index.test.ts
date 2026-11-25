@@ -11,7 +11,6 @@ vi.mock('./skill-bundle-handlers', () => ({ registerSkillBundleHandlers: vi.fn()
 vi.mock('./managed-agents-handlers', () => ({ registerManagedAgentsHandlers: vi.fn() }));
 vi.mock('./app-handlers', () => ({ registerAppHandlers: vi.fn() }));
 vi.mock('./plugin-handlers', () => ({ registerPluginHandlers: vi.fn() }));
-vi.mock('./plugin-mcp-handlers', () => ({ registerPluginMcpHandlers: vi.fn() }));
 vi.mock('./process-handlers', () => ({ registerProcessHandlers: vi.fn() }));
 vi.mock('./window-handlers', () => ({ registerWindowHandlers: vi.fn() }));
 vi.mock('./annex-handlers', () => ({
@@ -49,7 +48,6 @@ import { registerSkillBundleHandlers } from './skill-bundle-handlers';
 import { registerManagedAgentsHandlers } from './managed-agents-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
-import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
@@ -77,7 +75,6 @@ describe('registerAllHandlers', () => {
     expect(registerManagedAgentsHandlers).toHaveBeenCalled();
     expect(registerAppHandlers).toHaveBeenCalled();
     expect(registerPluginHandlers).toHaveBeenCalled();
-    expect(registerPluginMcpHandlers).toHaveBeenCalled();
     expect(registerProcessHandlers).toHaveBeenCalled();
     expect(registerWindowHandlers).toHaveBeenCalled();
     expect(registerAnnexHandlers).toHaveBeenCalled();

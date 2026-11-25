@@ -624,11 +624,7 @@ describe('§2 Per-version manifest validation', () => {
   });
 
   describe('every permission in ALL_PLUGIN_PERMISSIONS is accepted individually', () => {
-    // v0.9-gated permissions are covered by the v0.9 cases below
-    const V09_PERMISSIONS = new Set(['companion', 'mcp.tools']);
-
     for (const perm of ALL_PLUGIN_PERMISSIONS) {
-      if (V09_PERMISSIONS.has(perm)) continue;
 
       // Skip sub-permissions that require base permissions
       const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp', 'agents.free-agent-mode', 'files.watch'];
@@ -1900,7 +1896,6 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
       'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
       'canvas', 'annex',
-      'companion', 'mcp.tools',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });

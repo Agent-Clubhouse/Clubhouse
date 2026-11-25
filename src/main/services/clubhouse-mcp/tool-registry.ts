@@ -429,48 +429,11 @@ export interface ToolTemplate {
 const toolTemplates = new Map<BindingTargetKind, ToolTemplate[]>();
 
 /**
- * Templates that belong to one target rather than to every target of a kind
- * (plugin tools: a binding to plugin X exposes only X's tools). Keyed by
- * targetKind, then targetId.
+ * The templates a binding exposes: its kind's. A `plugin` target has none since
+ * plugin MCP tools were removed (Clubhouse 1.0), so its wires list no tools.
  */
-const targetTemplates = new Map<BindingTargetKind, Map<string, ToolTemplate[]>>();
-
-/** The templates a binding exposes: its target's own set if it has one, else its kind's. */
 function templatesFor(binding: McpBinding): ToolTemplate[] | undefined {
-  const scoped = targetTemplates.get(binding.targetKind);
-  if (scoped) return scoped.get(binding.targetId);
   return toolTemplates.get(binding.targetKind);
-}
-
-/**
- * Replace the whole template set of one target. The swap is a single step,
- * so a caller that validates first never leaves a partial set behind.
- */
-export function setTargetToolTemplates(targetKind: BindingTargetKind, targetId: string, templates: ToolTemplate[]): void {
-  const seen = new Set<string>();
-  for (const t of templates) {
-    if (seen.has(t.nameSuffix)) {
-      throw new Error(`Duplicate tool template nameSuffix "${t.nameSuffix}" for ${targetKind} "${targetId}"`);
-    }
-    seen.add(t.nameSuffix);
-  }
-  let byTarget = targetTemplates.get(targetKind);
-  if (!byTarget) {
-    byTarget = new Map();
-    targetTemplates.set(targetKind, byTarget);
-  }
-  byTarget.set(targetId, templates.map((t) => ({
-    ...t,
-    definition: annotatedDefinition(targetKind, t.nameSuffix, t.definition),
-  })));
-  invalidateToolListCache();
-}
-
-/** Remove one target's template set. */
-export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId: string): void {
-  const byTarget = targetTemplates.get(targetKind);
-  if (!byTarget?.delete(targetId)) return;
-  invalidateToolListCache();
 }
 
 /**
@@ -664,18 +627,12 @@ export interface RegisteredToolGrant {
 
 /**
  * Every registered global tool and tool template with its grant declaration
- * (#2967), templates first by target kind. Target-scoped templates (plugins)
- * are listed under their kind once per target.
+ * (#2967), templates first by target kind.
  */
 export function listToolGrants(): RegisteredToolGrant[] {
   const out: RegisteredToolGrant[] = [];
   for (const [kind, templates] of toolTemplates) {
     for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.group && { group: t.group }), ...(t.definition.annotations && { annotations: { ...t.definition.annotations } }) });
-  }
-  for (const [kind, byTarget] of targetTemplates) {
-    for (const [, templates] of byTarget) {
-      for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.definition.annotations && { annotations: { ...t.definition.annotations } }) });
-    }
   }
   for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }), ...(tool.definition.annotations && { annotations: { ...tool.definition.annotations } }) });
   return out;
@@ -801,7 +758,7 @@ export function getConnectionToolCatalog(
 ): ConnectionToolCatalog {
   const binding: McpBinding = { agentId, targetId, targetKind, label: targetId };
   const templates = templatesFor(binding);
-  if (!templates || (targetKind === 'plugin' && !targetTemplates.get('plugin')?.has(targetId))) {
+  if (!templates) {
     return { state: 'unavailable', reason: 'tools_not_registered', tools: [] };
   }
   const deniedTools = targetKind === 'group-project'
@@ -995,12 +952,7 @@ export async function callTool(
 
   const bindings = bindingManager.getBindingsForAgent(agentId);
 
-  // A target with its own tool set (a plugin) names its tools
-  // `<kind>__<key>__<tool>`, where the plugin picks <tool>: match the
-  // binding's prefix rather than parsing, since <tool> may hold digits,
-  // hyphens or '__'.
-  const scopedMatch = matchScopedToolName(bindings, toolName);
-  const parsed = scopedMatch?.parsed ?? parseToolName(toolName);
+  const parsed = parseToolName(toolName);
   if (!parsed) {
     appLog('core:mcp', 'warn', 'Tool call: failed to parse tool name', {
       meta: { agentId, toolName },
@@ -1009,8 +961,7 @@ export async function callTool(
   }
 
   // Verify the agent has this binding
-  const binding = scopedMatch?.binding ?? bindings.find(b => {
-    if (targetTemplates.has(b.targetKind)) return false;
+  const binding = bindings.find(b => {
     const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse'
       : b.targetKind === 'group-project' ? 'group'
       : b.targetKind;
@@ -1169,24 +1120,6 @@ async function grantRefusal(agentId: string, toolName: string, check: Extract<Gr
   return { refusal: refuse('no_grant', check.message) };
 }
 
-function matchScopedToolName(
-  bindings: McpBinding[],
-  toolName: string,
-): { binding: McpBinding; parsed: { prefix: string; toolKey: string; suffix: string } } | null {
-  for (const b of bindings) {
-    if (!targetTemplates.has(b.targetKind)) continue;
-    const toolKey = buildToolKey(b);
-    const prefix = `${b.targetKind}__${toolKey}__`;
-    // The target must have this tool: a prefix alone is ambiguous when one
-    // target's key ends where another's begins ('acme' and 'acme__notes').
-    const suffix = toolName.slice(prefix.length);
-    if (toolName.startsWith(prefix) && templatesFor(b)?.some(t => t.nameSuffix === suffix)) {
-      return { binding: b, parsed: { prefix: b.targetKind, toolKey, suffix } };
-    }
-  }
-  return null;
-}
-
 // Admin membership lives in group-project metadata (not in bindingManager, so
 // its version counter doesn't change). Refresh scoped tool lists whenever a
 // group project changes so role-based gating takes effect immediately.
@@ -1206,7 +1139,6 @@ export function _resetForTesting(): void {
   handoffParticipantCheck = () => false;
   connectedToDispatcher = () => false;
   toolTemplates.clear();
-  targetTemplates.clear();
   globalTools.clear();
   toolListCache.clear();
 }

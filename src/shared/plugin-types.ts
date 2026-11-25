@@ -10,7 +10,7 @@ export interface Disposable {
 export interface PluginCommandDeclaration {
   id: string;
   title: string;
-  /** Default keyboard binding (e.g. "Meta+Shift+L"). Only available in API >= 0.6. */
+  /** Default keyboard binding (e.g. "Meta+Shift+L"). */
   defaultBinding?: string;
   /** When true, the hotkey fires even in text inputs. */
   global?: boolean;
@@ -29,7 +29,7 @@ export interface PluginStorageDeclaration {
   scope: 'project' | 'project-local' | 'global';
 }
 
-// ── Permission system (v0.5+) ──────────────────────────────────────────
+// ── Permission system ───────────────────────────────────────────────────
 export type PluginPermission =
   | 'files'
   | 'files.external'
@@ -60,9 +60,7 @@ export type PluginPermission =
   | 'workspace.shared'
   | 'workspace.cross-project'
   | 'canvas'
-  | 'annex'
-  | 'companion'
-  | 'mcp.tools';
+  | 'annex';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -95,8 +93,6 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'workspace.cross-project',
   'canvas',
   'annex',
-  'companion',
-  'mcp.tools',
 ] as const;
 
 // ── Permission risk levels ────────────────────────────────────────────
@@ -164,10 +160,6 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
   'workspace.watch': 'elevated',
   'workspace.cross-plugin': 'elevated',
   'workspace.shared': 'elevated',
-
-  // elevated — companion agent and MCP tool contribution
-  companion: 'elevated',
-  'mcp.tools': 'elevated',
 
   // dangerous — bypasses security boundaries
   'agent-config.permissions': 'dangerous',
@@ -238,8 +230,6 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'workspace.cross-project': 'Access workspace data scoped to other projects where the plugin is enabled',
   canvas: 'Register custom canvas widget types and query canvas widgets',
   annex: 'Declares this plugin as compatible with Annex remote control',
-  companion: 'Own a singleton companion agent with a persistent workspace (v0.9+)',
-  'mcp.tools': 'Contribute custom tools to the Clubhouse MCP server (v0.9+)',
 };
 
 export interface PluginHelpTopic {
@@ -351,20 +341,14 @@ export interface PluginContributes {
   canvasWidgets?: PluginCanvasWidgetDeclaration[];
 }
 
-/** Plugin kind: 'plugin' (default) has a main module; 'pack' is headless (no JS, manifest-only); 'workspace' owns a companion agent and workspace (v0.9+). */
-export type PluginKind = 'plugin' | 'pack' | 'workspace';
+/**
+ * Plugin kind: 'plugin' (default) has a main module; 'pack' is headless (no JS, manifest-only).
+ * The 'workspace' kind (companion agents) was removed in Clubhouse 1.0; a manifest that
+ * declares it loads as 'plugin', with a warning.
+ */
+export type PluginKind = 'plugin' | 'pack';
 
-/** Companion agent configuration for workspace plugins (v0.9+). */
-export interface PluginCompanionConfig {
-  /** Whether this plugin owns a companion agent. */
-  enabled: boolean;
-  /** Default model for the companion agent. */
-  defaultModel?: string;
-  /** System prompt for the companion agent. */
-  systemPrompt?: string;
-}
-
-/** MCP tool definition contributed by a plugin (v0.9+). */
+/** @deprecated MCP tool contribution was removed in Clubhouse 1.0. */
 export interface PluginMcpToolDefinition {
   /** Tool name suffix (will be prefixed with plugin namespace). */
   name: string;
@@ -381,17 +365,15 @@ export interface PluginManifest {
   description?: string;
   author?: string;
   engine: { api: number };
-  /** Plugin kind: 'plugin' (default), 'pack' (headless), or 'workspace' (companion agent, v0.9+). */
+  /** Plugin kind: 'plugin' (default) or 'pack' (headless). */
   kind?: PluginKind;
   scope: 'project' | 'app' | 'dual';
   main?: string;                     // path to main module relative to plugin dir
   contributes?: PluginContributes;
   settingsPanel?: 'declarative' | 'custom';
-  permissions?: PluginPermission[];         // required for v0.5+ plugins (optional for packs)
+  permissions?: PluginPermission[];         // required for plugins (optional for packs)
   externalRoots?: PluginExternalRoot[];     // requires 'files.external' permission
   allowedCommands?: string[];              // requires 'process' permission
-  /** Companion agent configuration (v0.9+, requires 'companion' permission). */
-  companion?: PluginCompanionConfig;
   /** When true, this plugin requires MCP to be enabled and will be hidden from settings and canvas when MCP is off. */
   requiresMcp?: boolean;
 }
@@ -492,7 +474,8 @@ export interface PluginOrchestratorInfo {
 export interface AgentInfo {
   id: string;
   name: string;
-  kind: 'durable' | 'quick' | 'companion';
+  /** 'companion' was removed with companion agents in Clubhouse 1.0. */
+  kind: 'durable' | 'quick';
   status: 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';
   color: string;
   icon?: string;
@@ -693,11 +676,11 @@ export interface AgentsAPI {
   readSessionTranscript(agentId: string, sessionId: string, offset: number, limit: number): Promise<import('./session-types').SessionTranscriptPage | null>;
   /** Get aggregated session summary (stats, files, tokens). */
   getSessionSummary(agentId: string, sessionId: string): Promise<import('./session-types').SessionSummary | null>;
-  /** Spawn or wake the plugin's companion agent. Returns the agent ID. Requires 'companion' permission. @since 0.9 */
+  /** @deprecated Companion agents were removed in Clubhouse 1.0. Always rejects. */
   spawnCompanion(options?: { model?: string; systemPrompt?: string }): Promise<string>;
-  /** Get the companion agent's current status. Requires 'companion' permission. @since 0.9 */
+  /** @deprecated Companion agents were removed in Clubhouse 1.0. Always rejects. */
   getCompanionStatus(): Promise<'sleeping' | 'waking' | 'active' | 'none'>;
-  /** Get the companion agent's workspace path. Requires 'companion' permission. @since 0.9 */
+  /** @deprecated Companion agents were removed in Clubhouse 1.0. Always rejects. */
   getCompanionWorkspace(): Promise<string>;
 }
 
@@ -975,7 +958,7 @@ export interface WorkspaceProjectAPI {
   watch(glob: string, cb: (events: FileEvent[]) => void): Disposable;
 }
 
-// ── Agent Config API (v0.6+) ──────────────────────────────────────────
+// ── Agent Config API ──────────────────────────────────────────────────
 
 /**
  * Options for cross-project agent config operations.
@@ -1155,7 +1138,10 @@ export interface ThemeAPI {
   getColor(token: string): string | null;
 }
 
-// ── MCP Tool Contribution API (v0.9+) ─────────────────────────────────
+// ── MCP Tool Contribution API (removed in Clubhouse 1.0) ──────────────
+// Kept so plugin code that calls it still compiles. Every method rejects
+// (or, for onToolCall, returns a no-op Disposable) and logs that it is no
+// longer supported.
 
 /** Result returned by a plugin MCP tool handler. */
 export interface PluginMcpToolResult {
@@ -1167,17 +1153,18 @@ export interface McpAPI {
   /**
    * Register tools that other agents can call via the Clubhouse MCP.
    * Tools are namespaced per plugin: `plugin__<pluginId>__<toolName>`.
-   * Requires 'mcp.tools' permission. @since 0.9
+   * @deprecated Removed in Clubhouse 1.0. Always rejects.
    */
   contributeTools(tools: PluginMcpToolDefinition[]): Promise<void>;
-  /** Remove all tools contributed by this plugin. @since 0.9 */
+  /** @deprecated Removed in Clubhouse 1.0. Always rejects. */
   removeTools(): Promise<void>;
-  /** List tools currently contributed by this plugin. @since 0.9 */
+  /** @deprecated Removed in Clubhouse 1.0. Always rejects. */
   listContributedTools(): Promise<string[]>;
   /**
    * Register a handler for incoming tool calls.
    * The handler receives the tool name (without namespace prefix) and arguments,
-   * and must return a result. @since 0.9
+   * and must return a result.
+   * @deprecated Removed in Clubhouse 1.0. Returns a Disposable that does nothing.
    */
   onToolCall(handler: (toolName: string, args: Record<string, unknown>) => Promise<PluginMcpToolResult>): Disposable;
 }
@@ -1346,7 +1333,7 @@ export interface PluginAPI {
   canvas: CanvasAPI;
   /** Window title management (v0.8+). */
   window: WindowAPI;
-  /** MCP tool contribution (v0.9+, requires 'mcp.tools' permission). */
+  /** @deprecated MCP tool contribution was removed in Clubhouse 1.0. Every method rejects. */
   mcp: McpAPI;
   /** Annex remote-control API (v0.9+, requires 'annex' permission). */
   annex: AnnexAPI;

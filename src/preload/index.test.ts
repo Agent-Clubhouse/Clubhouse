@@ -23,7 +23,6 @@ import { ipcRenderer } from 'electron';
 import { api } from './index';
 import { groupProject } from './groupProject';
 import { annexClient } from './annexClient';
-import { pluginMcp } from './pluginMcp';
 import { git } from './git';
 import { annex } from './annex';
 import { window as windowApi } from './window';
@@ -73,7 +72,6 @@ describe('preload IPC bridge', () => {
       blueprint,
       plugin,
       marketplace,
-      pluginMcp,
       log,
       processApi,
       app,

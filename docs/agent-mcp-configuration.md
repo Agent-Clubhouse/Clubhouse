@@ -65,7 +65,7 @@ not advertised as harmless reads. Browser tools, live provider model/preset
 queries, and helper creation with model validation are open-world;
 Clubhouse-internal tools are closed-world. `add_project` registers an existing
 local folder and may update its `.gitignore`; it does not clone a repository.
-Contributed plugin tools and the generic wire-tool dispatcher conservatively advertise
+Tools on a plugin wire and the generic wire-tool dispatcher conservatively advertise
 possible writes, destruction and open-world access.
 
 These are client-facing descriptions, not authorization. Tool-group, wire,

@@ -56,7 +56,7 @@ export function SatelliteStartPage({ activeHostId }: { activeHostId: string }) {
     const ids = new Set(list.map((p) => p.id));
     const map: Record<string, Agent[]> = {};
     for (const a of Object.values(remoteAgents)) {
-      if (ids.has(a.projectId) && a.kind !== 'companion') (map[a.projectId] ??= []).push(a);
+      if (ids.has(a.projectId)) (map[a.projectId] ??= []).push(a);
     }
     return map;
   }, [list, remoteAgents]);

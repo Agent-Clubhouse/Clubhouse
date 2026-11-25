@@ -202,9 +202,6 @@ export const IPC = {
     AGENT_SLEEPING: 'agent:agent-sleeping',
     /** (agentId, AgentSleepInfo): why an agent just went to sleep (#2104). */
     AGENT_SLEEP_REASON: 'agent:agent-sleep-reason',
-    SPAWN_COMPANION: 'agent:spawn-companion',
-    GET_COMPANION_STATUS: 'agent:get-companion-status',
-    GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
     GET_CONTEXT_WINDOW_OPTIONS: 'agent:get-context-window-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
@@ -723,22 +720,6 @@ export const IPC = {
     GET_TARGET_CANVASES: 'canvas-cmd:get-target-canvases',
     READ_FOR_NAVIGATION: 'canvas-cmd:read-for-navigation',
     RESOLVE_AGENT_TARGET: 'canvas-cmd:resolve-agent-target',
-  },
-  PLUGIN_MCP: {
-    /** Plugin host only, once per page load: the secret that issues tokens. */
-    CLAIM_ISSUER: 'plugin-mcp:claim-issuer',
-    ISSUE_TOKEN: 'plugin-mcp:issue-token',
-    REVOKE_TOKEN: 'plugin-mcp:revoke-token',
-    CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
-    REMOVE_TOOLS: 'plugin-mcp:remove-tools',
-    LIST_TOOLS: 'plugin-mcp:list-tools',
-    /** Main→renderer push: delivers tool call to plugin handler. Not an ipcMain.handle channel. */
-    TOOL_CALL: 'plugin-mcp:tool-call',
-    TOOL_RESULT: 'plugin-mcp:tool-result',
-    /** Plugin host only: may the agent behind a call the plugin is answering do this (D126, #3168)? */
-    CHECK_CALLER: 'plugin-mcp:check-caller',
-    /** Main→renderer push: main settled a call without the plugin's answer (timeout, tools removed). */
-    CALL_ENDED: 'plugin-mcp:call-ended',
   },
   BLUEPRINT: {
     LIST: 'blueprint:list',
