@@ -43,7 +43,8 @@ export function webviewUrlVerdict(url: string, opts: { subframe?: boolean } = {}
 }
 
 function logBlocked(verdict: Exclude<WebviewUrlVerdict, 'allow'>, stage: string, url: string): void {
-  const meta = { stage, src: url.slice(0, 200) };
+  // Protocol and host only: paths and queries can hold local file paths or tokens.
+  const meta = { stage, protocol: parse(url)?.protocol ?? 'invalid', host: parse(url)?.host ?? '' };
   if (verdict === 'file-off') {
     appLog('core:security', 'info', `Blocked file:// in a webview. Turn on ${BROWSER_FILE_SETTING_LOCATION} to load local files.`, { meta });
   } else {
@@ -109,6 +110,9 @@ export function applyWebviewGuestGuards(guest: WebContents): void {
     const isSameDocument = typeof event.isSameDocument === 'boolean'
       ? event.isSameDocument
       : legacyIsInPlace === true;
+    // Subframes are skipped: nothing in the app loads a guest subframe
+    // programmatically (the agent tools only navigate the main frame), and
+    // page-initiated subframe loads are checked by will-frame-navigate.
     if (!isMainFrame || isSameDocument) return;
     const verdict = webviewUrlVerdict(url);
     if (verdict === 'allow') return;
@@ -119,7 +123,7 @@ export function applyWebviewGuestGuards(guest: WebContents): void {
   // <webview> tags don't set allowpopups, so pages never got new windows.
   // Enforce that here instead of trusting the tag.
   guest.setWindowOpenHandler(({ url }) => {
-    appLog('core:security', 'warn', 'Blocked webview popup', { meta: { src: (url || '').slice(0, 200) } });
+    appLog('core:security', 'warn', 'Blocked webview popup', { meta: { protocol: parse(url)?.protocol ?? 'invalid', host: parse(url)?.host ?? '' } });
     return { action: 'deny' };
   });
 }

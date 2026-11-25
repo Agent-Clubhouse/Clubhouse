@@ -165,7 +165,15 @@ describe('BrowserTools', () => {
       loadURL.mockClear();
       const result = await callTool('agent-1', 'browser__widget_1__navigate', { url: 'https://example.com' });
       expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(`registration was refused (${reason})`);
       expect(loadURL).not.toHaveBeenCalled();
+    });
+
+    it('clears the refusal once the widget registers a real Browser webview', async () => {
+      registerWebview('widget-1', 1);
+      expect(registerWebview('widget-1', 42)).toBe(true);
+      const result = await callTool('agent-1', 'browser__widget_1__navigate', { url: 'https://example.com' });
+      expect(result.isError).toBeFalsy();
     });
 
     it('unregister detaches debugger if attached', () => {

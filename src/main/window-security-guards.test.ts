@@ -182,6 +182,17 @@ describe('applyWindowSecurityGuards', () => {
       expect(message).not.toContain('Settings > Security');
     });
 
+    it('logs only the protocol and host of a blocked URL, never its path or query', () => {
+      mockWin._trigger('will-attach-webview', { preventDefault: vi.fn() }, {}, { partition: BROWSER, src: 'file:///Users/someone/secret/plan.html?token=abc' });
+      mockWin._trigger('will-attach-webview', { preventDefault: vi.fn() }, {}, { partition: BROWSER, src: 'chrome://settings/passwords?q=bank' });
+      const logged = JSON.stringify(vi.mocked(appLog).mock.calls);
+      expect(logged).not.toContain('secret');
+      expect(logged).not.toContain('token');
+      expect(logged).not.toContain('bank');
+      expect(logged).toContain('"protocol":"file:"');
+      expect(logged).toContain('"host":"settings"');
+    });
+
     it.each(['about:blank', 'about:blank#top'])('allows %s as a first page', (src) => {
       const event = { preventDefault: vi.fn() };
       mockWin._trigger('will-attach-webview', event, {}, { partition: BROWSER, src });
