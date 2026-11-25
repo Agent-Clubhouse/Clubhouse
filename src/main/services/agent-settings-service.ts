@@ -1059,13 +1059,3 @@ export async function readMcpConfigs(projectPath: string): Promise<Record<string
   const settings = await readSettings(projectPath);
   return settings.mcpConfigs || {};
 }
-
-export async function writeMcpConfigs(projectPath: string, configs: Record<string, Record<string, string>>): Promise<void> {
-  await updateSettings(projectPath, (settings) => {
-    if (Object.keys(configs).length > 0) {
-      settings.mcpConfigs = configs;
-    } else {
-      delete settings.mcpConfigs;
-    }
-  });
-}

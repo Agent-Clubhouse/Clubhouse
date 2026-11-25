@@ -42,7 +42,7 @@ import { assertAgentGitName } from '../../shared/agent-name';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableWorktreeOptions } from '../../shared/types';
 import type { DurableCreationCopyOptions } from '../services/agent-config';
-import { cancelDurableCreation, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, startDurableCreation } from '../services/agent-creation';
+import { onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions } from '../services/agent-creation';
 
 export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -251,21 +251,6 @@ export function registerAgentHandlers(): void {
   // Asynchronous create (#2226): the id comes back at once, in the 'creating'
   // state; stages, including ready or failed, arrive on DURABLE_CREATION_EVENT.
   forwardCreationEvents();
-  ipcMain.handle(IPC.AGENT.START_DURABLE_CREATION, withValidatedArgs(
-    [stringArg(), objectArg<Record<string, unknown>>()],
-    async (_event, projectPath, rawParams) => {
-      const params = parseStartCreationParams(rawParams);
-      assertCreatable(projectPath);
-      const { agentId, config } = await startDurableCreation(projectPath, params);
-      return { agentId, config };
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.CANCEL_DURABLE_CREATION, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => cancelDurableCreation(projectPath, agentId),
-  ));
-
   ipcMain.handle(IPC.AGENT.DELETE_DURABLE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
@@ -567,20 +552,10 @@ export function registerAgentHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.AGENT.GET_HELPER_SUMMARY, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => orchestrationPolicy.getHelperSummary(projectPath, agentId),
-  ));
-
   ipcMain.handle(IPC.AGENT.RESOLVE_HELPER_ACCESS, withValidatedArgs(
     [stringArg(), stringArg(), stringArg({ optional: true })],
     async (_event, projectPath, agentId, helperProvider) =>
       orchestrationPolicy.resolveHelperLaunchSettings(projectPath, agentId, { helperProvider }),
-  ));
-
-  ipcMain.handle(IPC.AGENT.CHECK_HELPER_LIMIT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => orchestrationPolicy.checkHelperLimitFor(projectPath, agentId),
   ));
 
   // --- Orchestrator-based handlers ---
@@ -688,14 +663,6 @@ export function registerAgentHandlers(): void {
     return agentSystem.getAvailableOrchestrators();
   });
 
-  ipcMain.handle(IPC.AGENT.GET_TOOL_VERB, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    async (_event, toolName, projectPath, orchestrator) => {
-      const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-      return provider.toolVerb(toolName) || `Using ${toolName}`;
-    },
-  ));
-
   ipcMain.handle(IPC.AGENT.GET_SUMMARY_INSTRUCTION, withValidatedArgs(
     [stringArg()],
     async (_event, agentId) => {
@@ -728,13 +695,6 @@ export function registerAgentHandlers(): void {
     [stringArg(), numberArg({ integer: true, min: 0 })],
     async (_event, agentId, cursor) => {
       return headlessManager.readTranscriptFrom(agentId, cursor);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.IS_HEADLESS_AGENT, withValidatedArgs(
-    [stringArg()],
-    async (_event, agentId) => {
-      return agentSystem.isHeadlessAgent(agentId);
     },
   ));
 

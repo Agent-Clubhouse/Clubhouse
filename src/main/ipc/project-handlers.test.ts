@@ -67,8 +67,6 @@ vi.mock('../services/agent-settings-service', () => ({
   writeMcpCatalog: vi.fn(async () => undefined),
   readDefaultMcps: vi.fn(async () => []),
   writeDefaultMcps: vi.fn(async () => undefined),
-  readMcpConfigs: vi.fn(async () => ({})),
-  writeMcpConfigs: vi.fn(async () => undefined),
   readWrapperCatalogSnapshot: vi.fn(async () => undefined),
   writeWrapperCatalogSnapshot: vi.fn(async () => undefined),
 }));
@@ -168,8 +166,6 @@ describe('project-handlers', () => {
       IPC.PROJECT.WRITE_MCP_CATALOG,
       IPC.PROJECT.READ_DEFAULT_MCPS,
       IPC.PROJECT.WRITE_DEFAULT_MCPS,
-      IPC.PROJECT.READ_MCP_CONFIGS,
-      IPC.PROJECT.WRITE_MCP_CONFIGS,
       IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT,
       IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT,
     ];

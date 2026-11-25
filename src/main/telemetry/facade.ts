@@ -43,7 +43,6 @@ import {
   type TelemetryRuntime,
   type EventOptions,
   type LocalTelemetrySink,
-  type TraceIds,
 } from './types';
 
 export const PENDING_BUFFER_CAP = 500;
@@ -166,20 +165,6 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
     else done();
     return result;
   };
-}
-
-/**
- * The active span's trace and span ids: the exported trace's while the SDK
- * is running, else the local recording's.
- */
-export function currentTraceIds(): TraceIds | undefined {
-  // Called from appLog on every line; a logger must never throw, and runtimes
-  // built before activeTraceIds existed (test fakes) may not have it.
-  try {
-    return runtime?.activeTraceIds?.() ?? local?.activeTraceIds();
-  } catch {
-    return undefined;
-  }
 }
 
 /** The most recently started root flow still running, if any. */
