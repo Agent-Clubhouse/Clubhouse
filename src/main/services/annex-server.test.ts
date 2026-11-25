@@ -2799,7 +2799,9 @@ describe('annex-server', () => {
         await vi.waitFor(() => expect(vi.mocked(ptyManagerModule.spawnShell).mock.settledResults[0]?.type).toBe('rejected'));
         expect(shells.procs.has('lost-ack')).toBe(false);
         expect(annexServer._testing.detachedShells.has('lost-ack')).toBe(false);
-        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        // Fake Date with the timers: detachShell reads Date.now() twice (the deadline, then the delay to it),
+        // so a real clock that ticks between the reads arms the timer a millisecond short of the grace.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         drop(a);
         shells.exit('exits', 130);
         expect(annexServer._testing.detachedShells.has('exits')).toBe(false);
