@@ -1,6 +1,6 @@
 # Antigravity CLI
 
-Antigravity CLI is Google's `agy` command line agent. Clubhouse runs it in a terminal (the CLI view). Chat through its Agent Client Protocol (ACP) server is built but not offered yet: it turns on once its remaining checks pass. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
+Antigravity CLI is Google's `agy` command line agent. Clubhouse runs it in a terminal (the CLI view). Chat through its Agent Client Protocol (ACP) server is built but not offered yet. It turns on once its remaining checks pass. It is experimental and off by default. It never becomes your default agent provider, and the Dispatcher does not offer it.
 
 This page paraphrases Google's documentation as read on 2026-11-23. Google changes these pages without dated notes, so follow the links when a detail matters to you.
 
@@ -33,7 +33,7 @@ Google's pages say different things about third-party clients, and Clubhouse doe
 - The [FAQ](https://antigravity.google/docs/faq/) says using third-party software to access Antigravity breaks Google's Terms of Service and can lead to account suspension or termination, and recommends a Gemini Enterprise or Google AI Studio API key for third-party coding agents.
 - The [ACP guide](https://antigravity.google/docs/ide/extensions/acp/) says any ACP client can launch `agy acp` in the project folder, and that it reuses the sign-in cached by an interactive `agy` session.
 
-Google has since told the Clubhouse maintainers that the restriction applies when an app replaces the Antigravity harness, not when it puts its own window around your own `agy`. On that basis the CLI view, and chat through `agy acp` once it is offered, are the ways Clubhouse runs Antigravity. Clubhouse does not use headless mode. This was recorded on 2026-11-24; it is not a statement from Google's pages.
+Clubhouse runs your own `agy`. Chat through `agy acp` is the primary way, once it is offered, and the CLI view is the fallback. Clubhouse does not use headless mode.
 
 Clubhouse makes no promise about which plans, models or quotas you can use here. Read both pages and decide for yourself. Clubhouse does not rotate or switch accounts.
 
