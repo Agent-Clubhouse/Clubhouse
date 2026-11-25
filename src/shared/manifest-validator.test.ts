@@ -167,7 +167,7 @@ describe('validateManifest', () => {
 
   it('loads a workspace plugin with companion and mcp.tools as a normal plugin, with one warning', () => {
     const m = validManifest({
-      kind: 'workspace', scope: 'app', engine: { api: 0.9 },
+      kind: 'workspace', engine: { api: 0.9 },
       permissions: ['files', 'companion', 'mcp.tools'],
       companion: { enabled: true, defaultModel: 'opus' },
     });
