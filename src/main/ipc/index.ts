@@ -1,4 +1,3 @@
-import { app } from 'electron';
 import { registerContentContextMenu } from './content-context-menu-handlers';
 import { enableSettingsAudit } from '../services/settings-audit';
 import { registerPtyHandlers } from './pty-handlers';
@@ -39,7 +38,7 @@ import { autoDetectDefaults } from '../services/orchestrator-settings';
 import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
 import { ANTIGRAVITY_EXPERIMENTAL_FLAG } from '../../shared/providers/antigravity';
 import * as logService from '../services/log-service';
-import { getLogDir, runStartupRetention } from '../telemetry/local-control';
+import { runStartupRetention } from '../telemetry/local-control';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
@@ -50,7 +49,7 @@ export function registerAllHandlers(): void {
   registerBuiltinProviders({ antigravity });
   // Chat drivers only make chat available; the experimental Chat flag still decides.
   // Antigravity's driver exists only with its provider (#3797).
-  registerBuiltinChatDrivers({ antigravity, logDir: getLogDir(), clientVersion: app.getVersion() });
+  registerBuiltinChatDrivers({ antigravity });
 
   // Auto-detect available CLIs on first run so users only see providers
   // they actually have installed.  Fire-and-forget: store.save() updates

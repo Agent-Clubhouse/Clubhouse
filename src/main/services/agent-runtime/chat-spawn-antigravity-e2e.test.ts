@@ -3,8 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { ChatDriverId } from '../../../shared/chat';
-import { ANTIGRAVITY_CHAT_DRIVER_ID, ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
+import { ANTIGRAVITY_PROVIDER_ID } from '../../../shared/providers/antigravity';
 
 vi.mock('../../util/shell', async (importActual) => ({
   ...await importActual<typeof import('../../util/shell')>(),
