@@ -45,6 +45,9 @@ export function applyWindowSecurityGuards(win: BrowserWindow, entryUrl: string):
     openExternally(url);
   });
 
+  // App windows have no subframes today, so isMainFrame isn't checked: a
+  // future iframe's redirects would be held to the same entry-only rule,
+  // which fails closed (blocks) rather than open.
   win.webContents.on('will-redirect', (event, url) => {
     if (isAllowedNavigation(url, entryUrl)) return;
     event.preventDefault();

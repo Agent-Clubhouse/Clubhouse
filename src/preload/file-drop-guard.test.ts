@@ -33,8 +33,47 @@ describe('installFileDropGuard (#3881)', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it.each(['dragover', 'drop'] as const)('leaves a %s without files alone', (type) => {
-    const event = dragEvent(type, ['text/plain', 'text/uri-list']);
+  it.each(['dragover', 'drop'] as const)('cancels a link %s over a surface with no handler', (type) => {
+    const event = dragEvent(type, ['text/uri-list', 'text/plain']);
+    plain.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('still delivers a link drop to a surface that takes links', () => {
+    const take = vi.fn();
+    surface.addEventListener('drop', take);
+    const event = dragEvent('drop', ['text/uri-list']);
+    surface.dispatchEvent(event);
+    expect(take).toHaveBeenCalledWith(event);
+  });
+
+  it.each([
+    () => document.createElement('textarea'),
+    () => document.createElement('input'),
+    () => { const d = document.createElement('div'); d.setAttribute('contenteditable', 'true'); return d; },
+    () => { const d = document.createElement('div'); d.setAttribute('contenteditable', 'true'); const s = document.createElement('span'); d.append(s); return s; },
+  ])('leaves a link drop over an editable field to the browser, which inserts it as text (%#)', (make) => {
+    const el = make();
+    document.body.append(el.parentElement && el.parentElement !== document.body ? el.parentElement : el);
+    for (const type of ['dragover', 'drop'] as const) {
+      const event = dragEvent(type, ['text/uri-list', 'text/plain']);
+      el.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    (el.parentElement && el.parentElement !== document.body ? el.parentElement : el).remove();
+  });
+
+  it('still cancels a file drop over an editable field', () => {
+    const area = document.createElement('textarea');
+    document.body.append(area);
+    const event = dragEvent('drop', ['Files']);
+    area.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    area.remove();
+  });
+
+  it.each(['dragover', 'drop'] as const)('leaves a plain-text or internal %s alone', (type) => {
+    const event = dragEvent(type, ['text/plain', 'application/x-clubhouse-agent']);
     plain.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
   });
