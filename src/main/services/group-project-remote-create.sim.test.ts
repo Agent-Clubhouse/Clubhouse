@@ -348,6 +348,14 @@ describe('creating a group project on another computer (#3547)', () => {
       const [request] = await waitingOn(B);
       const waitingFile = await fsp.readFile(answersFile(B), 'utf-8');
       await answer(B, request.requestId, true);
+      // Allow records the create, then starts the group and records that, in the background. Wait for that
+      // last write: a late one would replace the stale file below, and the crash this simulates (the create
+      // made, its answer not saved) would be lost, so recovery would find nothing to start (#3824).
+      await vi.waitFor(async () => {
+        const { items } = JSON.parse(await fsp.readFile(answersFile(B), 'utf-8')) as { items: Array<{ answer: { status: string }; started?: boolean }> };
+        expect(items.some((e) => e.answer.status === 'created')).toBe(true);
+        expect(items.some((e) => e.started === false)).toBe(false);
+      });
       await fsp.writeFile(answersFile(B), waitingFile);
       startedOn.clear();
       await unload(B);
