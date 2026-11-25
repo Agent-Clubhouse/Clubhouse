@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import { existsSync, promises as fs, rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -102,6 +102,7 @@ import { _setManagedAgentsForTesting, activationFor, deliverForSpawn, forgetDeli
 import { createManagedAgentsService } from '../managed-agents/service';
 import { createManagedStateStore } from '../managed-agents/state-store';
 import { createAssetCatalogStore } from '../asset-catalog/store';
+import { BUILTINS_SEED_BUDGET_MS, buildBuiltinsSeed, copyBuiltinsSeed, removeBuiltinsSeed } from '../../../../test/managed-builtins-seed';
 import { discoverManagedAssets } from '../managed-agents/discovery';
 import { prepareManagedAssetImport } from '../managed-agents/imports';
 import { withSettingsSurface } from '../settings-audit';
@@ -118,6 +119,12 @@ let root: string, cwd: string, settingsPath: string, localPath: string, agent: D
 let handlers: Map<string, (...args: unknown[]) => Promise<unknown>>;
 const projectMap = { inherited: { command: 'never-run-project' } };
 const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
+
+// Installing the built-ins is dozens of fsync'd writes (slow on hosted Windows): once per file, copied into
+// each test that installs them, so ensureBuiltins finds them current.
+let seed: string;
+beforeAll(async () => { seed = await buildBuiltinsSeed('clubhouse-2849'); }, BUILTINS_SEED_BUDGET_MS);
+afterAll(() => { removeBuiltinsSeed(seed); });
 
 beforeEach(async () => {
   lifetime.current?.assertRetired();
@@ -206,6 +213,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
 
   describe('#2855 managed import → add → restart → remove (fixture SDK, no paid probe)', () => {
     it('runs real stop and spawn with their owned sleep bookkeeping and no provider probe', async () => {
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -252,6 +260,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     describe('inner driver drift with a prepared running agent', () => {
       let service: ReturnType<typeof createManagedAgentsService>;
       beforeEach(async () => {
+        copyBuiltinsSeed(seed, root);
         service = createManagedAgentsService({
           catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
           state: createManagedStateStore(path.join(root, 'managed')),
@@ -289,6 +298,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     });
 
     it('accepts only owned last-sleep bookkeeping across its actual chat stop and new driver start', async () => {
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -314,6 +324,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
 
     it('keeps an unrelated MCP, conversation, identity and other-provider bytes through import, migration and removal', async () => {
       const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -396,6 +407,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
 
     describe('restart outcomes with a prepared live fixture', () => {
       beforeEach(async () => {
+        copyBuiltinsSeed(seed, root);
         const service = createManagedAgentsService({
           catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
           state: createManagedStateStore(path.join(root, 'managed')),
@@ -428,6 +440,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     describe('restart authorization with a prepared live fixture', () => {
       let service: ReturnType<typeof createManagedAgentsService>;
       beforeEach(async () => {
+        copyBuiltinsSeed(seed, root);
         service = createManagedAgentsService({
           catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
           state: createManagedStateStore(path.join(root, 'managed')),
@@ -474,6 +487,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     });
 
     it('does not spawn or record completion when stop returns without stopping its runtime', async () => {
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -492,6 +506,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     });
 
     it('does not record completion when a cancelled start returns without a new runtime', async () => {
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -509,6 +524,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     });
 
     it('does not start a target made plain during the provider lookup', async () => {
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -526,6 +542,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     });
 
     it.each(['before restart', 'during authorization preparation'] as const)('does not resume another provider conversation when the effective default changes %s', async (stage) => {
+      copyBuiltinsSeed(seed, root);
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
