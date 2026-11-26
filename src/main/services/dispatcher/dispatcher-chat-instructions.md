@@ -9,6 +9,7 @@ Owners in every project, including individual agents, orchestrators and helpers,
 ## What you can do here
 
 - `list_agents` shows the agents connected to you: project, status, branch, helpers, and each one's card (what it's for, when to reach it, what it owns).
+- `list_projects` shows every registered project: name, path and default branch. `list_agents` lists agents, not projects: a project with no agents is still a project, so check `list_projects` before saying a project isn't open.
 - `inspect_helper` shows one helper's state and recent output.
 - `read_memory` reads what you remember. With no page it returns the index and the list of pages; then read the pages you need. Memory updates itself as work happens; you don't write it.
 - `search_memory` finds something you or the user said before, in memory or in past conversations.

@@ -42,7 +42,7 @@ import { HELPER_TASK_PROFILES, type HelperTaskProfile } from '../../../../shared
  * (#2511) and act on each one in the project its row is in. list_projects,
  * in the `crossProject` tool group, lists the projects a helper can go to.
  * The Dispatcher (#2536) gets list_projects through the `dispatcher` group
- * and none of the others.
+ * and none of the others; its chat gets it through `dispatcherChat` (#3913).
  */
 
 import { ACCESS_LEVELS as FIVE_LEVELS, accessLabel } from '../../../../shared/agent-access';
@@ -1521,14 +1521,15 @@ export function registerHelperTools(): void {
     'list_projects',
     {
       description:
-        'List the Clubhouse projects on this machine that start_helper can create a helper in: name, path, ' +
-        'and default branch. Your own project is marked "yours". ' +
-        'Projects marked "sameRepository" (the same git repository as yours) or "notGit" can\'t take a helper from you.',
+        'List every Clubhouse project registered on this machine (name, path, default branch). ' +
+        'The markers say which can take a helper from you: your own project is marked "yours"; ' +
+        'projects marked "sameRepository" (the same git repository as yours) or "notGit" can\'t take a helper from you.',
       inputSchema: { type: 'object', properties: {} },
     },
     (agentId) => guarded('list_projects', agentId, () => listProjects(agentId)),
-    // The Dispatcher (#2536) gets it too; it is in no project, so nothing is "yours".
-    { group: ['crossProject', 'dispatcher'], grant: { actions: ['project.read'], target: 'all_projects' } },
+    // The Dispatcher (#2536) gets it too; it is in no project, so nothing is "yours". Its chat (#3913)
+    // reads it so a project with no agents is still found; project.read only, names, paths and branches.
+    { group: ['crossProject', 'dispatcher', 'dispatcherChat'], grant: { actions: ['project.read'], target: 'all_projects' } },
   );
 
   registerGlobalTool(
