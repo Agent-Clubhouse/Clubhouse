@@ -80,6 +80,15 @@ describe('Dispatcher debug gate', () => {
     expect(isDispatcherDebugOn()).toBe(false);
   });
 
+  it('turns off when the file becomes unreadable after it was read as on', () => {
+    write('experimental-settings.json', { [DISPATCHER_DEBUG_FLAG]: true });
+    expect(isDispatcherDebugOn()).toBe(true);
+    // The store keeps its cached "on"; no reset, as in a running app.
+    fs.writeFileSync(path.join(h.userData, 'experimental-settings.json'), '{ "dispatcherDebug": tr');
+    expect(isDispatcherDebugOn()).toBe(false);
+    expect(() => assertDispatcherDebugOn()).toThrow('dispatcher_inspector:debug_off');
+  });
+
   it('accepts only a real true', () => {
     write('experimental-settings.json', { [DISPATCHER_DEBUG_FLAG]: 'true' });
     expect(isDispatcherDebugOn()).toBe(false);

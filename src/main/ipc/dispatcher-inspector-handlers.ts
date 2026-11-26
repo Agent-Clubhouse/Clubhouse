@@ -11,11 +11,11 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { DispatcherRole } from '../../shared/dispatcher-behavior';
+import type { InspectorRoleSession } from '../../shared/dispatcher-inspector';
 import { getAllProviders } from '../orchestrators';
 import { appLog } from '../services/log-service';
-import {
-  defaultDispatcherOrchestrator, getDispatcherChatConfig, getDispatcherState,
-} from '../services/dispatcher/dispatcher-service';
+import { getDispatcherRoleAgent } from '../services/dispatcher/dispatcher-service';
+import { agentRegistry } from '../services/agent-registry';
 import { getDispatcherChatPath, getDispatcherMemoryPath, getDispatcherPath } from '../services/dispatcher/dispatcher-paths';
 import {
   assertDispatcherDebugOn, inspectInstructions, inspectMemoryAccess, inspectMemoryIndex, inspectMemoryPage,
@@ -24,11 +24,22 @@ import {
 
 const NS = 'core:dispatcher';
 
-/** The CLI a role runs on: its saved one, as the next start writes it. Null before that agent exists. */
-function activeProvider(role: DispatcherRole): string | null {
-  const agent = role === 'work' ? getDispatcherState().config : getDispatcherChatConfig();
-  if (!agent) return null;
-  return agent.orchestrator ?? defaultDispatcherOrchestrator() ?? null;
+/**
+ * A role's CLIs and session start. Saved is what its record names (what the
+ * next start writes); running is what the agent registry holds for its live
+ * session, with the time that registration was made at its spawn. Main has
+ * no other session start: nothing is guessed, so a role that isn't running
+ * has null for both.
+ */
+export function roleSession(role: DispatcherRole): InspectorRoleSession {
+  const agent = getDispatcherRoleAgent(role);
+  if (!agent) return { saved: null, running: null, startedAt: null };
+  const registration = agentRegistry.get(agent.agentId);
+  return {
+    saved: agent.savedProvider,
+    running: registration?.orchestrator ?? null,
+    startedAt: registration ? agentRegistry.registeredAt(agent.agentId) : null,
+  };
 }
 
 export function inspectorContext(): InspectorContext {
@@ -36,7 +47,7 @@ export function inspectorContext(): InspectorContext {
     folders: { work: getDispatcherPath(), chat: getDispatcherChatPath() },
     memoryRoot: getDispatcherMemoryPath(),
     providers: getAllProviders(),
-    activeProvider,
+    session: roleSession,
   };
 }
 

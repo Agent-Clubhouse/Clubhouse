@@ -14,8 +14,12 @@ export type InspectorFileError =
   | 'not_file'
   /** Bigger than the inspector reads at all. */
   | 'too_large'
-  /** It changed while being read. */
+  /** It changed while being read (another file was put in its place). */
   | 'changed'
+  /** It has more than one hard link, so its content may be a file outside the folder. */
+  | 'hard_link'
+  /** The path a CLI names for it is outside the Dispatcher's folder, so it isn't read. */
+  | 'outside'
   /** Anything else the file system refused. */
   | 'unreadable';
 
@@ -32,18 +36,41 @@ export interface InspectorFile {
   error?: InspectorFileError;
 }
 
+/**
+ * Which CLI a role uses (#3912). `saved` is what its record names, so what the
+ * next start writes; `running` is what its live session started on. They
+ * differ while a CLI switch waits for the next start.
+ */
+export interface InspectorRoleSession {
+  /** Null before that agent exists. */
+  saved: string | null;
+  /** Null while it isn't running. */
+  running: string | null;
+  /**
+   * When the running session was spawned in this app run (ms), or null while it
+   * isn't running. Memory read or written at or after it was "loaded this
+   * session". A conversation resumed across a respawn counts from the respawn.
+   */
+  startedAt: number | null;
+}
+
+export type InspectorSessions = Record<DispatcherRole, InspectorRoleSession>;
+
 /** One CLI's instructions file for one role. */
 export interface InspectorInstructionFile extends InspectorFile {
   role: DispatcherRole;
   /** The CLI's provider id. */
   provider: string;
-  /** The CLI this role runs on now. Every other CLI's file is inactive: it isn't read by a start. */
+  /** The running session's CLI, or the saved one while the role isn't running: the file it works from. */
   active: boolean;
+  /** The CLI the role's record names: the next start writes this file. */
+  saved: boolean;
+  /** The CLI the live session started on. */
+  running: boolean;
 }
 
 export interface InspectorInstructions {
-  /** The CLI each role runs on, or null before that agent exists. */
-  active: Record<DispatcherRole, string | null>;
+  sessions: InspectorSessions;
   files: InspectorInstructionFile[];
 }
 
@@ -65,6 +92,8 @@ export interface InspectorSkills {
   skills: InspectorSkill[];
   /** More folders than the list holds. */
   truncated?: boolean;
+  /** A role whose skills folder couldn't be listed; the other role is still listed. */
+  errors?: Partial<Record<DispatcherRole, InspectorFileError>>;
 }
 
 /** A memory page in the listing. */
@@ -78,7 +107,9 @@ export interface InspectorMemoryPageEntry {
 export interface InspectorMemoryIndex {
   /** False when the memory folder isn't there yet. */
   exists: boolean;
-  /** index.md, cut to the memory reader's caps. */
+  /** False when there is no index.md; `text` is then empty. */
+  indexExists: boolean;
+  /** index.md, cut to the memory reader's caps (the 8 KB index cap, then 64,000 chars). */
   text: string;
   truncated?: boolean;
   pages: InspectorMemoryPageEntry[];
@@ -107,6 +138,8 @@ export interface InspectorMemoryAccessEntry {
 }
 
 export interface InspectorMemoryAccess {
+  /** Each role's CLI and session start, to tell what was loaded this session. Both roles share one record. */
+  sessions: InspectorSessions;
   /** Most recent first, by last read or write. */
   entries: InspectorMemoryAccessEntry[];
   /** Pages in the record in all. */

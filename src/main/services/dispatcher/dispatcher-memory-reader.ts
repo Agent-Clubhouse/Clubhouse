@@ -8,7 +8,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { getDispatcherMemoryPath } from './dispatcher-paths';
-import { capIndex, memoryPaths, readIfExists, readIndex, recordMemoryRead, MEMORY_HISTORY_DIR } from './dispatcher-memory';
+import { capIndex, readIndex, recordMemoryRead, MEMORY_HISTORY_DIR } from './dispatcher-memory';
 
 /** One page's text at most; memory pages are meant to be short. */
 export const MAX_MEMORY_PAGE_CHARS = 64_000;
@@ -36,7 +36,8 @@ async function exists(p: string): Promise<boolean> {
   return fsp.access(p).then(() => true, () => false);
 }
 
-async function listPages(root: string): Promise<{ pages: string[]; truncated: boolean }> {
+/** The memory pages under a real memory folder, links never followed, at most MAX_MEMORY_PAGES_LISTED. */
+export async function listMemoryPages(root: string): Promise<{ pages: string[]; truncated: boolean }> {
   const pages: string[] = [];
   const walk = async (dir: string): Promise<boolean> => {
     const entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -59,7 +60,8 @@ async function listPages(root: string): Promise<{ pages: string[]; truncated: bo
   return { pages, truncated: !complete };
 }
 
-function bounded(text: string): Pick<MemoryRead, 'text' | 'truncated'> {
+/** A page's text cut to MAX_MEMORY_PAGE_CHARS. */
+export function boundedMemoryText(text: string): Pick<MemoryRead, 'text' | 'truncated'> {
   return text.length <= MAX_MEMORY_PAGE_CHARS ? { text } : { text: text.slice(0, MAX_MEMORY_PAGE_CHARS), truncated: true };
 }
 
@@ -95,37 +97,27 @@ export async function resolveMemoryPage(page: string, root: string, writing = fa
   return current;
 }
 
-export interface MemoryReadOptions {
-  /**
-   * Record the read in the access record (default). The debug inspector
-   * (#3912) passes false: looking at memory must not write anything or show
-   * up as the Dispatcher having read a page.
-   */
-  record?: boolean;
-}
-
 /**
  * Read one memory page, or with none, the index and the list of pages. A page
  * is a `.md` path relative to the memory folder, such as `agents/webapp-lead.md`.
  */
-export async function readDispatcherMemory(page?: string, root: string = getDispatcherMemoryPath(), options: MemoryReadOptions = {}): Promise<MemoryRead> {
-  const record = options.record !== false;
+export async function readDispatcherMemory(page?: string, root: string = getDispatcherMemoryPath()): Promise<MemoryRead> {
   if (!(await exists(root))) return { text: 'There is no memory yet.', pages: [] };
   const realRoot = await fsp.realpath(root);
 
   if (page === undefined || page.trim() === '' || page.trim() === 'index.md') {
-    const { pages, truncated } = await listPages(realRoot);
+    const { pages, truncated } = await listMemoryPages(realRoot);
     // The index as a start loads it, cut to its cap; never created from here.
     // Validate index.md too: it must not be a link out of memory.
     await resolveMemoryPage('index.md', realRoot, true);
-    const index = record ? await readIndex(realRoot) : (await readIfExists(memoryPaths(realRoot).index)) ?? '';
+    const index = await readIndex(realRoot);
     const text = index ? capIndex(index) : 'There is no index yet.';
-    return { page: 'index.md', ...bounded(text), pages, ...(truncated && { pagesTruncated: true }) };
+    return { page: 'index.md', ...boundedMemoryText(text), pages, ...(truncated && { pagesTruncated: true }) };
   }
 
   const target = await resolveMemoryPage(page, realRoot);
   const wanted = path.relative(realRoot, target).split(path.sep).join('/');
   const text = await fsp.readFile(target, 'utf-8');
-  if (record) await recordMemoryRead(wanted, realRoot);
-  return { page: wanted, ...bounded(text) };
+  await recordMemoryRead(wanted, realRoot);
+  return { page: wanted, ...boundedMemoryText(text) };
 }

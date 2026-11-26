@@ -63,8 +63,22 @@ class AgentRegistry {
     for (const listener of [...this.authListeners]) listener(agentId);
   }
 
+  /** When each registration was made, keyed by the registration itself so a respawn gets its own time. */
+  private readonly registeredTimes = new WeakMap<AgentRegistration, number>();
+
   register(agentId: string, registration: AgentRegistration): void {
     this.registrations.set(agentId, registration);
+    this.registeredTimes.set(registration, Date.now());
+  }
+
+  /**
+   * When the agent's current registration was made (its spawn, in this app
+   * run), or null when it isn't registered. Read-only; the Dispatcher
+   * inspector (#3912) uses it as the session start.
+   */
+  registeredAt(agentId: string): number | null {
+    const registration = this.registrations.get(agentId);
+    return registration ? this.registeredTimes.get(registration) ?? null : null;
   }
 
   get(agentId: string): AgentRegistration | undefined {
