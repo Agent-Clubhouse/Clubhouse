@@ -11,6 +11,10 @@ import type { DispatcherTeaching } from '../shared/dispatcher-teaching';
 import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 import type { DispatcherLeadState } from '../shared/dispatcher-lead';
 import type { DispatcherPresenceSnapshot } from '../shared/dispatcher-presence';
+import type {
+  InspectorFile, InspectorInstructions, InspectorMemoryAccess, InspectorMemoryIndex, InspectorMemoryPage, InspectorSkills,
+} from '../shared/dispatcher-inspector';
+import type { DispatcherRole } from '../shared/dispatcher-behavior';
 
 export const dispatcher = {
   dispatcher: {
@@ -95,6 +99,19 @@ export const dispatcher = {
       return () => {
         ipcRenderer.removeListener(IPC.DISPATCHER.AGENT_CARD_CHANGED, listener);
       };
+    },
+    /**
+     * The Dispatcher inspector (#3912): read-only, local only. Main refuses each
+     * call unless Dispatcher debug is on, so these reject with
+     * `dispatcher_inspector:debug_off` otherwise (always, in a stable build).
+     */
+    inspector: {
+      instructions: (): Promise<InspectorInstructions> => ipcRenderer.invoke(IPC.DISPATCHER.INSPECT_INSTRUCTIONS),
+      skills: (): Promise<InspectorSkills> => ipcRenderer.invoke(IPC.DISPATCHER.INSPECT_SKILLS),
+      skill: (role: DispatcherRole, name: string): Promise<InspectorFile> => ipcRenderer.invoke(IPC.DISPATCHER.INSPECT_SKILL, role, name),
+      memoryIndex: (): Promise<InspectorMemoryIndex> => ipcRenderer.invoke(IPC.DISPATCHER.INSPECT_MEMORY_INDEX),
+      memoryPage: (page: string): Promise<InspectorMemoryPage> => ipcRenderer.invoke(IPC.DISPATCHER.INSPECT_MEMORY_PAGE, page),
+      memoryAccess: (): Promise<InspectorMemoryAccess> => ipcRenderer.invoke(IPC.DISPATCHER.INSPECT_MEMORY_ACCESS),
     },
   },
 };

@@ -104,6 +104,9 @@ async function clearRunning(agentId: string): Promise<void> {
   const runtime = getAgentRuntime(agentId);
   if (!runtime) throw new Error('The Dispatcher\'s conversation can\'t be cleared right now.');
   await runtime.clearContext();
+  // The runtimes mark this too; marked here as well so every Dispatcher clear (Clear chat, Start fresh)
+  // moves the inspector's session start whatever runtime it is on.
+  agentRegistry.markConversationStart(agentId);
 }
 
 export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<ClearChatResult> {

@@ -36,7 +36,8 @@ async function exists(p: string): Promise<boolean> {
   return fsp.access(p).then(() => true, () => false);
 }
 
-async function listPages(root: string): Promise<{ pages: string[]; truncated: boolean }> {
+/** The memory pages under a real memory folder, links never followed, at most MAX_MEMORY_PAGES_LISTED. */
+export async function listMemoryPages(root: string): Promise<{ pages: string[]; truncated: boolean }> {
   const pages: string[] = [];
   const walk = async (dir: string): Promise<boolean> => {
     const entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -59,7 +60,8 @@ async function listPages(root: string): Promise<{ pages: string[]; truncated: bo
   return { pages, truncated: !complete };
 }
 
-function bounded(text: string): Pick<MemoryRead, 'text' | 'truncated'> {
+/** A page's text cut to MAX_MEMORY_PAGE_CHARS. */
+export function boundedMemoryText(text: string): Pick<MemoryRead, 'text' | 'truncated'> {
   return text.length <= MAX_MEMORY_PAGE_CHARS ? { text } : { text: text.slice(0, MAX_MEMORY_PAGE_CHARS), truncated: true };
 }
 
@@ -104,18 +106,18 @@ export async function readDispatcherMemory(page?: string, root: string = getDisp
   const realRoot = await fsp.realpath(root);
 
   if (page === undefined || page.trim() === '' || page.trim() === 'index.md') {
-    const { pages, truncated } = await listPages(realRoot);
+    const { pages, truncated } = await listMemoryPages(realRoot);
     // The index as a start loads it, cut to its cap; never created from here.
     // Validate index.md too: it must not be a link out of memory.
     await resolveMemoryPage('index.md', realRoot, true);
     const index = await readIndex(realRoot);
     const text = index ? capIndex(index) : 'There is no index yet.';
-    return { page: 'index.md', ...bounded(text), pages, ...(truncated && { pagesTruncated: true }) };
+    return { page: 'index.md', ...boundedMemoryText(text), pages, ...(truncated && { pagesTruncated: true }) };
   }
 
   const target = await resolveMemoryPage(page, realRoot);
   const wanted = path.relative(realRoot, target).split(path.sep).join('/');
   const text = await fsp.readFile(target, 'utf-8');
   await recordMemoryRead(wanted, realRoot);
-  return { page: wanted, ...bounded(text) };
+  return { page: wanted, ...boundedMemoryText(text) };
 }

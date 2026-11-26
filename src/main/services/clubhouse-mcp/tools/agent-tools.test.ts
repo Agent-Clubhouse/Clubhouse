@@ -28,6 +28,7 @@ const mockAgentRegistryGet = vi.fn();
 vi.mock('../../agent-registry', () => ({
   agentRegistry: {
     get: (id: string) => mockAgentRegistryGet(id),
+    markConversationStart: vi.fn(),
   },
   getAgentNonce: vi.fn(),
 }));

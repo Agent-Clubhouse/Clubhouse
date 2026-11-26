@@ -35,6 +35,7 @@ const nullableMachineArg = (value: unknown, argName: string): string | null => {
 };
 import { getDispatcherPresence, onDispatcherPresenceChanged } from '../services/dispatcher-presence';
 import type { DispatcherPresenceSnapshot } from '../../shared/dispatcher-presence';
+import { registerDispatcherInspectorHandlers } from './dispatcher-inspector-handlers';
 
 /** The lead as Settings and the follower pane show it, with what waits for it. */
 function leadView(): DispatcherLeadState {
@@ -47,6 +48,9 @@ let registered = false;
 export function registerDispatcherHandlers(): void {
   if (registered) return;
   registered = true;
+
+  // The Dispatcher inspector (#3912): read-only, refused unless Dispatcher debug is on.
+  registerDispatcherInspectorHandlers();
 
   ipcMain.handle(IPC.DISPATCHER.WAKE, () => dispatcher.wakeDispatcherController());
   ipcMain.handle(IPC.DISPATCHER.GET, (): DispatcherState => dispatcher.getDispatcherState());

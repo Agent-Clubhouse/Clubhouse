@@ -8,7 +8,8 @@ const input = vi.hoisted(() => ({ writeChunkedBracketedPaste: vi.fn(async () => 
 vi.mock('./pty-input', () => input);
 const timing = { initialDelayMs: 1200, retryDelayMs: 400, finalCheckDelayMs: 300, chunkSize: 256, chunkDelayMs: 40, postEndMarkerDelayMs: 200 };
 vi.mock('../../orchestrators', () => ({ getProvider: () => ({ getPasteSubmitTiming: () => timing, getExitCommand: () => '/quit\r' }) }));
-vi.mock('../agent-registry', () => ({ agentRegistry: { get: () => ({ orchestrator: 'copilot-cli', runtime: 'pty', projectPath: '/p' }) } }));
+const registry = vi.hoisted(() => ({ markConversationStart: vi.fn() }));
+vi.mock('../agent-registry', () => ({ agentRegistry: { get: () => ({ orchestrator: 'copilot-cli', runtime: 'pty', projectPath: '/p' }), markConversationStart: registry.markConversationStart } }));
 const queue = vi.hoisted(() => ({ resolvePermissionDetailed: vi.fn(() => ({ status: 'resolved' })) }));
 vi.mock('../annex-permission-queue', () => queue);
 
@@ -52,6 +53,8 @@ describe('PtyAgentRuntime', () => {
     await rt.stop({ graceful: false });
     expect(pty.write.mock.calls.map((c) => c[1])).toEqual(['/clear', '\r', '/compact', '\r', '\x03']);
     expect(pty.gracefulKill).toHaveBeenCalledWith('a1', '/quit\r');
+    // Only /clear starts a new conversation.
+    expect(registry.markConversationStart.mock.calls).toEqual([['a1']]);
     expect(pty.kill).toHaveBeenCalledWith('a1');
   });
 

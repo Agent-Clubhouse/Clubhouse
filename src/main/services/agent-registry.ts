@@ -63,8 +63,44 @@ class AgentRegistry {
     for (const listener of [...this.authListeners]) listener(agentId);
   }
 
+  /** When each registration was made, keyed by the registration itself so a respawn gets its own time. */
+  private readonly registeredTimes = new WeakMap<AgentRegistration, number>();
+
   register(agentId: string, registration: AgentRegistration): void {
     this.registrations.set(agentId, registration);
+    this.registeredTimes.set(registration, Date.now());
+  }
+
+  /** When the running agent last started a new conversation in place (a clear), keyed like registeredTimes. */
+  private readonly conversationTimes = new WeakMap<AgentRegistration, number>();
+
+  /**
+   * When the agent's current registration was made (its spawn, in this app
+   * run), or null when it isn't registered.
+   */
+  registeredAt(agentId: string): number | null {
+    const registration = this.registrations.get(agentId);
+    return registration ? this.registeredTimes.get(registration) ?? null : null;
+  }
+
+  /** The running agent started a new conversation without a respawn (clearContext). */
+  markConversationStart(agentId: string): void {
+    const registration = this.registrations.get(agentId);
+    if (registration) this.conversationTimes.set(registration, Date.now());
+  }
+
+  /**
+   * When the agent's current conversation started, as far as this app run
+   * knows: the later of its spawn and its last clear. Null when it isn't
+   * registered. A respawn that resumes an earlier conversation counts from the
+   * respawn, so what that conversation read before it isn't counted. The
+   * Dispatcher inspector (#3912) uses this as the session start.
+   */
+  conversationStartedAt(agentId: string): number | null {
+    const registration = this.registrations.get(agentId);
+    if (!registration) return null;
+    const times = [this.registeredTimes.get(registration), this.conversationTimes.get(registration)].filter((t): t is number => t !== undefined);
+    return times.length ? Math.max(...times) : null;
   }
 
   get(agentId: string): AgentRegistration | undefined {

@@ -80,6 +80,11 @@ export abstract class BaseProvider implements OrchestratorProvider {
   /** Absolute path to the instructions file for a given worktree */
   protected abstract getInstructionsPath(worktreePath: string): string;
 
+  /** The primary instructions file's path, for read-only inspection (#3912). */
+  instructionsPathOf(worktreePath: string): string {
+    return this.getInstructionsPath(worktreePath);
+  }
+
   // ── Provider-specific data (subclasses provide) ───────────────────────
 
   /** Map of tool names to human-readable activity verbs */

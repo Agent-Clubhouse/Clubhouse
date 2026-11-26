@@ -80,6 +80,47 @@ describe('agent-registry', () => {
       expect(getAgentOrchestrator('agent-1')).toBe('claude-code');
     });
 
+    it('keeps when each registration was made, a respawn getting its own time, and none once untracked', () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(1_000);
+        agentRegistry.register('agent-t', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+        expect(agentRegistry.registeredAt('agent-t')).toBe(1_000);
+        vi.setSystemTime(5_000);
+        agentRegistry.setRuntime('agent-t', 'chat');
+        expect(agentRegistry.registeredAt('agent-t')).toBe(1_000);
+        agentRegistry.register('agent-t', { projectPath: '/p', orchestrator: 'codex-cli', runtime: 'pty' });
+        expect(agentRegistry.registeredAt('agent-t')).toBe(5_000);
+        agentRegistry.untrack('agent-t');
+        expect(agentRegistry.registeredAt('agent-t')).toBeNull();
+        expect(agentRegistry.registeredAt('never')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('starts the conversation at the later of the spawn and the last clear, and a respawn starts over', () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(1_000);
+        agentRegistry.register('agent-c', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
+        expect(agentRegistry.conversationStartedAt('agent-c')).toBe(1_000);
+        vi.setSystemTime(4_000);
+        agentRegistry.markConversationStart('agent-c');
+        expect(agentRegistry.conversationStartedAt('agent-c')).toBe(4_000);
+        expect(agentRegistry.registeredAt('agent-c')).toBe(1_000);
+        vi.setSystemTime(6_000);
+        agentRegistry.register('agent-c', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
+        expect(agentRegistry.conversationStartedAt('agent-c')).toBe(6_000);
+        agentRegistry.untrack('agent-c');
+        expect(agentRegistry.conversationStartedAt('agent-c')).toBeNull();
+        agentRegistry.markConversationStart('agent-c');
+        expect(agentRegistry.conversationStartedAt('agent-c')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('returns undefined for unregistered agents', () => {
       expect(getAgentProjectPath('nonexistent')).toBeUndefined();
       expect(getAgentOrchestrator('nonexistent')).toBeUndefined();

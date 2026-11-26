@@ -267,6 +267,15 @@ function runningOnOtherProvider(agent: DurableAgentConfig | null): string | null
   return running && saved && running !== saved ? running : null;
 }
 
+/**
+ * A role's agent id and the CLI its record names (what the next start
+ * writes), for the Dispatcher inspector (#3912). Nulls before that agent exists.
+ */
+export function getDispatcherRoleAgent(role: DispatcherRole): { agentId: string; savedProvider: string | null } | null {
+  const agent = role === 'work' ? config : chatConfig;
+  return agent ? { agentId: agent.id, savedProvider: agent.orchestrator ?? defaultDispatcherOrchestrator() ?? null } : null;
+}
+
 function dispatcherProvider(): string | null {
   return config ? config.orchestrator ?? defaultDispatcherOrchestrator() ?? null : null;
 }

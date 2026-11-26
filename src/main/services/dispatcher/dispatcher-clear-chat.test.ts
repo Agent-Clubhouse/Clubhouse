@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -24,6 +24,8 @@ vi.mock('./dispatcher-service', () => ({
 }));
 
 import * as agentConfig from '../agent-config';
+import { getAgentRuntime } from '../agent-runtime';
+import { agentRegistry } from '../agent-registry';
 import * as staleSession from '../agent-runtime/stale-session';
 import { clearDispatcherChat, getClearChatGeneration, startDispatcherFresh, startDispatcherWorkFresh } from './dispatcher-clear-chat';
 import { getDispatcherChatPath, getDispatcherMemoryPath, getDispatcherPath } from './dispatcher-paths';
@@ -96,6 +98,56 @@ describe('Clear chat', () => {
   });
   it('refuses before the Dispatcher is set up', async () => {
     await expect(clearDispatcherChat({ chatAgentId: () => null })).rejects.toThrow(/not set up/);
+  });
+});
+
+describe('the inspector session start (#3912)', () => {
+  const runtimeClear = vi.fn(async () => undefined);
+
+  function registeredAt(id: string, at: number): void {
+    vi.setSystemTime(at);
+    agentRegistry.register(id, { projectPath: id === 'chat' ? getDispatcherChatPath() : getDispatcherPath(), orchestrator: 'claude-code', runtime: 'chat' });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.mocked(getAgentRuntime).mockReturnValue({ clearContext: runtimeClear } as unknown as ReturnType<typeof getAgentRuntime>);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(getAgentRuntime).mockReturnValue(undefined);
+    agentRegistry.untrack('chat');
+    agentRegistry.untrack('work');
+  });
+
+  it('moves to the clear when a running chat is cleared in place', async () => {
+    registeredAt('chat', 1_000);
+    expect(agentRegistry.conversationStartedAt('chat')).toBe(1_000);
+    vi.setSystemTime(9_000);
+    await expect(clearDispatcherChat({ isRunning: () => true, prepareStart: async () => undefined, runningProvider: () => 'claude-code' }))
+      .resolves.toEqual({ cleared: 'now' });
+    expect(runtimeClear).toHaveBeenCalledTimes(1);
+    expect(agentRegistry.conversationStartedAt('chat')).toBe(9_000);
+  });
+
+  it('moves to the clear when a running controller starts fresh in place', async () => {
+    registeredAt('work', 2_000);
+    vi.setSystemTime(7_000);
+    await expect(startDispatcherWorkFresh('user', {
+      isRunning: () => true, runningProvider: () => 'claude-code', workSessionId: async () => null,
+      prepareStart: async () => undefined, takeWaiting: () => ({ ids: [], started: 0 }), endWaiting: () => undefined,
+      addNotice: async () => undefined,
+    })).resolves.toBe('now');
+    expect(runtimeClear).toHaveBeenCalledTimes(1);
+    expect(agentRegistry.conversationStartedAt('work')).toBe(7_000);
+  });
+
+  it('stays at the spawn when the clear fails', async () => {
+    registeredAt('chat', 1_000);
+    runtimeClear.mockRejectedValueOnce(new Error('busy'));
+    vi.setSystemTime(9_000);
+    await expect(clearDispatcherChat({ isRunning: () => true, prepareStart: async () => undefined, runningProvider: () => 'claude-code' })).rejects.toThrow('busy');
+    expect(agentRegistry.conversationStartedAt('chat')).toBe(1_000);
   });
 });
 
