@@ -781,6 +781,18 @@ export const IPC = {
     DISMISS_LEAD_NOTICE: 'dispatcher:dismiss-lead-notice',
     /** On the lead (#3354): a person's answer to an Ask-first request on another computer. Resolves when that computer took it. */
     ANSWER_REMOTE_APPROVAL: 'dispatcher:answer-remote-approval',
+    /** Dispatcher inspector (#3912), read-only and refused unless Dispatcher debug is on: each role's instructions file for every CLI. */
+    INSPECT_INSTRUCTIONS: 'dispatcher:inspect-instructions',
+    /** Inspector: the installed skills, without content. */
+    INSPECT_SKILLS: 'dispatcher:inspect-skills',
+    /** Inspector: one skill's SKILL.md (`role`, `name`). */
+    INSPECT_SKILL: 'dispatcher:inspect-skill',
+    /** Inspector: memory/index.md and the page list. Records no read. */
+    INSPECT_MEMORY_INDEX: 'dispatcher:inspect-memory-index',
+    /** Inspector: one memory page (`page`). Records no read. */
+    INSPECT_MEMORY_PAGE: 'dispatcher:inspect-memory-page',
+    /** Inspector: the memory access record, most recent first. */
+    INSPECT_MEMORY_ACCESS: 'dispatcher:inspect-memory-access',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

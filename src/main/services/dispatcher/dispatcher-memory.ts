@@ -549,6 +549,11 @@ function fileStamp(value: unknown): value is MemoryFileStamp {
 export async function readMemoryAccess(root?: string): Promise<Record<string, MemoryAccess>> {
   const text = await readIfExists(memoryAccessPath(root));
   if (text === null) return {};
+  return parseMemoryAccess(text);
+}
+
+/** The access record's pages from its file text. Throws on a record that isn't valid. */
+export function parseMemoryAccess(text: string): Record<string, MemoryAccess> {
   const raw: unknown = JSON.parse(text);
   if (!object(raw) || raw.version !== 1 || !object(raw.pages)) throw new Error('Invalid memory access record.');
   const pages: Record<string, MemoryAccess> = {};
