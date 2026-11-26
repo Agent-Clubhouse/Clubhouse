@@ -6,6 +6,22 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
   isDispatcherEnabled: () => true,
 }));
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
+// list_projects (#3913): registered projects, one of them with no agents at all.
+const registered = vi.hoisted(() => [
+  { id: 'proj_goobers', name: 'goobers', path: '/work/goobers' },
+  { id: 'proj_kaizen', name: 'kaizen', displayName: 'Kaizen', path: '/work/kaizen' },
+]);
+vi.mock('../project-store', async (original) => ({ ...await original<typeof import('../project-store')>(), list: async () => [...registered] }));
+vi.mock('../git-service', async (original) => ({
+  ...await original<typeof import('../git-service')>(),
+  findGitCommonDir: async (dir: string) => `${dir}/.git`,
+  getDefaultBranch: async () => 'main',
+}));
+vi.mock('../agent-config', async (original) => ({
+  ...await original<typeof import('../agent-config')>(),
+  getDurableConfig: async (_projectPath: string, id: string) => ({ id, name: id }),
+  isSameProject: async (a: string, b: string) => a === b,
+}));
 // start_work's one effect: filing the request with the Dispatcher (#3578).
 const handOff = vi.hoisted(() => vi.fn(async (): Promise<unknown> => ({ outcome: 'delivered', requestId: 'req_1' })));
 vi.mock('../dispatcher/dispatcher-channel', async (original) => ({
@@ -23,6 +39,8 @@ import {
   _resetDispatcherGateForTesting, isDispatcherAgent, isDispatcherChatAgent, isTrackedDispatcher, setDispatcherAgent, setDispatcherChatAgent,
 } from './dispatcher-gate';
 import { callerGrants } from './grant-check';
+import { agentRegistry } from '../agent-registry';
+import { DISPATCHER_CHAT_INSTRUCTIONS } from '../dispatcher/dispatcher-service';
 
 /**
  * The Dispatcher's chat (#3036) reads, and hands work to the Dispatcher; it
@@ -54,7 +72,7 @@ describe('the Dispatcher\'s chat', () => {
   it('is offered reading tools and start_work, and nothing that acts', () => {
     // update_agent and update_project name their target in the arguments, so a listing can't
     // check it; the call is refused (below: the chat holds no agent.display or project.display).
-    expect(names('chat')).toEqual(['get_annex_network_settings', 'get_delivery', 'inspect_helper', 'list_abilities', 'list_agents', 'list_group_projects', 'list_other_dispatchers', 'list_settings', 'read_agent_config', 'read_helper_presets', 'read_memory', 'read_settings', 'search_memory', 'start_work', 'update_agent', 'update_project']);
+    expect(names('chat')).toEqual(['get_annex_network_settings', 'get_delivery', 'inspect_helper', 'list_abilities', 'list_agents', 'list_group_projects', 'list_other_dispatchers', 'list_projects', 'list_settings', 'read_agent_config', 'read_helper_presets', 'read_memory', 'read_settings', 'search_memory', 'start_work', 'update_agent', 'update_project']);
     expect(names('chat')).not.toContain('open_group_project_directory');
     for (const name of ['update_agent', 'update_project']) {
       const tool = listToolGrants().find((t) => t.kind === 'global' && t.name === name)!;
@@ -66,7 +84,6 @@ describe('the Dispatcher\'s chat', () => {
   it('never gets the orchestration tools, whatever its policy says', () => {
     setOrchestrationEnabled('chat', true, { crossProject: true });
     expect(names('chat')).not.toContain('start_helper');
-    expect(names('chat')).not.toContain('list_projects');
   });
 
   it('has no grant that acts on an agent, a project, an Action or a setting', () => {
@@ -85,6 +102,30 @@ describe('the Dispatcher\'s chat', () => {
     setDispatcherAgent('chat', false);
     expect(isTrackedDispatcher('chat')).toBe(false);
     expect(names('chat')).not.toContain('start_work');
+  });
+});
+
+describe('the Dispatcher\'s chat and project questions (#3913)', () => {
+  it('lists a registered project that has no agents, with names, paths and branches only', async () => {
+    agentRegistry.register('chat', { projectPath: PROJECT, orchestrator: 'claude-code', runtime: 'chat' });
+    expect(names('chat')).toContain('list_projects');
+    const result = await callTool('chat', 'list_projects', {});
+    expect(result.isError).toBeFalsy();
+    // No agent is connected to the chat, yet both projects are listed.
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      projects: [
+        { name: 'goobers', path: '/work/goobers', defaultBranch: 'main' },
+        { name: 'Kaizen', path: '/work/kaizen', defaultBranch: 'main' },
+      ],
+    });
+    // It reads with project.read, which the chat holds; no write or display grant comes with it.
+    const tool = listToolGrants().find((t) => t.kind === 'global' && t.name === 'list_projects')!;
+    expect(toolGrantDeclarations(tool.grant!).flatMap((d) => d.actions)).toEqual(['project.read']);
+  });
+
+  it('is told that list_agents is not a project list', () => {
+    expect(DISPATCHER_CHAT_INSTRUCTIONS).toContain('`list_projects`');
+    expect(DISPATCHER_CHAT_INSTRUCTIONS).toMatch(/list_agents. lists agents, not projects/);
   });
 });
 
