@@ -66,7 +66,7 @@ Clubhouse shows the models the `agy` server offers your account. Google's pages 
 
 Antigravity agents offer Plan, Ask first, Auto-accept edits and Full access, in chat and in the CLI view. There is no Auto level. Antigravity has its own Auto mode, which Google's [CLI reference](https://antigravity.google/docs/cli/reference/) says is not available for business or enterprise accounts, and Clubhouse does not map an Access level to it.
 
-Antigravity is opt-in for helper Auto and is not picked today. Ask for it by name when an agent starts a helper.
+Smart routing never picks Antigravity today. Ask for it by name when an agent starts a helper.
 
 ## Using an API key
 

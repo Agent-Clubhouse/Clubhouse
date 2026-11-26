@@ -38,7 +38,7 @@ export function GroupProjectLocations({ id }: { id: string }) {
         {hits?.length === 0 && <p className={settingsHelp}>This group project is not on a canvas. It works without one.</p>}
         {!!hits?.length && <ul className="flex flex-col items-start gap-2" aria-label="Canvases containing this group project">
           {hits.map((hit) => <li key={`${hit.scope}:${hit.projectId ?? ''}:${hit.canvasId}:${hit.viewId}`}>
-            <Button disabled={opening} onClick={() => void open(hit)}>{hit.projectName || 'Home'} / {hit.name}</Button>
+            <Button disabled={opening} onClick={() => void open(hit)}>{hit.projectName || 'App'} / {hit.name}</Button>
           </li>)}
         </ul>}
         <p className={`${settingsHelp} mt-2`}>Removing a canvas card keeps this group project and its members.</p>

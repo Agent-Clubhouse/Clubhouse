@@ -52,7 +52,7 @@ export function managedSettingsSummary(input: ManagedSettingsSummaryInput): Mana
   ];
   if (policy.orchestrate) {
     const selection = policy.sources.autoHelpers === 'agent'
-      ? (policy.autoHelpers ? 'Smart selection' : 'fixed selection')
+      ? (policy.autoHelpers ? 'Smart routing' : 'fixed selection')
       : 'selection from the app setting';
     rows.push({ key: 'helpers', label: 'Helpers', value: [`Up to ${policy.maxHelpers} at once`, selection, APPROVALS[policy.control]].join(', ') });
     // Its own row: it reaches a running agent at once, so "Running now" never shows it waiting (D83).

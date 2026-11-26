@@ -93,9 +93,9 @@ Agent-owned device actions require `device.read` set to Allow when admitted and 
 
 Steps stop at the first one that couldn't run.
 
-A quick-agent step can use **Auto** with easy, medium or hard difficulty (medium by default). It uses the same provider selection, quota checks and model mappings as helpers in **Settings > Smart selection**. Its routing receipt appears in recent runs. If Auto is off or no provider can run it, the step says why and does not start. An explicit provider stays explicit. Steps saved without a provider still use the project's provider.
+A quick-agent step can use **Auto** with easy, medium or hard difficulty (medium by default). It uses the same provider selection, quota checks and model mappings as helpers in **Settings > Smart routing**. Its routing receipt appears in recent runs. If Smart routing is off or no provider can run it, the step says why and does not start. An explicit provider stays explicit. Steps saved without a provider still use the project's provider.
 
-An agent-owned action also follows its owner's Auto setting, checked again before the provider is chosen. Your actions follow the app and project settings.
+An agent-owned action also follows its owner's Smart routing setting, checked again before the provider is chosen. Your actions follow the app and project settings.
 
 Message steps can enable **Keep only the latest queued message**. A newer queued message from the same action replaces its older undelivered messages. Messages from other actions and your own messages are not replaced. This is off by default.
 

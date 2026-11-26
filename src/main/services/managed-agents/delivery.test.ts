@@ -637,7 +637,7 @@ describe('previewManagedSetup', () => {
       // Saved before #2761, with the old mode at its default (skip-all).
       { key: 'access', label: 'Access', value: 'Full access' },
       { key: 'orchestration', label: 'Orchestration', value: 'Can start helpers' },
-      { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart selection, no approvals' },
+      { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart routing, no approvals' },
       { key: 'helperTemplate', label: 'Helper template', value: 'Helper' },
       { key: 'dispatcher', label: 'Dispatcher', value: 'Connected' },
     ]);

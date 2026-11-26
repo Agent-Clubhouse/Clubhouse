@@ -287,10 +287,10 @@ function AppAgentSettings() {
 
       <SettingsSection title="Durable agents">
         <SettingsField
-          label="Prompt for session name on quit"
-          help="Ask to name the session when a durable agent stops. Projects can override this."
+          label="Prompt for session name when an agent sleeps"
+          help="Ask to name the session when a durable agent goes to sleep. Projects can override this."
         >
-          <Toggle aria-label="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
+          <Toggle aria-label="Prompt for session name when an agent sleeps" checked={promptForName} onChange={setPromptForName} />
         </SettingsField>
         <SettingsField
           label="Source control provider"
@@ -311,7 +311,7 @@ function AppAgentSettings() {
         {chatEnabled && (
           <SettingsField
             label="Sleep idle chat agents after"
-            help="A chat agent with no turn for this long goes to sleep. An agent can set its own in its Session details. Agents in a group project with polling on stay awake."
+            help="A chat agent with no turn for this long goes to sleep. An agent can set its own with the Auto-sleep row in its Settings card. Agents in a group project with polling on stay awake."
             htmlFor={`${idBase}-chat-idle`}
           >
             <select
@@ -540,7 +540,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </select>
         </SettingsField>
 
-        <SettingsField label="Session name on quit" help="Ask to name the session when an agent stops." htmlFor={`${idBase}-session`}>
+        <SettingsField label="Session name when an agent sleeps" help="Ask to name the session when a durable agent goes to sleep." htmlFor={`${idBase}-session`}>
           <select
             id={`${idBase}-session`}
             value={currentSessionMode}

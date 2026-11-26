@@ -643,7 +643,7 @@ describe('OrchestratorSettingsView', () => {
 
       it('each project override select is labelled by its row', () => {
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        for (const name of ['Quick agent mode', 'Session name on quit']) {
+        for (const name of ['Quick agent mode', 'Session name when an agent sleeps']) {
           expect(screen.getByLabelText(name).tagName).toBe('SELECT');
         }
       });
@@ -670,7 +670,7 @@ describe('OrchestratorSettingsView', () => {
     });
     it('offers no Clubhouse Mode switch or wildcards app-wide', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Prompt for session name on quit')).toBeInTheDocument();
+      expect(screen.getByText('Prompt for session name when an agent sleeps')).toBeInTheDocument();
       expect(screen.queryByRole('switch', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
       expect(screen.queryByText('.clubhouse/clubhouse-mode.md')).not.toBeInTheDocument();
     });

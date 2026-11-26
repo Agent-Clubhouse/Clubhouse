@@ -9,7 +9,7 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 | Provider | Description | Status |
 |----------|-------------|--------|
 | **Claude Code** | Anthropic's CLI for Claude. Most complete Clubhouse integration. | Stable |
-| **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Stable |
+| **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Beta |
 | **Codex CLI** | OpenAI's Codex CLI. Sandbox-based permissions, `--full-auto` mode. | Beta |
 | **Antigravity CLI** | Google's `agy` CLI. Chat and terminal, no headless mode. See **Antigravity CLI**. | Experimental |
 
@@ -25,9 +25,9 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 
 You cannot disable the last remaining agent provider.
 
-## Smart selection
+## Smart routing
 
-**Settings > Smart selection** holds the model and effort each difficulty (Minimum, Easy, Medium, Hard, Maximum) picks on Claude Code, Codex and Copilot, and the switch that lets orchestrators use Auto to pick Claude Code or Codex for each helper. Any start that names a difficulty uses these presets. Press **Check again** after signing in to a CLI to update its models and limits. See **Orchestrated helpers** for how Auto chooses.
+**Settings > Smart routing** holds the model and effort each difficulty (Minimum, Easy, Medium, Hard, Maximum) picks on Claude Code, Codex and Copilot, and the switch that lets orchestrators use Smart routing to pick Claude Code or Codex for each helper, with Copilot as a last resort unless you turn off **Allow Copilot as a last resort**. Any start that names a difficulty uses these presets. Press **Check again** after signing in to a CLI to update its models and limits. See **Orchestrated helpers** for how Smart routing chooses.
 
 ## Chat and the CLI view
 

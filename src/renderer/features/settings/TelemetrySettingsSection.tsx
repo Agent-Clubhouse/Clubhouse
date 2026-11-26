@@ -58,7 +58,7 @@ function healthText(d: TelemetryDestinationStatus): { text: string; bad: boolean
 
 /** Spec §5.5. Shown in the consent step and in "Learn what's sent". */
 export const NEVER_SENT = [
-  'Prompts, missions, personas and agent messages',
+  'Prompts, tasks, instructions and agent messages',
   'Terminal output, tool input and output',
   'File contents, diffs, commit messages and search queries',
   'File paths, repository URLs and branch names',

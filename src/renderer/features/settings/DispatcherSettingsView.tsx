@@ -681,7 +681,7 @@ function OtherMachinesSection() {
   const presence = useDispatcherPresence();
   if (!presence || presence.remotes.length === 0) return null;
   return (
-    <SettingsSection title="Other machines">
+    <SettingsSection title="Other computers">
       <SettingsBlock>
         <OtherMachinesList remotes={presence.remotes} />
       </SettingsBlock>

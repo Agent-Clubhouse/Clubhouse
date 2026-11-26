@@ -16,7 +16,7 @@ describe('group project locations', () => {
   it('opens a selected canvas, and says a canvas is optional', async () => {
     render(<GroupProjectLocations id="gp" />);
     expect(await screen.findByText(/Removing a canvas card keeps this group project and its members/)).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole('button', { name: 'Home / Canvas One' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'App / Canvas One' }));
     await waitFor(() => expect(nav.open).toHaveBeenCalledWith('group-project', 'gp', hit, expect.any(AbortSignal)));
   });
 

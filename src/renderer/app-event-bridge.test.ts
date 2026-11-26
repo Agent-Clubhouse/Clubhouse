@@ -432,20 +432,20 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onNavigateToPluginSettings).toHaveBeenCalled();
   });
 
-  it('shows catalog changes once in the main window with a Smart selection action', () => {
+  it('shows catalog changes once in the main window with a Smart routing action', () => {
     const handler = vi.mocked(window.clubhouse.app.onModelCatalogNotice).mock.calls.at(-1)![0];
     const ui = { explorerTab: 'agents', setSettingsContext: vi.fn(), setSettingsSubPage: vi.fn(), toggleSettings: vi.fn(), setDispatcherOpen: vi.fn() };
     vi.mocked(useUIStore.getState).mockReturnValue(ui as never);
-    handler('New models for Codex: New. Review Smart selection');
+    handler('New models for Codex: New. Review Smart routing');
     const action = vi.mocked(useToastStore.getState().addToast).mock.calls.at(-1)![2];
-    expect(action?.label).toBe('Review Smart selection');
+    expect(action?.label).toBe('Review Smart routing');
     action?.onClick();
     expect(ui.setSettingsContext).toHaveBeenCalledWith('app');
     expect(ui.setSettingsSubPage).toHaveBeenCalledWith('smart-selection');
     expect(ui.toggleSettings).toHaveBeenCalledOnce();
     vi.mocked(useToastStore.getState().addToast).mockClear();
     vi.mocked(window.clubhouse.window.isPopout).mockReturnValueOnce(true);
-    handler('New models for Codex: New. Review Smart selection');
+    handler('New models for Codex: New. Review Smart routing');
     expect(useToastStore.getState().addToast).not.toHaveBeenCalled();
   });
 

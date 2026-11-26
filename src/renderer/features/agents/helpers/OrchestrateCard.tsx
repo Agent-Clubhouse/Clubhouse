@@ -12,7 +12,7 @@ import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
 import { CONTROL_LABELS, controlHelp } from './helper-model';
 import { maxHelpersCeiling, openHelpersSettings, type OrchestrationState } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, HelperCountInput, accessNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AutoHelpersHelp, CrossProjectToggle, HelperCountInput, accessNote,
 } from './OrchestrationFields';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
@@ -136,7 +136,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle, chil
                 <span className="text-ctp-overlay1">{CROSS_PROJECT_HELP}</span>
               </span>
             </CardRow>
-            <CardRow label="Auto provider">
+            <CardRow label="Smart routing">
               <span className="flex flex-col items-start gap-1">
                 <AutoHelpersToggle
                   id={ids.auto}
@@ -146,7 +146,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle, chil
                   onChange={(on) => void orch.setAutoHelpers(on)}
                   testId="orchestrate-auto-helpers"
                 />
-                <span className="text-ctp-overlay1">{AUTO_HELPERS_HELP}</span>
+                <span className="text-ctp-overlay1"><AutoHelpersHelp /></span>
               </span>
             </CardRow>
           </>

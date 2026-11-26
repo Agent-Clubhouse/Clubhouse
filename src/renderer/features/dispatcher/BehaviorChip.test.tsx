@@ -144,7 +144,7 @@ describe('DispatcherBehaviorChip: in step with main', () => {
     expect(screen.getByTestId('dispatcher-behavior-chip').getAttribute('data-models-by-hand')).toBeNull();
   });
 
-  it('Set up Auto opens Settings > Smart selection', () => {
+  it('Set up Auto opens Settings > Smart routing', () => {
     useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
     useDispatcherStore.getState().setState({ ...ON, behavior: { level: 'thorough', provider: 'claude-code', auto: { ready: false, code: 'no_valid_mapping' } } });
     render(<DispatcherBehaviorChip />);

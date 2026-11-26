@@ -24,11 +24,11 @@ Each setting here can follow the app-wide value or override it for this project:
 
 - **Agents run on**, the CLI for new agents. Only CLIs that are turned on and installed are listed.
 - **Quick agent mode**: interactive or headless.
-- **Session name on quit**.
+- **Session name when an agent sleeps**.
 
 New agents start at **Default access** in **Settings > Agents & providers**. Projects don't override it.
 
-**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Auto provider for helpers here.
+**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Smart routing for helpers here.
 
 **Legacy defaults** shows the instructions, permission rules, MCP servers and build, test and lint commands a project could set for new agents before Clubhouse-managed agents. They're read-only now and kept as they are:
 

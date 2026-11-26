@@ -151,7 +151,7 @@ it('retains known orchestration fields while corrupt host defaults stay unknown 
   fs.writeFileSync(path.join(root, 'orchestration-settings.json'), '{broken'); fs.writeFileSync(path.join(root, 'orchestration-settings.json.bak'), '{"globalHelperCap":99,"autoHelpers":true}');
   const before = disk(), result = await readRemoteAgentDetails('selected', () => true);
   expect(result.status).toBe(200); const value = result.body as RemoteAgentDetails; expect(isRemoteAgentDetails(value, 'selected')).toBe(true);
-  expect(value.cards.find((c) => c.id === 'orchestrate')).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Orchestration', value: 'On' }, { label: 'Control', value: 'Ask before starting' }, { label: 'App-wide limit', value: 'Unavailable from host metadata' }, { label: 'Auto provider', value: 'Unavailable from host metadata' }]) });
+  expect(value.cards.find((c) => c.id === 'orchestrate')).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Orchestration', value: 'On' }, { label: 'Control', value: 'Ask before starting' }, { label: 'App-wide limit', value: 'Unavailable from host metadata' }, { label: 'Smart routing', value: 'Unavailable from host metadata' }]) });
   expect(disk()).toEqual(before);
 });
 it('shows selected safe pending tasks and independently retained metadata for withheld text without raw args', async () => {

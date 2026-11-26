@@ -103,7 +103,7 @@ describe('HelperPresetsSection (#2671)', () => {
     app().getHelperRouting.mockResolvedValue({ ...settings(), autoBudget: { policy: null, invalid: true, editable: true } });
     render(<HelperPresetsSection />);
     await screen.findByText('Use legacy selection');
-    expect(screen.getByRole('alert').textContent).toContain('Auto starts are paused');
+    expect(screen.getByRole('alert').textContent).toContain('Smart routing starts are paused');
     fireEvent.click(screen.getByText('Use legacy selection'));
     await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', autoBudgetPolicy: { ...defaultAutoBudgetPolicy(), enabled: false } }));
   });
@@ -154,7 +154,7 @@ describe('HelperPresetsSection (#2671)', () => {
     render(<HelperPresetsSection />);
     expect((await screen.findByTestId('helper-presets-claude-code-status')).textContent).toBe('Disabled, Available');
     expect(screen.getByTestId('helper-presets-copilot-cli-status').textContent).toBe('Enabled, Available');
-    expect(screen.getByTestId('helper-presets-claude-code-inactive').textContent).toBe('Claude Code is turned off in Agents & providers. Its presets are saved for later, and Auto does not pick it until that changes.');
+    expect(screen.getByTestId('helper-presets-claude-code-inactive').textContent).toBe('Claude Code is turned off in Agents & providers. Its presets are saved for later, and Smart routing does not pick it until that changes.');
     expect(screen.queryByTestId('helper-presets-copilot-cli-inactive')).toBeNull();
     // Presets stay editable.
     expect(screen.getByTestId('helper-preset-claude-code-hard-model')).toBeTruthy();
@@ -176,7 +176,7 @@ describe('HelperPresetsSection (#2671)', () => {
       providers: { ...shown.providers, 'claude-code': { ...shown.providers['claude-code'], enabled: false } } as HelperRoutingSettings['providers'],
     }));
     render(<HelperPresetsSection />);
-    expect(await screen.findByText(/Auto has nothing to pick right now/)).toBeTruthy();
+    expect(await screen.findByText(/Smart routing has nothing to pick right now/)).toBeTruthy();
   });
 
   it('shows no inactive note when the desktop does not report state', async () => {

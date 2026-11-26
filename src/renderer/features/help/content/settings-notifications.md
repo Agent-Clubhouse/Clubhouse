@@ -1,4 +1,4 @@
-# Notifications & Badges
+# Notifications & alerts
 
 Stay informed about agent activity even when Clubhouse is in the background.
 

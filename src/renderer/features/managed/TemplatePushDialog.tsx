@@ -13,10 +13,10 @@ const SETTING_NAMES: Record<string, string> = {
   idleSleep: 'Auto-sleep',
   helperTemplateId: 'Helper template',
   'orchestration.orchestrate': 'Orchestration',
-  'orchestration.maxHelpers': 'Helper limit',
-  'orchestration.autoHelpers': 'Smart selection',
+  'orchestration.maxHelpers': 'Helpers at once',
+  'orchestration.autoHelpers': 'Smart routing',
   'orchestration.access': 'Helper access',
-  'orchestration.control': 'Helper control',
+  'orchestration.control': 'Approvals',
   'orchestration.crossProjectHelpers': 'Helpers in other projects',
   'orchestration.connectToDispatcher': 'Dispatcher connection',
 };
@@ -29,7 +29,7 @@ function valueText(v: string): string {
   return v;
 }
 
-/** One change as the dialog lists it: "+ Skill X", "− MCP server Y", "~ Helper limit 5 → 3". */
+/** One change as the dialog lists it: "+ Skill X", "− MCP server Y", "~ Helpers at once 5 → 3". */
 export function changeText(c: ManagedTemplateChange): string {
   if (c.kind === 'add') return `+ ${partKindLabel(c.part)} ${c.name}`;
   if (c.kind === 'remove') return `− ${partKindLabel(c.part)} ${c.name}`;

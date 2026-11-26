@@ -19,14 +19,15 @@ Select which AI backend powers agents in this project:
 | Orchestrator | Status |
 |-------------|--------|
 | **Claude Code** | Stable |
-| **Copilot CLI** | Stable |
+| **Copilot CLI** | Beta |
 | **Codex CLI** | Beta |
+| **Antigravity CLI** | Experimental |
 
 The selected orchestrator applies to new and restarted agents. Only orchestrators enabled in global settings and detected on your system appear as options.
 
 ## Agent environment and legacy defaults
 
-**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Auto provider for helpers here.
+**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Smart routing for helpers here.
 
 **Legacy defaults** shows the instructions, permission rules, MCP servers and build, test and lint commands a project could set for new agents before Clubhouse-managed agents. They're read-only now and kept as they are:
 

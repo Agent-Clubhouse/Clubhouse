@@ -366,8 +366,8 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
           ok: false,
           code: 'no_valid_mapping',
           message: `No ${validDifficulty} preset for ${provider} is offered now: ${problems.join('; ')} ` +
-            'Name a model with list_models, or ask the user to update Settings > Smart selection.',
-          userReason: `no ${validDifficulty} preset for ${provider} is offered now. Change it in Settings > Smart selection.`,
+            'Name a model with list_models, or ask the user to update Settings > Smart routing.',
+          userReason: `no ${validDifficulty} preset for ${provider} is offered now. Change it in Settings > Smart routing.`,
         };
       }
       resolvedModel = resolved.cell.model;
@@ -825,7 +825,7 @@ export async function readHelperAuto(context: {
 /** The refusal for `cli: "auto"` while it's off, saying why. */
 export function autoOffRefusal(auto: HelperAutoView | undefined): Extract<StartPlanResult, { ok: false }> {
   const why = routingLabel('autoOff', auto?.reason ?? 'not_enabled');
-  return { ok: false, code: 'auto_off', message: `Auto provider is off for you: ${why}. Name a CLI, or ask the user to turn it on.`, userReason: `Auto provider is off: ${why}.` };
+  return { ok: false, code: 'auto_off', message: `Smart routing is off for you: ${why}. Name a CLI, or ask the user to turn it on.`, userReason: `Smart routing is off: ${why}.` };
 }
 
 // ── The settings ─────────────────────────────────────────────────────────

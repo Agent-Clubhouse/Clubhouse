@@ -14,7 +14,7 @@ describe('a template\'s Clubhouse permissions (#2971)', () => {
     expect(withTemplateRow(off, row, 'allow', 'allow')).toBeUndefined();
   });
 
-  it('shows the defaults with the template\'s changes, and Helper control\'s rows can\'t be changed here', () => {
+  it('shows the defaults with the template\'s changes, and Approvals\' rows can\'t be changed here', () => {
     const onChange = vi.fn();
     render(<TemplateGrantsSection settings={{ orchestration: { orchestrate: true }, grants: [{ ...msg, mode: 'off' }] }} onChange={onChange} />);
     const message = screen.getByRole('radiogroup', { name: 'Send messages and files (Connected agents)' });
@@ -22,7 +22,7 @@ describe('a template\'s Clubhouse permissions (#2971)', () => {
     expect(screen.getAllByText('From its template').length).toBeGreaterThan(0);
     const create = screen.getByRole('radiogroup', { name: 'Create agents (Its project)' });
     expect(within(create).getByRole('radio', { name: 'Allow' })).toBeDisabled();
-    expect(screen.getAllByText('Follows Helper control.').length).toBe(2);
+    expect(screen.getAllByText('Follows Approvals.').length).toBe(2);
 
     fireEvent.click(within(message).getByRole('radio', { name: 'Allow' }));
     expect(onChange).toHaveBeenCalledWith(undefined);

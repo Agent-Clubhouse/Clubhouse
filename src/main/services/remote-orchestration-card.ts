@@ -23,8 +23,8 @@ export function projectOrchestrationFields(c: RemoteDetailsCard, model: Orchestr
     field('At once', f.maxHelpers); field('App-wide limit', model.globalCap); field('Cross-project helpers', f.crossProjectHelpers, yes);
     if (model.autoEffective.state === 'ok') {
       const value = model.autoEffective.value, locked = value.reason && AUTO_LOCKED_NOTES[value.reason];
-      row(c, 'Auto provider', `${yes(value.effective)} · ${locked || (model.sources.autoHelpers === 'agent' ? 'Set on this agent' : 'Following the app setting')}`);
-    } else { c.state = 'error'; row(c, 'Auto provider', unknown); }
+      row(c, 'Smart routing', `${yes(value.effective)} · ${locked || (model.sources.autoHelpers === 'agent' ? 'Set on this agent' : 'Following the app setting')}`);
+    } else { c.state = 'error'; row(c, 'Smart routing', unknown); }
     for (const input of model.globalCap.inputs) c.notes.push(`${input.field}: ${input.source === 'host-cache' ? 'established host policy' : 'host primary metadata'} observed ${new Date(input.observedAt).toISOString()}.`);
     c.notes.push('Configured helper policy. Tool availability and the actual helper provider are established when a run starts.');
   }

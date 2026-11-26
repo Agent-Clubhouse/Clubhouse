@@ -60,9 +60,9 @@ describe('Other machines (#3349)', () => {
     // Barriers: the section has subscribed and its first read has landed, so the push below can't be lost or overwritten.
     await waitFor(() => { expect(push).not.toBeNull(); expect(getPresence).toHaveBeenCalled(); });
     await act(async () => { await getPresence.mock.results[0].value; });
-    expect(screen.queryByText('Other machines')).toBeNull();
+    expect(screen.queryByText('Other computers')).toBeNull();
     act(() => push!({ remotes: [remote('desk', { state: 'asleep' })] }));
-    expect(await screen.findByText('Other machines')).toBeTruthy();
+    expect(await screen.findByText('Other computers')).toBeTruthy();
     expect((await screen.findByTestId('other-machine-desk-state')).textContent).toBe('Asleep. Link active');
   });
 });

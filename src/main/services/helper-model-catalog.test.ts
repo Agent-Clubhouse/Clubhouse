@@ -67,7 +67,7 @@ describe('model catalog notices', () => {
     expect(W.notices).not.toHaveBeenCalled();
     await Promise.all([observe(provider, catalog(['old', 'new', 'other'], 2)), observe(provider, catalog(['old', 'new', 'other'], 2))]);
     await observe(provider, catalog(['other', 'old', 'new'], 3));
-    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice', 'New models for Codex: NEW, OTHER. Review Smart selection');
+    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice', 'New models for Codex: NEW, OTHER. Review Smart routing');
   });
 
   it('notifies about a removed saved or built-in model, never changing presets', async () => {
@@ -76,7 +76,7 @@ describe('model catalog notices', () => {
     await observe(provider, catalog(['custom', 'gpt-6.1-sol', 'other'], 1));
     await observe(provider, catalog(['other', 'new'], 2));
     expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice',
-      'New models for Codex: NEW. Models no longer offered for Codex: CUSTOM, GPT-6.1-SOL. Review Smart selection');
+      'New models for Codex: NEW. Models no longer offered for Codex: CUSTOM, GPT-6.1-SOL. Review Smart routing');
     expect(W.presets).toEqual(before);
   });
 
@@ -120,7 +120,7 @@ describe('model catalog notices', () => {
     vi.resetModules(); observe = (await import('./helper-model-catalog')).observeHelperModelCatalog;
     await observe(provider, catalog(['temporary'], 3, { source: 'fallback', via: 'static' }));
     await observe(provider, catalog(['model-v1', 'model-v2'], 4));
-    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice', 'New models for Codex: MODEL-V2. Review Smart selection');
+    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice', 'New models for Codex: MODEL-V2. Review Smart routing');
     W.notices.mockClear(); // Dismissal changes no mapping and does not clear persisted seen state.
     await observe(provider, catalog(['model-v1', 'model-v2'], 5));
     expect(W.notices).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe('model catalog notices', () => {
     await observe(provider, catalog(['custom', 'gpt-6.1-sol'], 1));
     await observe(provider, catalog(['custom'], 2));
     expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice',
-      'Models no longer offered for Codex: GPT-6.1-SOL. Review Smart selection');
+      'Models no longer offered for Codex: GPT-6.1-SOL. Review Smart routing');
   });
 
   it('bounds cumulative history without evicting returning ids or damaging the last snapshot', async () => {

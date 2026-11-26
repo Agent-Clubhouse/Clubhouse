@@ -15,7 +15,7 @@ import { ManagedBuilder, type SetupDraft } from '../../features/managed/ManagedB
 import { managed, unwrap, useManagedTemplates } from '../../features/managed/managedApi';
 import { settingsAccess } from '../../features/managed/create-managed-agent';
 import {
-  EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
+  EffortSelect, HelperSelectionHelp, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
   effortHelp, useModelEfforts,
 } from '../../features/managed/settings-fields';
 import { AccessSelect, ControlSelect, DISPATCHER_HELP } from '../../features/agents/helpers/OrchestrationFields';
@@ -557,7 +557,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
             )}
             {orchestrating && (
               <>
-                <SettingRow label="Helper selection" htmlFor="new-agent-builder-helper-selection" help={HELPER_SELECTION_HELP}>
+                <SettingRow label="Helper selection" htmlFor="new-agent-builder-helper-selection" help={<HelperSelectionHelp />}>
                   <HelperSelectionSelect
                     id="new-agent-builder-helper-selection"
                     value={draft.autoHelpers}

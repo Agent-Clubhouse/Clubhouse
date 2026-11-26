@@ -1116,7 +1116,7 @@ Rejections:
 
 ## Helper presets
 
-The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Smart selection edits them. Fixtures: `helper-routing.json`, `helper-routing-helper.json`, `helper-routing-changed.json`, `commands/helperRouting.update.json`. The design, and what later stages add, is in `docs/helper-auto-routing.md`.
+The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Smart routing edits them. Fixtures: `helper-routing.json`, `helper-routing-helper.json`, `helper-routing-changed.json`, `commands/helperRouting.update.json`. The design, and what later stages add, is in `docs/helper-auto-routing.md`.
 
 Gate on `helperRouting` in capabilities. It lists only what works now, so don't offer anything it doesn't list. Offer Auto only when `modes` has `auto`.
 
@@ -1159,7 +1159,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 - **efforts**: a model's `efforts` can be empty (some of Copilot's are). Then a cell for it has `effort: null`, which is valid, and a level on it is refused with `effort_unavailable`. Say the model has no effort levels rather than offering a picker.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model.
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
-- **auto**: whether `cli: "auto"` is allowed at the scope asked about. See [Auto provider](#auto-provider).
+- **auto**: whether `cli: "auto"` is allowed at the scope asked about. See [Smart routing](#smart-routing).
 
 The built-in presets are starting choices, not measured best ones. Don't present them as a recommendation.
 
@@ -1193,9 +1193,9 @@ The thresholds are starting proposals, not measured values. `known` means under 
 
 A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. A refresh still going returns the last reading, with `0`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider, with a minute's wait after a failure. `helper-routing-quota.json` has whole responses for these under `fullResponses`, with the delay each one gives.
 
-### Auto provider
+### Smart routing
 
-Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. It balances plan use, not cost, and a helper stays on its provider for its whole task. A wake never decides again. Off unless a person turns it on. Fixtures: `helper-routing-auto.json`.
+Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit, with Copilot as a last resort unless the person turns that off (`copilotAuto`). It balances plan use, not cost, and a helper stays on its provider for its whole task. A wake never decides again. Off unless a person turns it on. Fixtures: `helper-routing-auto.json`.
 
 ```json
 "auto":{"effective":false,"source":"project","reason":"project_off",

@@ -101,7 +101,7 @@ describe('SettingsNav', () => {
     expect(order).toEqual(['about', 'orchestrators', 'settings-nav-group-managed', 'managed-blocks', 'managed-skills', 'managed-mcp', 'managed-templates', 'managed-orchestration', 'helpers']);
     expect(screen.getByText('Agent parts')).toBeTruthy();
     expect(screen.getAllByTestId('settings-nav-app-helpers')).toHaveLength(1);
-    // Smart selection (#3186) is its own App page, after the group, then Usage, then Dispatcher.
+    // Smart routing (#3186) is its own App page, after the group, then Usage, then Dispatcher.
     const appPages = [...screen.getByTestId('settings-nav').querySelectorAll<HTMLElement>('[data-testid^="settings-nav-app-"]')].map((el) => el.dataset.testid!.replace('settings-nav-app-', ''));
     expect(appPages.indexOf('smart-selection')).toBe(appPages.indexOf('managed-switch') + 1);
     expect(appPages.slice(appPages.indexOf('smart-selection') + 1, appPages.indexOf('smart-selection') + 3)).toEqual(['usage', 'dispatcher']);

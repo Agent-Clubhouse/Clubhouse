@@ -126,9 +126,9 @@ export const HELP_SECTIONS: HelpSection[] = [
     id: 'settings',
     title: 'Settings',
     topics: [
-      { id: 'settings-themes', title: 'Display & Themes', content: settingsThemes },
+      { id: 'settings-themes', title: 'Display & UI', content: settingsThemes },
       { id: 'settings-sound', title: 'Sound & Audio', content: settingsSound },
-      { id: 'settings-notifications', title: 'Notifications & Badges', content: settingsNotifications },
+      { id: 'settings-notifications', title: 'Notifications & alerts', content: settingsNotifications },
       // Annex help topics are gated behind the experimental flag (visible only when opted in)
       { id: 'settings-logging', title: 'Logging & Diagnostics', content: settingsLogging },
     ],
@@ -199,9 +199,9 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
     id: 'settings',
     title: 'Settings',
     topics: [
-      { id: 'settings-themes', title: 'Display and themes', content: settingsThemesChrome },
+      { id: 'settings-themes', title: 'Display and UI', content: settingsThemesChrome },
       { id: 'settings-sound', title: 'Sound', content: settingsSoundChrome },
-      { id: 'settings-notifications', title: 'Notifications and badges', content: settingsNotificationsChrome },
+      { id: 'settings-notifications', title: 'Notifications and alerts', content: settingsNotificationsChrome },
       { id: 'settings-logging', title: 'Logging and diagnostics', content: settingsLogging },
     ],
   },

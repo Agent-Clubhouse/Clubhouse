@@ -1,4 +1,4 @@
-# Notifications and badges
+# Notifications and alerts
 
 Clubhouse can tell you about agent activity while you're in another app. Open Settings with `⌘,` and pick **Notifications & alerts**.
 

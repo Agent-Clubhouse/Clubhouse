@@ -104,7 +104,7 @@ export async function observeHelperModelCatalog(provider: OrchestratorProvider, 
           ...(added.length ? [`New models for ${provider.displayName}: ${added.map((m) => m.label).join(', ')}.`] : []),
           ...(missing.length ? [`Models no longer offered for ${provider.displayName}: ${missing.map((id) => previous.models[id]?.label ?? id).join(', ')}.`] : []),
         ];
-        message = `${changes.join(' ')} Review Smart selection`;
+        message = `${changes.join(' ')} Review Smart routing`;
       }
       for (const [id, info] of Object.entries(models)) { seen.add(id); if (info.resolvedId) seen.add(info.resolvedId); }
       for (const id of missing) missingNotified.add(id);

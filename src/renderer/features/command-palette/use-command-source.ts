@@ -476,30 +476,28 @@ export function useCommandSource(): CommandItem[] {
     }
 
     // Annex is stable, so its commands are always listed (#2811).
+    // One command, like the one Settings toggle: it sets the server and the client together (#2766).
+    const annexOn = annexSettings.enableServer || annexSettings.enableClient;
     items.push({
-      id: 'action:toggle-annex-server',
-      label: annexSettings.enableServer ? 'Disable Annex server' : 'Enable Annex server',
+      id: 'action:toggle-annex-network',
+      label: annexOn ? 'Turn Annex Network off' : 'Turn Annex Network on',
       category: CATEGORY.commands,
-      keywords: ['annex', 'server', 'companion', 'ios', 'network', 'remote', 'control'],
+      keywords: ['annex', 'network', 'server', 'client', 'phone', 'ios', 'remote', 'control', 'connect', 'discover'],
       execute: () => {
-        useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
-      },
-    });
-    items.push({
-      id: 'action:toggle-annex-client',
-      label: annexSettings.enableClient ? 'Disable Annex client' : 'Enable Annex client',
-      category: CATEGORY.commands,
-      keywords: ['annex', 'client', 'satellite', 'connect', 'network', 'discover'],
-      execute: () => {
-        useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
+        useAnnexStore.getState().saveSettings({
+          ...annexSettings,
+          enableServer: !annexOn,
+          enableClient: !annexOn,
+          ...(!annexOn && { networkEnabled: true }),
+        });
       },
     });
     items.push({
       id: 'action:annex-show-pin',
-      label: 'Show Annex PIN',
+      label: 'Show one-time code',
       category: CATEGORY.commands,
-      keywords: ['annex', 'pairing', 'pin', 'companion'],
-      detail: annexSettings.enableServer && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
+      keywords: ['annex', 'network', 'pairing', 'pin', 'code', 'phone'],
+      detail: annexSettings.enableServer && annexStatus.pin ? `One-time code: ${annexStatus.pin}` : undefined,
       execute: () => {
         const uiState = useUIStore.getState();
         if (uiState.explorerTab !== 'settings') toggleSettings();

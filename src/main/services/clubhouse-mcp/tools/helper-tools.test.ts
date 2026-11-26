@@ -1082,7 +1082,7 @@ describe('start_helper difficulty (#2671)', () => {
     const decision = await approveHelperStart(PROJECT, request.requestId);
     expect(decision).toMatchObject({ ok: false, code: 'no_valid_mapping' });
     // What a person reads names no agent tool. The orchestrator is told the details.
-    expect(decision.message).toBe('Couldn’t start h because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection.');
+    expect(decision.message).toBe('Couldn’t start h because no hard preset for codex-cli is offered now. Change it in Settings > Smart routing.');
     expect(sent.get('orch')?.at(-1)).toContain('Name a model with list_models');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
     expect(listStartRequests()).toEqual([]);
@@ -1240,7 +1240,7 @@ describe('start_helper cli "auto" (#2671)', () => {
     agents.set('orch', { ...agents.get('orch')!, orchestration: { orchestrate: true } } as never);
     const result = await start({});
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Auto provider is off');
+    expect(result.content[0].text).toContain('Smart routing is off');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
@@ -1285,7 +1285,7 @@ describe('start_helper cli "auto" (#2671)', () => {
     mockGetPolicy.mockImplementation(async () => ({ ...policy, autoHelpers: false, sources: { autoHelpers: 'agent' } }));
     const result = await start({});
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Auto provider is off');
+    expect(result.content[0].text).toContain('Smart routing is off');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 

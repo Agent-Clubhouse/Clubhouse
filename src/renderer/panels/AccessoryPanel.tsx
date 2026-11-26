@@ -57,7 +57,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Agents & providers', page: 'orchestrators' },
     ...MANAGED_PAGES,
     // Auto and the difficulty presets (#3186): they pick for more than helpers, so not under Managed agents.
-    { label: 'Smart selection', page: 'smart-selection' },
+    { label: 'Smart routing', page: 'smart-selection' },
     // Plan limits and token use for every provider (docs/usage-attribution.md).
     { label: 'Usage', page: 'usage' },
     { label: 'Dispatcher', page: 'dispatcher' },

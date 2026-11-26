@@ -74,7 +74,7 @@ function initWindowListeners(): (() => void)[] {
 
   removers.push(window.clubhouse.app.onModelCatalogNotice((message) => {
     if (window.clubhouse.window.isPopout()) return;
-    useToastStore.getState().addToast(message, 'info', { label: 'Review Smart selection', onClick: openAutoSettings });
+    useToastStore.getState().addToast(message, 'info', { label: 'Review Smart routing', onClick: openAutoSettings });
   }));
 
   // Open Settings from menu
