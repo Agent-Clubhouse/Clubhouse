@@ -1279,6 +1279,8 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (old) await old.close();
       // Finish queued writes under the old id before starting its replacement.
       await this.emitChain;
+      // What is read from here on belongs to the new conversation (the Dispatcher inspector's session start).
+      agentRegistry.markConversationStart(this.agentId);
       this.sessionId = this.newId();
       this.seq = 0;
       this.publishedQueueState = { queuedMessageIds: [], queueStateSeq: 0 };

@@ -122,6 +122,7 @@ export class PtyAgentRuntime implements AgentRuntime {
 
   async clearContext(): Promise<void> {
     await this.slashCommand('/clear');
+    agentRegistry.markConversationStart(this.agentId);
   }
 
   async compact(): Promise<void> {

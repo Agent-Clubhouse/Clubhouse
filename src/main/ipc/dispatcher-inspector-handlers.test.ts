@@ -25,7 +25,7 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
 vi.mock('../services/agent-registry', () => ({
   agentRegistry: {
     get: (id: string) => (id === 'work-id' && h.running ? { orchestrator: h.running } : undefined),
-    registeredAt: (id: string) => (id === 'work-id' && h.running ? 4242 : null),
+    conversationStartedAt: (id: string) => (id === 'work-id' && h.running ? 4242 : null),
   },
 }));
 vi.mock('../services/dispatcher/dispatcher-paths', async () => {

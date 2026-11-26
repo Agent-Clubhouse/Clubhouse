@@ -47,9 +47,13 @@ export interface InspectorRoleSession {
   /** Null while it isn't running. */
   running: string | null;
   /**
-   * When the running session was spawned in this app run (ms), or null while it
-   * isn't running. Memory read or written at or after it was "loaded this
-   * session". A conversation resumed across a respawn counts from the respawn.
+   * When the running conversation started in this app run (ms): the later of
+   * the agent's spawn and its last clear (Clear chat, Start fresh, /clear).
+   * Null while it isn't running. Memory read or written at or after it was
+   * "loaded this session". A respawn that resumes an earlier conversation
+   * counts from the respawn, so pages that conversation read before the
+   * respawn show as not loaded this session, though they may still be in its
+   * context.
    */
   startedAt: number | null;
 }

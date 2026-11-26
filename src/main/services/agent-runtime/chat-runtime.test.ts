@@ -1681,9 +1681,12 @@ describe('ChatAgentRuntime', () => {
     const { runtime } = makeRuntime(driver);
     await runtime.start();
     const firstSession = runtime.getSessionId();
+    const mark = vi.spyOn(agentRegistry, 'markConversationStart');
     await runtime.clearContext();
     await flush();
 
+    expect(mark).toHaveBeenCalledWith(runtime.agentId);
+    mark.mockRestore();
     expect(driver.sessions).toHaveLength(2);
     expect(driver.sessions[0].closed).toBe(true);
     expect(runtime.getSessionId()).not.toBe(firstSession);

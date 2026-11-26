@@ -27,9 +27,9 @@ const NS = 'core:dispatcher';
 /**
  * A role's CLIs and session start. Saved is what its record names (what the
  * next start writes); running is what the agent registry holds for its live
- * session, with the time that registration was made at its spawn. Main has
- * no other session start: nothing is guessed, so a role that isn't running
- * has null for both.
+ * session. The session start is the later of its spawn and its last clear
+ * (Clear chat, Start fresh, /clear). Nothing is guessed: a role that isn't
+ * running has null for both.
  */
 export function roleSession(role: DispatcherRole): InspectorRoleSession {
   const agent = getDispatcherRoleAgent(role);
@@ -38,7 +38,7 @@ export function roleSession(role: DispatcherRole): InspectorRoleSession {
   return {
     saved: agent.savedProvider,
     running: registration?.orchestrator ?? null,
-    startedAt: registration ? agentRegistry.registeredAt(agent.agentId) : null,
+    startedAt: registration ? agentRegistry.conversationStartedAt(agent.agentId) : null,
   };
 }
 
