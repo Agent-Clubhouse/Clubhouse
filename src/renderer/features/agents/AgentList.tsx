@@ -770,11 +770,11 @@ function AgentListInner() {
         {/* Orphan mission input (targeting project root) */}
         {showMissionInput && quickTargetParentId === null && renderMissionInput(false)}
 
-        {/* Orphan Quick Sessions */}
+        {/* Orphan quick agents */}
         {orphanQuickAgents.length > 0 && (
           <div>
             <div className="px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0/50">
-              Quick Sessions
+              Quick agents
             </div>
             {orphanQuickAgents.map((agent) => (
               <AgentListItem
@@ -791,7 +791,7 @@ function AgentListInner() {
         {durableAgents.length === 0 && quickAgents.length === 0 && completedAgents.length === 0 && (
           <EmptyState
             title="No agents yet"
-            description='Click + Agent to create a durable agent, or use the dropdown for a quick session.'
+            description='Click + Agent to create a durable agent, or use the dropdown for a quick agent.'
             compact
           />
         )}

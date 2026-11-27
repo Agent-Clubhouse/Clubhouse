@@ -356,7 +356,7 @@ export function ChangesCard({ open, onToggle, cwd, branch, chat, agentId, scope,
             : chat && <CheckpointChanges agentId={agentId} sessionId={chat.sessionId} refreshKey={chat.refreshKey} scope={scope} />}
           {onReviewAll && scope === 'branch' && (branch?.files.length ?? 0) > 0 && (
             <div className="pr-3.5 pl-[33px] pt-1.5">
-              <Button kind="ghost" onClick={onReviewAll} data-testid="details-review-all">Review all</Button>
+              <Button kind="ghost" onClick={onReviewAll} data-testid="details-review-all">Review changes</Button>
             </div>
           )}
         </>

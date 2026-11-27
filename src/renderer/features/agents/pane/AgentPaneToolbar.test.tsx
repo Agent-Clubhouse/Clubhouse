@@ -137,7 +137,7 @@ describe('AgentPaneToolbar', () => {
   });
 
   it('shows a focusable meter: blue context, amber limit, red when one runs out', () => {
-    const lines = ['Context 34%: 68k of 200k tokens', 'Session (5-hour) limit: 40%, resets Fri 3:00 PM'];
+    const lines = ['Context 34%: 68k of 200k tokens', '5-hour limit: 40%, resets Fri 3:00 PM'];
     const { rerender } = render(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: 34, text: '34%', label: 'Context 34%', tone: 'normal', lines }} />);
     const meter = screen.getByTestId('pane-usage');
     expect(meter).toHaveTextContent('34%');
@@ -191,7 +191,7 @@ describe('chatActivity', () => {
       const u = at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.3 }, { window: 'week', utilization: 0.71, status: 'warning', resetsAt: Date.parse('2026-10-21T09:00:00Z') }]);
       expect(u).toMatchObject({ fillPct: 10, text: '10%', tone: 'warn' });
       expect(u?.lines[0]).toBe('Context 10%: 10 of 100 tokens');
-      expect(u?.lines[1]).toBe('Session (5-hour) limit: 30%');
+      expect(u?.lines[1]).toBe('5-hour limit: 30%');
       expect(u?.lines[2]).toMatch(/^Weekly limit: 71%, resets /);
       // 80% used counts as a warning when the provider reports only a fraction (Codex).
       expect(at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.85 }])).toMatchObject({ text: '10%', tone: 'warn' });
@@ -202,7 +202,7 @@ describe('chatActivity', () => {
     it('turns red when a limit is reached, and names a status-only limit', () => {
       const u = at({ used: 10, size: 100 }, [{ window: '5h', status: 'exceeded', resetsAt: Date.parse('2026-10-17T15:00:00Z') }]);
       expect(u).toMatchObject({ fillPct: 10, text: 'limit reached 5h', tone: 'hot' });
-      expect(u?.lines[1]).toMatch(/^Session \(5-hour\) limit: limit reached, resets /);
+      expect(u?.lines[1]).toMatch(/^5-hour limit: limit reached, resets /);
       expect(at(null, [{ window: 'week_opus', status: 'ok' }])).toMatchObject({ fillPct: null, text: null, tone: 'normal' });
       expect(at(null, [{ window: 'week:Fable', utilization: 0.4 }])).toMatchObject({ text: '40% wk Fable', label: 'Weekly Fable limit 40%' });
       expect(chatUsage({ ...base, capabilities: { usage: 'none' } as never })).toBeNull();
