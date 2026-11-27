@@ -1,7 +1,7 @@
 import { Button } from '../../../components/Button';
 import { useWelcomeTourStore } from '../welcomeTourStore';
 import { AgentNode, Av, Ov, TourLink, Wire, pos } from '../stage-parts';
-import { openHelpLink, openNewAgentFromTour, openSmartRoutingSettings } from '../tour-actions';
+import { openHelpLink, openNewAgentFromTour } from '../tour-actions';
 import type { SceneDef } from './types';
 
 /**
@@ -103,19 +103,4 @@ export const orch: SceneDef = {
     c.caption(8500, '.n-why', 'Then it deletes its helpers and tells you what landed.');
     c.status(9000, '.n-orch', 'Pull request open', 'ok');
   },
-};
-
-function SmartRoutingExtra() {
-  return (
-    <div className="wt-x">
-      <Button onClick={openSmartRoutingSettings}>Open Settings › Smart routing</Button>
-      <span className="wt-muted">Choose the models for each difficulty there.</span>
-    </div>
-  );
-}
-
-export const smartRouting: SceneDef = {
-  title: 'Smart routing picks a CLI for each helper',
-  text: 'You have more than one CLI signed in. When an orchestrator starts a helper, it says how hard the job is. Smart routing then picks the CLI with the most room left on its plan, and the model you mapped to that difficulty. It skips a plan that’s nearly used up, and each helper keeps what it was given.',
-  Extra: SmartRoutingExtra,
 };

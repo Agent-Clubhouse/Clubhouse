@@ -5,7 +5,8 @@ import { alsoNew } from './also-new';
 import { getStarted } from './get-started';
 import { compose, share, skills, switched, updates } from './managed';
 import { dispatcher } from './dispatcher';
-import { orch, smartRouting } from './orchestrators';
+import { orch } from './orchestrators';
+import { smartRouting } from './smart-routing';
 
 export type { SceneDef } from './types';
 

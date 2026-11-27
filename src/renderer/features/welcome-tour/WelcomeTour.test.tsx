@@ -89,10 +89,12 @@ describe('startWelcomeTourIfDue', () => {
     expect(useWelcomeTourStore.getState().variant).toBe('upgrade');
   });
 
-  it('leaves Settings or Help so the pane shows the tour', async () => {
-    useUIStore.setState({ explorerTab: 'help', previousExplorerTab: 'agents' });
-    await startWelcomeTourIfDue();
-    expect(useUIStore.getState().explorerTab).toBe('agents');
+  it('waits for the next launch when the person already opened something, rather than pulling them out', async () => {
+    useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents' });
+    await expect(startWelcomeTourIfDue()).resolves.toBe(false);
+    expect(useWelcomeTourStore.getState().open).toBe(false);
+    expect(useUIStore.getState().explorerTab).toBe('settings');
+    expect(saved).toEqual([]);
   });
 });
 
