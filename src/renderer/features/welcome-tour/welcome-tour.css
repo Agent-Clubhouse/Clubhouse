@@ -137,3 +137,75 @@
   .wt .gp { opacity: .75; }
   .wt .ov .w, .wt .rv, .wt .an.go, .wt .agc, .wt .arrow, .wt .lab, .wt-pip, .wt-prog i { transition: none !important; }
 }
+
+/* File panels (managed agents) */
+.wt .fp { position: absolute; z-index: 2; background: var(--wt-crust); border: 1px solid var(--wt-s0); border-radius: 8px; overflow: hidden; }
+.wt .fp.lit { border-color: var(--wt-accent); }
+.wt .fp.panel { background: var(--wt-base); }
+.wt .fp-h { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: var(--wt-base); border-bottom: 1px solid var(--wt-s0); color: var(--wt-sub); font-size: 11px; white-space: nowrap; }
+.wt .fp-h b { color: var(--wt-text); font-weight: 600; }
+.wt .fp-h .sp { flex: 1; }
+.wt .fp-b { padding: 6px 0; font: 10.5px/16px var(--wt-mono); color: var(--wt-sub); }
+.wt .fl { display: flex; gap: 10px; padding: 0 10px; white-space: nowrap; height: 16px; opacity: 0; transform: translateX(-6px); transition: opacity .35s ease, transform .35s ease, background-color .4s; }
+.wt .fl.in { opacity: 1; transform: none; }
+.wt .fl .ln { color: var(--wt-s2); width: 16px; text-align: right; flex-shrink: 0; }
+.wt .fl .bt { margin-left: auto; font-size: 10px; font-family: inherit; color: var(--wt-o1); padding-left: 8px; }
+.wt .fl.h { color: var(--wt-text); }
+.wt .fl.t { height: 18px; line-height: 18px; }
+.wt .fl .tag { font-size: 10px; font-family: inherit; color: var(--wt-o1); border: 1px solid var(--wt-s1); border-radius: 4px; padding: 0 5px; margin-left: 8px; line-height: 14px; align-self: center; }
+.wt .fl.note { height: auto; white-space: normal; font-family: inherit; font-size: 11px; line-height: 1.45; padding: 10px 10px 0; color: var(--wt-o1); }
+.wt .wc { color: var(--wt-peach); transition: color .3s; }
+.wt .wc.done { color: var(--wt-green); }
+.wt .pc .row, .wt .newc .row { display: flex; gap: 8px; align-items: center; width: 100%; }
+.wt .pc .sub.right { margin-left: auto; }
+.wt .pc .sub.okt { color: var(--wt-green); }
+.wt .kq.tpl { width: 18px; height: 18px; border-radius: 5px; background: var(--wt-s1); }
+
+/* A choice outside the picture (which CLI's file the compose scene shows) */
+.wt-seg { display: inline-flex; border: 1px solid rgb(var(--ctp-surface1)); border-radius: 6px; overflow: hidden; }
+.wt-seg button { font-size: 11.5px; color: rgb(var(--ctp-overlay1)); background: none; border: 0; padding: 3px 9px; cursor: pointer; }
+.wt-seg button + button { border-left: 1px solid rgb(var(--ctp-surface1)); }
+.wt-seg button[aria-pressed="true"] { background: rgb(var(--ctp-surface0)); color: rgb(var(--ctp-text)); }
+
+/* Pictures of buttons and dialogs (never real controls) */
+.wt .mbtn { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--wt-s0); color: var(--wt-text); border: 1px solid var(--wt-s1); white-space: nowrap; transition: transform .15s, background-color .2s; }
+.wt .mbtn.pri { background: var(--wt-accent); color: var(--wt-crust); border-color: var(--wt-accent); font-weight: 600; }
+.wt .mbtn.press { transform: scale(.93); }
+.wt .dlg { position: absolute; background: var(--wt-base); border: 1px solid var(--wt-s1); border-radius: 10px; box-shadow: 0 12px 32px rgb(0 0 0 / .35); padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; z-index: 6; }
+.wt .dlg b { color: var(--wt-text); font-weight: 600; }
+.wt .dlg .row { display: flex; align-items: center; gap: 8px; }
+.wt .dlg .row.end { justify-content: flex-end; margin-top: 4px; }
+.wt .dlg .row .st { margin-left: auto; color: var(--wt-o1); font-size: 11px; }
+.wt .cb { width: 12px; height: 12px; border: 1px solid var(--wt-s2); border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; color: var(--wt-crust); transition: background-color .2s; }
+.wt .cb.on { background: var(--wt-accent); border-color: var(--wt-accent); }
+.wt .cb.on::after { content: "\2713"; }
+.wt .lab.cap { color: var(--wt-sub); }
+
+/* The Dispatcher */
+.wt .box { position: absolute; border: 1px solid var(--wt-s0); border-radius: 9px; background: var(--wt-base); }
+.wt .box.dash { border-style: dashed; background: transparent; }
+.wt .box .bl { position: absolute; left: 10px; top: 6px; font-size: 11px; color: var(--wt-o1); }
+.wt .box .boxnote { position: absolute; left: 10px; top: 28px; right: 10px; font-size: 11px; }
+.wt .chat { position: absolute; left: 0; right: 0; top: 28px; bottom: 44px; padding: 10px; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; overflow: hidden; }
+.wt .msgx { max-height: 0; opacity: 0; overflow: hidden; transition: max-height .45s ease, opacity .45s ease; display: flex; flex-direction: column; flex-shrink: 0; }
+.wt .msgx.in { max-height: 90px; opacity: 1; }
+.wt .bb { font-size: 11px; line-height: 1.45; padding: 5px 9px; border-radius: 8px; max-width: 88%; }
+.wt .bb.me { align-self: flex-end; background: var(--wt-s1); color: var(--wt-text); }
+.wt .bb.d { align-self: flex-start; background: var(--wt-s0); color: var(--wt-text); }
+.wt .sched { align-self: flex-start; border: 1px solid var(--wt-s1); border-radius: 8px; padding: 6px 9px; display: flex; gap: 8px; align-items: center; font-size: 11px; }
+.wt .sched b { font-weight: 600; color: var(--wt-text); }
+.wt .dots { display: inline-flex; gap: 3px; padding: 7px 10px; background: var(--wt-s0); border-radius: 8px; align-self: flex-start; }
+.wt .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--wt-o1); animation: wt-bob 1s ease-in-out infinite; }
+.wt .dots i:nth-child(2) { animation-delay: .15s; }
+.wt .dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes wt-bob { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(-3px); } }
+.wt .compo { position: absolute; left: 10px; right: 10px; bottom: 8px; border: 1px solid var(--wt-s1); border-radius: 7px; padding: 0 9px; height: 30px; display: flex; align-items: center; color: var(--wt-o1); font-size: 11.5px; background: var(--wt-base); white-space: nowrap; overflow: hidden; }
+.wt .compo.typing { color: var(--wt-text); }
+
+/* Orchestrators: the line under the picture that says what's happening */
+.wt .awhy { position: absolute; z-index: 2; color: var(--wt-sub); line-height: 1.45; transition: opacity .3s; font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wt .dots i { animation: none !important; }
+  .wt .fl, .wt .msgx, .wt .mbtn, .wt .awhy { transition: none !important; }
+}

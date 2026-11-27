@@ -3,6 +3,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { getHelpSections } from '../help/help-content';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { openAutoSettings, openDispatcherSettings, openDispatcherSetup } from '../dispatcher/dispatcherNav';
+import { useChromeStore } from '../../chrome/chromeStore';
 import { useWelcomeTourStore } from './welcomeTourStore';
 
 /**
@@ -83,4 +84,10 @@ export function openDispatcherSetupFromTour(): void {
 export function openSmartRoutingSettings(): void {
   leaveTour();
   openAutoSettings();
+}
+
+/** The New agent page, where the Orchestrator template is one of the starting points. Nothing is created until you choose. */
+export function openNewAgentFromTour(): void {
+  leaveTour();
+  useChromeStore.getState().openNewAgent('durable');
 }
