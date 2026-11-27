@@ -7,7 +7,7 @@ Open Settings with `⌘,` to find the two Annex pages: **Annex** for this machin
 ## Let another machine control this one
 
 1. In Settings, pick **Annex** and turn on **Allow remote control**.
-2. Set a **Device name**, and an **Alias** and **Color** under **Identity**, so the controller can tell machines apart.
+2. Set a **Device name** and a **Color**, so the controller can tell machines apart.
 3. Note the **Pairing PIN**. **Regenerate** gives you a new one.
 
 The page also shows the server status and how many devices are connected.
