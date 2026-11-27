@@ -246,7 +246,7 @@ describe('GroupProjectWorkspace Details', () => {
     expect(screen.getByRole('button', { name: 'Delete group project' })).toBeDisabled();
     expect(screen.queryByRole('region', { name: 'Scope' })).toBeNull();
     expect(screen.getAllByText(/Only Studio Mac can/)).toHaveLength(2);
-    expect(screen.getAllByText(/there is no host transfer/i)).toHaveLength(2);
+    expect(screen.getAllByText(/can't move to another computer/i)).toHaveLength(2);
   });
 });
 

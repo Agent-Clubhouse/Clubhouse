@@ -64,7 +64,7 @@ export function GroupProjectDefaultsPanel({ groupProjectId, ctx, includeText }: 
     const { promise } = showApprovalDialog({
       title: 'Save default permissions',
       summary:
-        'Apply the new defaults to future connections only, or also retroactively apply them to every existing wire on this project?',
+        'Apply the new defaults to new connections only, or also to every existing connection to this group project?',
       actions: [
         { value: 'cancel', label: 'Cancel', style: 'default' },
         { value: 'future', label: 'Apply to new only', style: 'default' },

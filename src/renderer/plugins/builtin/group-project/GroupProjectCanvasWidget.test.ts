@@ -95,8 +95,6 @@ describe('GroupProjectCanvasWidget — PTY injection via context', () => {
   });
 });
 
-// ── Include project instructions checkbox ───────────────────────────
-
 // ── Message ordering (newest-first feed) ────────────────────────────
 
 describe('GroupProjectCanvasWidget — message ordering', () => {
@@ -461,10 +459,10 @@ describe('GroupProjectCanvasWidget — snapshot data richness', () => {
   });
 });
 
-// ── Admin (project lead) role in the agent list ─────────────────────
+// ── Lead role in the agent list ─────────────────────────────────────
 
 describe('GroupProjectCanvasWidget — admin star + toggle', () => {
-  it('marks project leads with the word Lead and a pressed star button', () => {
+  it('marks leads with the word Lead and a pressed star button', () => {
     expect(source).toContain('function StarIcon');
     expect(source).toContain('<StarIcon filled={lead} />');
     expect(source).toContain('{lead && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Lead</span>}');
@@ -489,7 +487,7 @@ describe('GroupProjectCanvasWidget — CreationForm error surfacing', () => {
   });
 
   it('stores and renders the create error in an alert region', () => {
-    expect(source).toContain("setError(`Couldn't create project: ${message}`)");
+    expect(source).toContain("setError(`Couldn't create the group project. ${message}`)");
     expect(source).toContain('role="alert"');
     expect(source).toMatch(/\{error &&/);
   });

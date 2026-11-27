@@ -24,7 +24,7 @@ export function GroupProjectActionsSection({ groupProjectId }: { groupProjectId:
     <SettingsSection title="Actions">
       <SettingsBlock>
         {project?.network?.role === 'replica'
-          ? <HostActionSummaries groupProjectId={groupProjectId} hostName={project.hostName ?? 'the host'} />
+          ? <HostActionSummaries groupProjectId={groupProjectId} hostName={project.hostName ?? 'the computer that holds it'} />
           : <LocalActions groupProjectId={groupProjectId} />}
       </SettingsBlock>
     </SettingsSection>
@@ -93,7 +93,7 @@ function HostActionSummaries({ groupProjectId, hostName }: { groupProjectId: str
       {summaries.length === 0
         ? <p className={`${settingsHelp} mt-2`}>Unavailable. {hostName} has not shared a summary of these Actions with this computer.</p>
         : (
-          <ul aria-label="Group project Actions on the host" className="mt-2">
+          <ul aria-label={`Group project Actions on ${hostName}`} className="mt-2">
             {summaries.map((action) => (
               <li key={action.id} className="py-2 border-t border-surface-0 text-xs text-ctp-subtext1">
                 <span className="text-ctp-text">{action.name}</span>{action.enabled ? '' : ' (off)'}

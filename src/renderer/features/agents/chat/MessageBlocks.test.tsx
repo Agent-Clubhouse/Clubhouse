@@ -82,6 +82,12 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-you-label').textContent).toBe('You · From another device · Steered into the running turn');
   });
 
+  it('labels a shoulder tap the user sent as an urgent message', () => {
+    const text = 'Group Project notification — shoulder tap from "user" in "Proj"\nLook here\n\n---\nRESPONSE INSTRUCTIONS:\nTask ID: tap_1';
+    render(<UserMessage item={item({ text, source: 'shoulder_tap' })} />);
+    expect(screen.getByTestId('chat-you-label').textContent).toBe('You · Urgent message');
+  });
+
   it('says plainly when a queued message was not delivered, and nothing while it is sending', () => {
     const { rerender } = render(<UserMessage item={item({ text: 'hi', delivery: 'queued', sendState: 'not_delivered' })} />);
     expect(screen.getByTestId('chat-you-label').textContent).toBe('You · Not delivered');
