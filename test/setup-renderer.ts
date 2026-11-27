@@ -304,6 +304,9 @@ vi.stubGlobal('clubhouse', {
     setDockBadge: asyncNoop,
     getBadgeSettings: async () => ({ showBadge: true }),
     saveBadgeSettings: asyncNoop,
+    // Seen by default, so the welcome tour (#2814) stays out of every other test.
+    getWelcomeTour: async () => ({ state: { seenVersion: 1, variant: null, variantVersion: 0 }, unreadable: false }),
+    saveWelcomeTour: async (state: unknown) => state,
     getUpdateSettings: async () => ({ autoUpdate: false }),
     saveUpdateSettings: asyncNoop,
     checkForUpdates: asyncNoop,

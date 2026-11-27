@@ -1,0 +1,202 @@
+import { create } from 'zustand';
+import { WELCOME_TOUR_VERSION, type WelcomeTourState, type WelcomeTourVariant } from '../../../shared/welcome-tour';
+import { rendererLog } from '../../plugins/renderer-logger';
+import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
+import { useChromeStore } from '../../chrome/chromeStore';
+import { isNewChromeEnabled } from '../../chrome/chromeFlag';
+import {
+  clampPosition,
+  decideTourAtLaunch,
+  nextPosition,
+  previousPosition,
+  stepScenes,
+  tourSteps,
+  variantForReopen,
+  type TourPosition,
+  type TourShape,
+} from './tour-model';
+import { readSmartRoutingClis } from './smart-routing-gate';
+
+/**
+ * The welcome tour's open state (#2814). It covers the pane like the
+ * Dispatcher's view: opening anything else closes it (WelcomeTour.tsx), and
+ * closing it in any way counts as seen. The only thing it saves is its own
+ * state in welcome-tour.json. It never changes a setting or an agent.
+ */
+
+export type TourCloseReason = 'skip' | 'done' | 'navigate';
+
+/** Opening the tour: its shape, plus the CLIs the Smart routing scene draws. */
+export interface TourOpening extends TourShape {
+  smartRoutingClis?: string[];
+}
+
+interface WelcomeTourStoreState extends TourShape {
+  open: boolean;
+  /** The CLIs Smart routing could pick between when the tour opened, readers first. Empty without the scene. */
+  smartRoutingClis: string[];
+  position: TourPosition;
+  /** The saved state as last read or written. Null until read. */
+  saved: WelcomeTourState | null;
+  openTour: (shape: TourOpening) => void;
+  closeTour: (reason: TourCloseReason) => void;
+  next: () => void;
+  back: () => void;
+  goToStep: (step: number) => void;
+  goToScene: (scene: number) => void;
+}
+
+function log(level: 'info' | 'warn', message: string, meta?: Record<string, unknown>): void {
+  try {
+    rendererLog('core:welcome-tour', level, message, meta ? { meta } : undefined);
+  } catch {
+    // telemetry-exempt: logging never breaks the tour.
+  }
+}
+
+async function persist(state: WelcomeTourState): Promise<void> {
+  try {
+    const saved = await window.clubhouse.app.saveWelcomeTour(state);
+    useWelcomeTourStore.setState({ saved });
+  } catch (err) {
+    // telemetry-exempt: logged; the tour still works, and shows again at the next launch.
+    log('warn', 'Could not save the welcome tour state', { error: err instanceof Error ? err.name : 'unknown' });
+  }
+}
+
+export const useWelcomeTourStore = create<WelcomeTourStoreState>((set, get) => ({
+  open: false,
+  variant: 'new',
+  hasProjects: false,
+  smartRouting: false,
+  smartRoutingClis: [],
+  position: { step: 0, scene: 0 },
+  saved: null,
+
+  openTour: (shape) => {
+    set({ ...shape, smartRoutingClis: shape.smartRoutingClis ?? [], open: true, position: { step: 0, scene: 0 } });
+    const prev = get().saved;
+    if (prev?.variant !== shape.variant || prev.variantVersion !== WELCOME_TOUR_VERSION) {
+      void persist({ seenVersion: prev?.seenVersion ?? 0, variant: shape.variant, variantVersion: WELCOME_TOUR_VERSION });
+    }
+  },
+
+  closeTour: (reason) => {
+    const { open, variant, saved, position } = get();
+    if (!open) return;
+    set({ open: false });
+    log('info', 'Welcome tour closed', { reason, variant, step: tourSteps(variant, get().hasProjects)[position.step] });
+    if ((saved?.seenVersion ?? 0) < WELCOME_TOUR_VERSION) {
+      void persist({ seenVersion: WELCOME_TOUR_VERSION, variant, variantVersion: WELCOME_TOUR_VERSION });
+    }
+  },
+
+  next: () => {
+    const s = get();
+    const to = nextPosition(s, s.position);
+    if (to) set({ position: to });
+    else s.closeTour('done');
+  },
+
+  back: () => {
+    const s = get();
+    const to = previousPosition(s, s.position);
+    if (to) set({ position: to });
+  },
+
+  goToStep: (step) => set((s) => ({ position: clampPosition(s, { step, scene: 0 }) })),
+
+  goToScene: (scene) => set((s) => {
+    const scenes = stepScenes(tourSteps(s.variant, s.hasProjects)[s.position.step], s.variant, s.smartRouting);
+    return { position: { step: s.position.step, scene: Math.min(Math.max(scene, 0), scenes.length - 1) } };
+  }),
+}));
+
+/** Whether something other than the start of the app holds the pane: Settings, Help, an app view, the Dispatcher or New agent. */
+function paneInUse(): boolean {
+  const ui = useUIStore.getState();
+  return !!useChromeStore.getState().newAgent || ui.dispatcherOpen || ui.explorerTab === 'settings' || ui.explorerTab === 'help' || ui.explorerTab.startsWith('plugin:app:');
+}
+
+/** Clear the pane for the tour: leave Settings, Help or an app view, and close the Dispatcher and New agent. */
+function clearPane(): void {
+  useChromeStore.getState().closeNewAgent();
+  const ui = useUIStore.getState();
+  ui.setDispatcherOpen(false);
+  if (ui.explorerTab === 'settings') ui.toggleSettings();
+  else if (ui.explorerTab === 'help') ui.toggleHelp();
+  else if (ui.explorerTab.startsWith('plugin:app:')) ui.setExplorerTab('agents');
+}
+
+async function readSaved(): Promise<{ state: WelcomeTourState | null; earlierRun?: boolean }> {
+  try {
+    const { state, unreadable, earlierRun } = await window.clubhouse.app.getWelcomeTour();
+    useWelcomeTourStore.setState({ saved: state });
+    return { state: unreadable ? null : state, earlierRun };
+  } catch (err) {
+    // telemetry-exempt: logged; unreadable state shows the upgrading tour, which never hides work.
+    log('warn', 'Could not read the welcome tour state', { error: err instanceof Error ? err.name : 'unknown' });
+    return { state: null };
+  }
+}
+
+async function readLastSeenVersion(): Promise<string | null | undefined> {
+  try {
+    const settings = await window.clubhouse.app.getUpdateSettings() as { lastSeenVersion?: unknown } | null;
+    const v = settings?.lastSeenVersion;
+    return typeof v === 'string' ? v : v === null || v === undefined ? null : undefined;
+  } catch {
+    // telemetry-exempt: an unreadable version record counts as upgrading, which never hides work.
+    return undefined;
+  }
+}
+
+/**
+ * At launch, after the project list loads: open the tour if this person hasn't
+ * seen this version of it. Only the new layout has it, so a classic session
+ * leaves it for the first launch in the new one. Resolves whether it opened, so
+ * What's New can wait for another launch. Never throws.
+ */
+export async function startWelcomeTourIfDue(): Promise<boolean> {
+  try {
+    if (!isNewChromeEnabled()) return false;
+    const [{ state, earlierRun }, lastSeenVersion, currentVersion] = await Promise.all([
+      readSaved(),
+      readLastSeenVersion(),
+      window.clubhouse.app.getVersion(),
+    ]);
+    const projectCount = useProjectStore.getState().projects.length;
+    const decision = decideTourAtLaunch({ state, lastSeenVersion, currentVersion, projectCount, earlierRun });
+    if (!decision.show) return false;
+    const smartRoutingClis = await readSmartRoutingClis();
+    // Nothing is cleared at launch: if the person already opened something
+    // while this was read (Settings, a draft on New agent), the tour waits for
+    // the next launch rather than pulling them out of it.
+    if (paneInUse()) {
+      log('info', 'Welcome tour left for the next launch: the pane was in use', { variant: decision.variant });
+      return false;
+    }
+    useWelcomeTourStore.getState().openTour({ variant: decision.variant, hasProjects: projectCount > 0, smartRouting: smartRoutingClis.length > 0, smartRoutingClis });
+    log('info', 'Welcome tour opened at launch', { variant: decision.variant, reason: decision.reason });
+    return true;
+  } catch (err) {
+    // telemetry-exempt: logged; the app goes on without the tour this launch.
+    log('warn', 'Could not decide whether to show the welcome tour', { error: err instanceof Error ? err.name : 'unknown' });
+    return false;
+  }
+}
+
+/** Reopen the tour from Help or Settings › What's new, at its first step. */
+export async function openWelcomeTour(): Promise<void> {
+  // Only the new layout's pane can show it; anywhere else it would stay open unseen.
+  if (!isNewChromeEnabled()) return;
+  const saved = useWelcomeTourStore.getState().saved ?? (await readSaved()).state;
+  const projectCount = useProjectStore.getState().projects.length;
+  const smartRoutingClis = await readSmartRoutingClis();
+  // Asked for from Help or What's new, so the pane is cleared for it.
+  clearPane();
+  useWelcomeTourStore.getState().openTour({ variant: variantForReopen(saved, projectCount), hasProjects: projectCount > 0, smartRouting: smartRoutingClis.length > 0, smartRoutingClis });
+}
+
+export type { WelcomeTourVariant };

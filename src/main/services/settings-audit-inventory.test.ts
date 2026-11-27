@@ -55,6 +55,8 @@ const NOT_SETTINGS = new Set([
   'project-imports.json',
   // Messages waiting for an offline lead Dispatcher (#3353): chat content in transit, not settings.
   'dispatcher-lead-outbox.json',
+  // How far the welcome tour got (#2814): the tour's own place, never a setting.
+  'welcome-tour.json',
 ]);
 
 /** Per-project policy stores audit their person-facing writer, without exposing the policy map. */

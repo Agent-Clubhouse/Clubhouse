@@ -3,6 +3,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useHelpSections, resolveHelpSelection } from '../../features/help/useHelpSections';
 import { searchHelpTopics, type HelpSearchResult } from '../../features/help/help-search';
 import type { HelpSection } from '../../features/help/help-content';
+import { openWelcomeTour } from '../../features/welcome-tour/welcomeTourStore';
 
 /**
  * Help in the sidebar (#2017, decided 2026-10-17): a search field, then the
@@ -196,6 +197,12 @@ export function HelpNav() {
           </>
         )}
       </nav>
+      {/* The 1.0 welcome tour (#2814) comes back from here. */}
+      <div className="flex-shrink-0 px-1.5 pt-1.5 pb-2 border-t border-surface-0">
+        <button type="button" data-testid="help-nav-welcome-tour" onClick={() => void openWelcomeTour()} className={rowClass(false, 'pl-2')}>
+          <span className="truncate">Welcome tour</span>
+        </button>
+      </div>
     </div>
   );
 }

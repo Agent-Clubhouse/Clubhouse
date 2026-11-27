@@ -59,6 +59,7 @@
 }
 
 @import '@xterm/xterm/css/xterm.css';
+@import './features/welcome-tour/welcome-tour.css';
 
 :root {
   /* Catppuccin Mocha palette — space-separated RGB channels for Tailwind alpha support */

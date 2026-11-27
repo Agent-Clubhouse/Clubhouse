@@ -381,6 +381,9 @@ export const IPC = {
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',
+    /** The welcome tour's own saved state (#2814), welcome-tour.json. */
+    GET_WELCOME_TOUR: 'app:get-welcome-tour',
+    SAVE_WELCOME_TOUR: 'app:save-welcome-tour',
     GET_UPDATE_SETTINGS: 'app:get-update-settings',
     SAVE_UPDATE_SETTINGS: 'app:save-update-settings',
     CHECK_FOR_UPDATES: 'app:check-for-updates',

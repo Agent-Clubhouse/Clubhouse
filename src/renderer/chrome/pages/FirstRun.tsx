@@ -49,7 +49,7 @@ function Step({ n, title, active, children, detail }: { n: number; title: string
 }
 
 /** Installed agent CLIs, from checkOrchestrator, with an install link for any that are missing. */
-function AgentClis() {
+export function AgentClis() {
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
   const checkAll = useOrchestratorStore((s) => s.checkAllAvailability);
@@ -90,7 +90,11 @@ function AgentClis() {
   );
 }
 
-export function FirstRun() {
+/**
+ * `embedded` is the welcome tour's Get started step (#2814): the same steps,
+ * without the page's own title, so the tour and the empty app never differ.
+ */
+export function FirstRun({ embedded = false, onProjectAdded }: { embedded?: boolean; onProjectAdded?: () => void } = {}) {
   const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
   const addProject = useProjectStore((s) => s.addProject);
   const newAgentBinding = useKeyboardShortcutsStore((s) => s.shortcuts['new-quick-agent']?.currentBinding);
@@ -98,7 +102,7 @@ export function FirstRun() {
 
   const choose = () => {
     reportChromeFeature('first_run_add');
-    pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
+    pickAndAddProject().then((project) => { if (project) onProjectAdded?.(); }).catch((err) => reportChromeActionFailed('add_project', err));
   };
 
   const drop = (e: React.DragEvent) => {
@@ -109,7 +113,7 @@ export function FirstRun() {
     const path = window.clubhouse.getPathForFile(file);
     if (!path) return;
     reportChromeFeature('first_run_drop');
-    addProject(path).catch((err) => reportChromeActionFailed('add_project', err));
+    addProject(path).then(() => onProjectAdded?.()).catch((err) => reportChromeActionFailed('add_project', err));
   };
 
   const openAnnex = () => {
@@ -123,20 +127,15 @@ export function FirstRun() {
   // ⇧⌘N on macOS, Ctrl+Shift+N elsewhere.
   const shortcut = newAgentBinding ? formatShortcut(newAgentBinding) : null;
 
-  return (
-    <div
-      data-testid="first-run"
-      className="h-full overflow-y-auto bg-ctp-base flex justify-center"
-      onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
-      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
-      onDrop={drop}
-    >
-      <div className="w-[480px] max-w-full px-6 pt-[84px] pb-10 flex flex-col">
-        <Mascots />
-        <h1 className="text-lg font-semibold text-ctp-text">Welcome to Clubhouse</h1>
-        <p className="mt-1 text-[13px] text-ctp-overlay1">Run coding agents side by side, each on its own branch.</p>
+  const dropProps = {
+    onDragOver: (e: React.DragEvent) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } },
+    onDragLeave: (e: React.DragEvent) => { if (e.currentTarget === e.target) setDragging(false); },
+    onDrop: drop,
+  };
 
-        <ol className="mt-6 border-b border-surface-0">
+  const steps = (
+    <>
+        <ol className={`${embedded ? '' : 'mt-6 '}border-b border-surface-0`}>
           <Step n={1} active title="Add a project" detail="A folder with a git repository. Agents get their own branch and worktree inside it.">
             <div
               className={`mt-2 h-[72px] rounded-lg border border-dashed flex items-center justify-center gap-2.5 text-xs ${
@@ -165,6 +164,20 @@ export function FirstRun() {
           {' '}Using Clubhouse on another {IS_MAC ? 'Mac' : 'computer'}?{' '}
           <button type="button" data-testid="first-run-annex" onClick={openAnnex} className="text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Connect to it</button>.
         </p>
+    </>
+  );
+
+  if (embedded) {
+    return <div data-testid="welcome-tour-first-run" className="w-[480px] max-w-full mx-auto flex flex-col" {...dropProps}>{steps}</div>;
+  }
+
+  return (
+    <div data-testid="first-run" className="h-full overflow-y-auto bg-ctp-base flex justify-center" {...dropProps}>
+      <div className="w-[480px] max-w-full px-6 pt-[84px] pb-10 flex flex-col">
+        <Mascots />
+        <h1 className="text-lg font-semibold text-ctp-text">Welcome to Clubhouse</h1>
+        <p className="mt-1 text-[13px] text-ctp-overlay1">Run coding agents side by side, each on its own branch.</p>
+        {steps}
       </div>
     </div>
   );
