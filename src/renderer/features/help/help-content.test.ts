@@ -80,7 +80,7 @@ describe('help-content', () => {
     const find = (sections: typeof HELP_SECTIONS, id: string) => sections.flatMap((s) => s.topics).find((t) => t.id === id)!;
 
     it('has the article after Terminal in both shells', () => {
-      for (const [sections, title] of [[HELP_SECTIONS, 'Orchestrated Helpers'], [CHROME_HELP_SECTIONS, 'Orchestrated helpers']] as const) {
+      for (const [sections, title] of [[HELP_SECTIONS, 'Orchestrated Helpers'], [CHROME_HELP_SECTIONS, 'Helpers and Smart routing']] as const) {
         const agents = sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
         expect(agents.indexOf('agents-orchestrated-helpers')).toBe(agents.indexOf('agents-terminal') + 1);
         expect(find(sections, 'agents-orchestrated-helpers').title).toBe(title);
@@ -233,7 +233,7 @@ describe('help-content in the new shell', () => {
     for (const s of CHROME_HELP_SECTIONS) {
       expect(s.title).not.toMatch(/&/);
       for (const t of [...s.topics, ...NEW_LAYOUT_TOPICS.map((n) => n.topic)]) {
-        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b)\(?[A-Z][a-z]/);
+        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b|Clubhouse\b|Smart routing\b)\(?[A-Z][a-z]/);
       }
     }
   });
