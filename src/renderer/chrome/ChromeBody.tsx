@@ -25,6 +25,8 @@ import { reportChromePage, reportChromeSurface, reportChromeView, type ChromeSur
 import { DispatcherView } from '../features/dispatcher/DispatcherView';
 import { useDispatcherAgentId } from '../features/dispatcher/dispatcherStore';
 import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
+import { WelcomeTour } from '../features/welcome-tour/WelcomeTour';
+import { useWelcomeTourStore } from '../features/welcome-tour/welcomeTourStore';
 
 const SURFACE_FOR_MODE: Record<SidebarMode, ChromeSurface> = {
   tree: 'sidebar_agents',
@@ -78,6 +80,8 @@ export function ChromeBody() {
   const newAgent = useChromeStore((s) => s.newAgent);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const dispatcherOpen = useUIStore((s) => s.dispatcherOpen);
+  // The welcome tour (#2814) covers the pane until something else opens.
+  const tourOpen = useWelcomeTourStore((s) => s.open);
 
   // The Dispatcher (#2538): its state and agent, and its view while it's on and open.
   useDispatcherSync();
@@ -167,7 +171,7 @@ export function ChromeBody() {
   // Not before the project list loads, or first run would flash on every launch.
   const firstRun = projectsLoaded && projects.length === 0 && !activeHostId;
   const inPane = !isSettings && !isHelp && !appPluginId && !showDispatcher;
-  const page = showNewAgent ? 'new_agent' : !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null)
+  const page = tourOpen ? null : showNewAgent ? 'new_agent' : !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null)
     : activeHostId ? 'satellite_start' : (firstRun ? 'first_run' : null);
 
   // clubhouse.view and clubhouse.ui.surface for slow-frame and render-error
@@ -182,6 +186,7 @@ export function ChromeBody() {
   }, [page, explorerTab, mode]);
 
   const content = useMemo(() => {
+    if (tourOpen) return <WelcomeTour />;
     if (showNewAgent && newAgent) return <NewAgentPage key={newAgent.seq} request={newAgent} />;
     // The settings navigator is in the sidebar; the pane shows the selected page.
     if (isSettings) return <MainContentView />;
@@ -197,7 +202,7 @@ export function ChromeBody() {
     if (startPage && activeProject) return <ProjectHome project={activeProject} overview={<ProjectStartPage project={activeProject} />} />;
     // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
     return <MainContentView />;
-  }, [showNewAgent, newAgent, isSettings, isHelp, appPluginId, showDispatcher, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
+  }, [tourOpen, showNewAgent, newAgent, isSettings, isHelp, appPluginId, showDispatcher, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
 
 
   return (

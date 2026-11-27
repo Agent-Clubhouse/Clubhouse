@@ -18,6 +18,7 @@ const {
   mockCleanupRemovedOnboarding,
   mockInitBadgeSideEffects,
   mockInitializePluginSystem,
+  mockStartWelcomeTour,
 } = vi.hoisted(() => ({
   mockLoadProjects: vi.fn().mockResolvedValue(undefined),
   mockLoadNotificationSettings: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +35,7 @@ const {
   mockCleanupRemovedOnboarding: vi.fn(() => false),
   mockInitBadgeSideEffects: vi.fn(),
   mockInitializePluginSystem: vi.fn().mockResolvedValue(undefined),
+  mockStartWelcomeTour: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('./stores/projectStore', () => ({
@@ -110,6 +112,11 @@ vi.mock('./stores/pluginUpdateStore', () => ({
   initPluginUpdateListener: vi.fn(() => vi.fn()),
 }));
 
+// mockReset clears a mock's resolved value between tests, so an unset one means "not opened".
+vi.mock('./features/welcome-tour/welcomeTourStore', () => ({
+  startWelcomeTourIfDue: () => mockStartWelcomeTour() ?? Promise.resolve(false),
+}));
+
 vi.mock('./removed-onboarding-cleanup', () => ({
   cleanupRemovedOnboardingState: mockCleanupRemovedOnboarding,
 }));
@@ -184,10 +191,19 @@ describe('initApp', () => {
     expect(window.clubhouse.app.onThemeChanged).toHaveBeenCalled();
   });
 
-  it('should check What\'s New after 1s delay', () => {
+  it('should check What\'s New after 1s delay, when the welcome tour doesn\'t open', async () => {
+    mockStartWelcomeTour.mockResolvedValueOnce(false);
     expect(mockCheckWhatsNew).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockStartWelcomeTour).toHaveBeenCalledTimes(1);
     expect(mockCheckWhatsNew).toHaveBeenCalled();
+  });
+
+  it('leaves What\'s New for a later launch when the welcome tour opens (#2814)', async () => {
+    mockStartWelcomeTour.mockResolvedValueOnce(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockStartWelcomeTour).toHaveBeenCalledTimes(1);
+    expect(mockCheckWhatsNew).not.toHaveBeenCalled();
   });
 
   it('deletes the removed onboarding modal\'s saved state once per startup', () => {

@@ -49,6 +49,8 @@ import * as helperRouting from '../services/helper-routing';
 import type { HelperRoutingReadOptions, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../../shared/helper-routing';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 import { OPEN_EXTERNAL_ALLOWED_PROTOCOLS } from '../navigation-guard';
+import { getWelcomeTourState, saveWelcomeTourState } from '../services/welcome-tour-state';
+import type { WelcomeTourState } from '../../shared/welcome-tour';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
@@ -347,6 +349,13 @@ export function registerAppHandlers(): void {
         app.setBadgeCount(count);
       }
     },
+  ));
+
+  // --- Welcome tour (#2814): its own state, never a setting ---
+  ipcMain.handle(IPC.APP.GET_WELCOME_TOUR, () => getWelcomeTourState());
+  ipcMain.handle(IPC.APP.SAVE_WELCOME_TOUR, withValidatedArgs(
+    [objectArg<WelcomeTourState>()],
+    async (_event, state) => saveWelcomeTourState(state),
   ));
 
   // --- Auto-update ---

@@ -32,6 +32,7 @@ import { useToastStore } from './stores/toastStore';
 import { processResumeQueue } from './services/resume-queue';
 import type { RestartSessionState } from '../shared/types';
 import { markRendererReady } from './telemetry';
+import { startWelcomeTourIfDue } from './features/welcome-tour/welcomeTourStore';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -109,9 +110,13 @@ export async function initApp(): Promise<() => void> {
   cleanups.push(initAnnexListener());
   cleanups.push(initPluginUpdateListener());
 
-  // 5. Check for What's New dialog after startup (delayed)
+  // 5. After startup (delayed): the welcome tour if it's due (#2814), and
+  //    otherwise What's New. Never both at one launch: What's New keeps its
+  //    record, so it shows at a later one.
   const whatsNewTimer = setTimeout(() => {
-    useUpdateStore.getState().checkWhatsNew();
+    void startWelcomeTourIfDue().then((opened) => {
+      if (!opened) void useUpdateStore.getState().checkWhatsNew();
+    });
   }, 1000);
   cleanups.push(() => clearTimeout(whatsNewTimer));
 

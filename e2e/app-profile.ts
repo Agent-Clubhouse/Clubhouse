@@ -134,9 +134,16 @@ export interface ProfileSeed {
   userDataFiles?: Record<string, unknown>;
 }
 
+/**
+ * The welcome tour (#2814) as already seen, so it doesn't cover the pane in
+ * specs about something else. A spec about the tour seeds its own
+ * `welcome-tour.json`, which replaces this.
+ */
+export const WELCOME_TOUR_SEEN_SEED = { seenVersion: 999, variant: null, variantVersion: 0 };
+
 /** Write seed files into the profile before launch. */
 export function seedProfile(profile: DisposableProfile, seed: ProfileSeed): void {
-  const files: Record<string, unknown> = {};
+  const files: Record<string, unknown> = { 'welcome-tour.json': WELCOME_TOUR_SEEN_SEED };
   if (seed.experimental) files['experimental-settings.json'] = seed.experimental;
   Object.assign(files, seed.userDataFiles);
   for (const [filename, value] of Object.entries(files)) {

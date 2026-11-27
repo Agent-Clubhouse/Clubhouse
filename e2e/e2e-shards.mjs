@@ -45,6 +45,7 @@ export const E2E_SHARDS = {
     'smoke-agent-lifecycle.spec.ts',
     'start-agent.spec.ts',
     'telemetry-export.spec.ts',
+    'welcome-tour.spec.ts',
   ],
   3: [
     'app-launch.spec.ts',

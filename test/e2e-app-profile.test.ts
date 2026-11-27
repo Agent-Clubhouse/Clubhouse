@@ -38,6 +38,7 @@ import {
   disposeAllProfiles,
   registerProfileProcess,
   seedProfile,
+  WELCOME_TOUR_SEEN_SEED,
   type DisposableProfile,
 } from '../e2e/app-profile';
 import { launchApp } from '../e2e/launch';
@@ -178,6 +179,16 @@ describe('seedProfile', () => {
     const read = async (f: string) => JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, f), 'utf-8'));
     expect(await read('experimental-settings.json')).toEqual({ chat: true });
     expect(await read('mcp-settings.json')).toEqual({ enabled: false });
+  });
+
+  it('marks the welcome tour seen unless the spec seeds its own', async () => {
+    const read = async (dir: string) => JSON.parse(await fs.promises.readFile(path.join(dir, 'welcome-tour.json'), 'utf-8'));
+    const quiet = createDisposableProfile({ tmpDir: sandbox });
+    seedProfile(quiet, {});
+    expect(await read(quiet.userDataDir)).toEqual(WELCOME_TOUR_SEEN_SEED);
+    const tour = createDisposableProfile({ tmpDir: sandbox });
+    seedProfile(tour, { userDataFiles: { 'welcome-tour.json': { seenVersion: 0 } } });
+    expect(await read(tour.userDataDir)).toEqual({ seenVersion: 0 });
   });
 
   it.each(['../escape.json', 'nested/file.json', '..', ''])('rejects seed filename %j', (filename) => {

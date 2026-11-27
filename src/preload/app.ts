@@ -2,6 +2,7 @@ import type { UsageSummary, UsageSummaryDays } from '../shared/usage-summary';
 import type { HelperRoutingReadOptions, HelperRoutingSettings, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../shared/helper-routing';
 import type { AccessLevel } from '../shared/agent-access';
 import type { AppUpdateRequest } from '../shared/app-update';
+import type { WelcomeTourState } from '../shared/welcome-tour';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients, LiveAgentInfo, UpdateAgentAction, UpdateAgentActionResult } from '../shared/types';
@@ -121,6 +122,11 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_BADGE_SETTINGS),
   saveBadgeSettings: (settings: BadgeSettings) =>
     ipcRenderer.invoke(IPC.APP.SAVE_BADGE_SETTINGS, settings),
+  /** The welcome tour's own saved state (#2814), and whether its file couldn't be read. */
+  getWelcomeTour: (): Promise<{ state: WelcomeTourState; unreadable: boolean }> =>
+    ipcRenderer.invoke(IPC.APP.GET_WELCOME_TOUR),
+  saveWelcomeTour: (state: WelcomeTourState): Promise<WelcomeTourState> =>
+    ipcRenderer.invoke(IPC.APP.SAVE_WELCOME_TOUR, state),
   getUpdateSettings: () =>
     ipcRenderer.invoke(IPC.APP.GET_UPDATE_SETTINGS),
   saveUpdateSettings: (settings: { autoUpdate: boolean; previewChannel: boolean; lastCheck: string | null; dismissedVersion: string | null; lastSeenVersion: string | null }) =>

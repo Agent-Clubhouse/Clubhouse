@@ -67,6 +67,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:telemetry',
   'core:theme',
   'core:usage',
+  'core:welcome-tour',
   'core:window',
   'marketplace',
   'marketplace:custom',
