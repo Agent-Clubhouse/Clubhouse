@@ -239,7 +239,7 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
   {
     name: 'agent.cli',
     fields: [
-      ['orchestrator', ({ config, view, projectOrchestrator }) => agentOverProject(config.orchestrator || undefined, projectOrchestrator, view.settings.orchestrator.resolved)],
+      ['provider', ({ config, view, projectOrchestrator }) => agentOverProject(config.orchestrator || undefined, projectOrchestrator, view.settings.orchestrator.resolved)],
       ['model', ({ config, view }) => ({
         stored: config.model ?? null,
         effective: view.settings.model.value,
@@ -313,8 +313,9 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
     name: 'agent.orchestration',
     fields: [
       orchestrationField('orchestrate', 'orchestrate'),
-      orchestrationField('access', 'access'),
-      orchestrationField('control', 'control'),
+      // What its helpers get, not this agent's own access (that is agent.access.access).
+      orchestrationField('access', 'helper_access'),
+      orchestrationField('control', 'helper_approvals'),
       orchestrationField('maxHelpers', 'max_helpers'),
       orchestrationField('crossProjectHelpers', 'cross_project_helpers'),
       connectToDispatcherField(),
@@ -343,7 +344,7 @@ const PROJECT_SECTIONS: ReadonlyArray<Section<ProjectContext>> = [
   {
     name: 'project.defaults',
     fields: [
-      ['orchestrator', ({ projectOrchestrator }) => ({
+      ['provider', ({ projectOrchestrator }) => ({
         stored: projectOrchestrator ?? null,
         effective: projectOrchestrator ?? DEFAULT_ORCHESTRATOR,
         source: projectOrchestrator ? 'project' : 'default',
@@ -405,7 +406,7 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
         // The store drops an invalid saved cap for the default.
         return value.source === 'app' && value.stored !== effective ? { ...value, source: 'default' } : value;
       }],
-      ['enabled_orchestrators', ({ files }) => appValue(files.orchestrator, 'enabled', orchestratorSettings.getSettings().enabled ?? [DEFAULT_ORCHESTRATOR])],
+      ['enabled_providers', ({ files }) => appValue(files.orchestrator, 'enabled', orchestratorSettings.getSettings().enabled ?? [DEFAULT_ORCHESTRATOR])],
     ],
   },
   {
@@ -432,6 +433,23 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
   },
 ];
 
+/**
+ * Older key names (#2775), each to the key that replaced it. They still read,
+ * under the name asked for and with the same value, so a reader's key doesn't
+ * vanish, but list_settings and a whole-section select show only the new names.
+ * The saved files keep their own field names: this is the read boundary only.
+ */
+export const KEY_ALIASES: Readonly<Record<string, string>> = {
+  'agent.cli.orchestrator': 'agent.cli.provider',
+  'agent.orchestration.access': 'agent.orchestration.helper_access',
+  'agent.orchestration.control': 'agent.orchestration.helper_approvals',
+  'project.defaults.orchestrator': 'project.defaults.provider',
+  'app.defaults.enabled_orchestrators': 'app.defaults.enabled_providers',
+};
+
+/** Each new key to its older name. */
+const ALIAS_OF: ReadonlyMap<string, string> = new Map(Object.entries(KEY_ALIASES).map(([old, key]) => [key, old]));
+
 function visible<C>(sections: ReadonlyArray<Section<C>>, actor: SettingsActor): ReadonlyArray<Section<C>> {
   return sections.filter((s) => !s.dispatcherOnly || actor.scope === 'all');
 }
@@ -455,7 +473,10 @@ export async function listSettings(actor: SettingsActor): Promise<{ sections: Ar
   };
 }
 
-/** `select` narrowed to one target's fields, as full keys. An entry names a section or a key. */
+/**
+ * `select` narrowed to one target's fields, as full keys. An entry names a
+ * section, a key or an older name for one, which reads under that older name.
+ */
 function pick<C>(sections: ReadonlyArray<Section<C>>, select: ReadonlySet<string>, used: Set<string>): Array<{ key: string; read: Field<C>[1] }> {
   const picked: Array<{ key: string; read: Field<C>[1] }> = [];
   for (const section of sections) {
@@ -465,6 +486,11 @@ function pick<C>(sections: ReadonlyArray<Section<C>>, select: ReadonlySet<string
       const key = `${section.name}.${name}`;
       if (select.has(key)) used.add(key);
       if (whole || select.has(key)) picked.push({ key, read });
+      const old = ALIAS_OF.get(key);
+      if (old && select.has(old)) {
+        used.add(old);
+        picked.push({ key: old, read });
+      }
     }
   }
   return picked;

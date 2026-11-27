@@ -50,7 +50,7 @@ import { peekProjects } from './project-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { resetNewChromeCacheForTests } from '../window-chrome';
 import {
-  listSettings, MAX_PAGE, MAX_PAGE_CHARS, MAX_SELECT, readSettings, SettingsReadError,
+  KEY_ALIASES, listSettings, MAX_PAGE, MAX_PAGE_CHARS, MAX_SELECT, readSettings, SettingsReadError,
   type ReadSettingsRequest, type SettingsActor,
 } from './settings-read-service';
 
@@ -178,18 +178,62 @@ describe('the allowlist', () => {
     const { sections } = await listSettings(dispatcher);
     expect(Object.fromEntries(sections.map((s) => [s.section, s.keys.map((k) => k.slice(s.section.length + 1))]))).toEqual({
       'agent.identity': ['name', 'color', 'emoji', 'has_image'],
-      'agent.cli': ['orchestrator', 'model', 'runtime'],
+      'agent.cli': ['provider', 'model', 'runtime'],
       'agent.persona': ['persona', 'mission'],
       'agent.access': ['access', 'free_agent_mode', 'permission_mode'],
       'agent.mcp': ['clubhouse_mcp', 'clubhouse_bridge', 'clubhouse_mode', 'mcp_ids'],
       'agent.idle': ['idle_sleep'],
-      'agent.orchestration': ['orchestrate', 'access', 'control', 'max_helpers', 'cross_project_helpers', 'connect_to_dispatcher', 'auto_helpers'],
+      'agent.orchestration': ['orchestrate', 'helper_access', 'helper_approvals', 'max_helpers', 'cross_project_helpers', 'connect_to_dispatcher', 'auto_helpers'],
       'project.identity': ['name', 'display_name', 'color', 'emoji', 'has_image'],
-      'project.defaults': ['orchestrator', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
+      'project.defaults': ['provider', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
       'project.modes': ['clubhouse_mode', 'mcp', 'permission_mode'],
-      'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'default_access', 'global_helper_cap', 'enabled_orchestrators'],
+      'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'default_access', 'global_helper_cap', 'enabled_providers'],
       'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'experimental_copilot_legacy_acp', 'annex_server_enabled', 'annex_client_enabled', 'annex_network_enabled', 'annex_loopback_only', 'annex_discovery_enabled'],
     });
+  });
+
+  it('keeps the older names readable but lists only the new ones (#2775)', async () => {
+    expect(KEY_ALIASES).toEqual({
+      'agent.cli.orchestrator': 'agent.cli.provider',
+      'agent.orchestration.access': 'agent.orchestration.helper_access',
+      'agent.orchestration.control': 'agent.orchestration.helper_approvals',
+      'project.defaults.orchestrator': 'project.defaults.provider',
+      'app.defaults.enabled_orchestrators': 'app.defaults.enabled_providers',
+    });
+    for (const actor of [dispatcher, ordinary()]) {
+      const listed = (await listSettings(actor)).sections.flatMap((s) => s.keys);
+      for (const [old, key] of Object.entries(KEY_ALIASES)) {
+        expect(listed, key).toContain(key);
+        expect(listed, old).not.toContain(old);
+      }
+    }
+  });
+
+  it('reads each older name with the same value as its new one, under the name asked for (#2775)', async () => {
+    writeProjectSettings(one, { orchestrator: 'codex-cli' });
+    writeApp('orchestrator-settings.json', { enabled: ['claude-code', 'codex-cli'] });
+    writeAgents(one, [agent('a1', { orchestrator: 'claude-code', orchestration: { orchestrate: true, access: 'auto_edit', control: 'ask-everything' } })]);
+    for (const [old, key] of Object.entries(KEY_ALIASES)) {
+      const { targets } = await read(ordinary(), { select: [old, key], detail: true });
+      expect(targets, old).toHaveLength(1);
+      const { settings } = targets[0];
+      expect(Object.keys(settings), old).toEqual([key, old]);
+      expect(settings[old], old).toEqual(settings[key]);
+      expect(settings[key].stored, key).not.toBeNull();
+      const alone = (await read(ordinary(), { select: [old], detail: true })).targets[0].settings;
+      expect(alone, old).toEqual({ [old]: settings[key] });
+    }
+  });
+
+  it('reads a whole section under the new names only, and the Dispatcher reads the older ones too (#2775)', async () => {
+    const sections = await read(ordinary(), { select: ['agent.cli', 'agent.orchestration', 'project.defaults', 'app.defaults'] });
+    const keys = sections.targets.flatMap((t) => [...Object.keys(t.settings), ...(t.not_applicable ?? [])]);
+    for (const [old, key] of Object.entries(KEY_ALIASES)) {
+      expect(keys, key).toContain(key);
+      expect(keys, old).not.toContain(old);
+    }
+    const { targets } = await read(dispatcher, { select: ['agent.cli.orchestrator', 'project.defaults.orchestrator'], project: 'p1', agentIds: ['a1'] });
+    expect(targets.map((t) => Object.keys(t.settings))).toEqual([['project.defaults.orchestrator'], ['agent.cli.orchestrator']]);
   });
 
   it('fails if a key that looks sensitive is ever listed', async () => {
@@ -585,20 +629,20 @@ describe('values and sources', () => {
 
   it('inherits MCP ids and orchestrator from the project, and reads a retired persona and mission as null (#2901)', async () => {
     writeProjectSettings(one, { orchestrator: 'codex-cli', defaultMcps: ['ado'], agentDefaults: { persona: 'qa', mission: 'ship' } });
-    const { targets } = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.orchestrator'], detail: true });
+    const { targets } = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.provider'], detail: true });
     expect(targets[0].settings).toMatchObject({
       'agent.persona.persona': { stored: null, effective: null, source: 'default' },
       'agent.persona.mission': { stored: null, effective: null, source: 'default' },
       'agent.mcp.mcp_ids': { stored: null, effective: ['ado'], source: 'project' },
-      'agent.cli.orchestrator': { stored: null, effective: 'codex-cli', source: 'project' },
+      'agent.cli.provider': { stored: null, effective: 'codex-cli', source: 'project' },
     });
     writeAgents(one, [agent('a1', { persona: 'dev', mission: 'mine', mcpIds: [], orchestrator: 'claude-code' })]);
-    const own = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.orchestrator'] });
+    const own = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.provider'] });
     expect(own.targets[0].settings).toMatchObject({
       'agent.persona.persona': { effective: null, source: 'default' },
       'agent.persona.mission': { effective: null, source: 'default' },
       'agent.mcp.mcp_ids': { effective: [], source: 'agent' },
-      'agent.cli.orchestrator': { effective: 'claude-code', source: 'agent' },
+      'agent.cli.provider': { effective: 'claude-code', source: 'agent' },
     });
     const project = (await read(ordinary(), { select: ['project.defaults.persona'], detail: true })).targets.find((t) => t.target === 'project');
     expect(project?.settings['project.defaults.persona']).toEqual({ stored: null, effective: null, source: 'default' });
@@ -611,7 +655,7 @@ describe('values and sources', () => {
     const project = (await read(ordinary(), { select: ['project.defaults'], detail: true })).targets.find((t) => t.target === 'project');
     expect(project?.settings).toMatchObject({
       'project.defaults.free_agent_mode': { stored: null, effective: null, source: 'default' },
-      'project.defaults.orchestrator': { stored: 'codex-cli', effective: 'codex-cli', source: 'project' },
+      'project.defaults.provider': { stored: 'codex-cli', effective: 'codex-cli', source: 'project' },
       'project.defaults.source_control_provider': { stored: 'azure-devops', effective: 'azure-devops', source: 'project' },
     });
   });
@@ -630,8 +674,8 @@ describe('values and sources', () => {
     expect(targets[0].settings).toMatchObject({
       'agent.orchestration.orchestrate': { stored: null, effective: false, source: 'default' },
       'agent.orchestration.max_helpers': { stored: null, effective: 5, source: 'default' },
-      'agent.orchestration.control': { stored: 'ask-everything', effective: 'ask-everything', source: 'agent' },
-      'agent.orchestration.access': { stored: null, effective: 'same', source: 'default' },
+      'agent.orchestration.helper_approvals': { stored: 'ask-everything', effective: 'ask-everything', source: 'agent' },
+      'agent.orchestration.helper_access': { stored: null, effective: 'same', source: 'default' },
     });
   });
 
