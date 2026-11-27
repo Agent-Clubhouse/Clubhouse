@@ -18,7 +18,7 @@ describe('Other machines (#3349)', () => {
       remote('studio', { state: 'off', link: { state: 'unavailable', reason: 'The other Dispatcher is off.' } }),
       remote('attic', { state: 'unknown', address: null, dispatcherName: null, label: 'Dispatcher on Attic', link: { state: 'unavailable', reason: 'Not shared yet.' } }),
     ]} />);
-    const list = screen.getByRole('list', { name: 'Dispatchers on other machines' });
+    const list = screen.getByRole('list', { name: 'Dispatchers on other computers' });
     const rows = within(list).getAllByRole('listitem');
     expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual([
       'Studio on Desk. Working. Connection active.',

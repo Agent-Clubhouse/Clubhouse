@@ -100,9 +100,9 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
         : card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}
       {value && eligible && value.details.connectionPages !== 1 && <CardNote>This host shares the Dispatcher Connections summary only. Source pages need a host update.</CardNote>}
     </DetailsCard>
-    <DetailsCard embedded id="other-machines" title="Other machines" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
+    <DetailsCard embedded id="other-machines" title="Other computers" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
       {peers ? <><OtherMachinesList compact remotes={peers} /><CardNote>From the selected host’s confirmed shared snapshot; role metadata is read separately.</CardNote></>
-        : <CardNote>{!value && !snapshotOnly ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other machines were omitted from this host snapshot.' : 'The selected host has not shared its Other machines list. An absent list is not an empty network.'}</CardNote>}
+        : <CardNote>{!value && !snapshotOnly ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other computers were omitted from this host snapshot.' : 'The selected host has not shared its Other computers list. An absent list is not an empty network.'}</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="actions" title="Actions" summary={card('actions')?.summary || 'unavailable'} open onToggle={() => {}}>
       {value && eligible && value.details.inventoryPages === 1 && value.details.inventorySources?.includes(REMOTE_ACTION_PAGE_SOURCE)

@@ -393,9 +393,9 @@ function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onRe
       )}
 
       {showOtherMachines && (
-        <DetailsCard id="other-machines" title="Other machines" summary={remoteDispatcher && !satellite?.snapshot?.dispatcherPresence ? 'not shared here' : otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+        <DetailsCard id="other-machines" title="Other computers" summary={remoteDispatcher && !satellite?.snapshot?.dispatcherPresence ? 'not shared here' : otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
           {remoteDispatcher && !satellite?.snapshot?.dispatcherPresence
-            ? <CardNote>{remoteHost} hasn’t shared its other machines here.</CardNote>
+            ? <CardNote>{remoteHost} hasn’t shared its other computers here.</CardNote>
             : <OtherMachinesList compact remotes={otherMachines} />}
           {remoteDispatcher && <CardNote>Change on {remoteHost}.</CardNote>}
         </DetailsCard>

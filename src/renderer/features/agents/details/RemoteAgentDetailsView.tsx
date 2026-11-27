@@ -221,8 +221,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       <SubagentList agent={agent} state={session} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
     </DetailsCard>}
     <RemoteConnectionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} dispatcher={dispatcher} open={open('connections')} onToggle={() => toggleCard('connections')} />
-    {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
-      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host}’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.</CardNote>}
+    {dispatcher && <DetailsCard id="other-machines" title="Other computers" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host}’s Other computers list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.</CardNote>}
     </DetailsCard>}
     <RemoteActionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('actions')} readable={!snapshotUnavailable && !runtimeUnconfirmed}
       message={resultMessage(result.status)} onToggle={() => toggleCard('actions')} onRefused={() => setRetry((n) => n + 1)} />

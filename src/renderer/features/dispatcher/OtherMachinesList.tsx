@@ -44,7 +44,7 @@ export function OtherMachinesList({ remotes, compact = false, now }: {
     );
   }
   return (
-    <ul aria-label="Dispatchers on other machines" data-testid="other-machines">
+    <ul aria-label="Dispatchers on other computers" data-testid="other-machines">
       {remotes.map((remote) => {
         const state = presenceStateText(remote, now);
         const link = presenceLinkText(remote);

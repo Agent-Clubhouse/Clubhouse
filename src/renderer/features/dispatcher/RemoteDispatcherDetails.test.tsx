@@ -162,7 +162,7 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     setHost({ snapshot: snapshot({ snapshotTruncated: { version: 1, reason: 'frame_limit', omitted: ['dispatcher', 'dispatcherPresence'] } }) });
     render(<RemoteDispatcherDetails machineId="target" />); await loaded();
     expect(screen.getByTestId('details-card-settings')).toHaveTextContent('settings were omitted');
-    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Other machines were omitted');
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Other computers were omitted');
     expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
   });
 
