@@ -102,7 +102,7 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
           {roles && (
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <p className={settingsHelp}>What the group project does by itself. {copy && `These permissions belong to ${hostName}; changes wait for the host.`}</p>
+                <p className={settingsHelp}>What the group project does by itself. {copy && `These permissions belong to ${hostName}, and changes wait for it.`}</p>
                 {([
                   ['deliver', 'Tell members about new posts'],
                   ['wake', 'Wake sleeping members'],

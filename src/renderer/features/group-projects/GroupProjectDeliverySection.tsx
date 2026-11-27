@@ -13,7 +13,7 @@ export function GroupProjectDeliverySection({ groupProjectId, onOpenPermissions 
   if (!project) return null;
   const allowed = postNotificationsAllowed(project);
   const copy = project.network?.role === 'replica';
-  const host = project.hostName ?? 'its host';
+  const host = project.hostName ?? 'the computer that holds it';
 
   return (
     <SettingsSection title="Post notifications">
@@ -21,7 +21,7 @@ export function GroupProjectDeliverySection({ groupProjectId, onOpenPermissions 
         <div className="flex flex-col items-start gap-2">
           <p role="status" aria-label="Post notifications" className="text-sm text-ctp-text">{postNotificationLabel(project)}</p>
           <p className={settingsHelp}>
-            {copy ? `This is a copy. ${host} hosts this group project. ${project.network?.state === 'host-removed' ? 'The host left your network, so changes cannot be sent.' : `Changes wait for ${host} to apply them.`}` : 'This computer hosts this group project.'}
+            {copy ? `This is a copy. ${project.hostName ?? 'Another computer'} holds this group project. ${project.network?.state === 'host-removed' ? `${project.hostName ?? 'That computer'} left your network, so changes cannot be sent.` : `Changes wait for ${host} to apply them.`}` : 'This computer holds this group project.'}
             {' '}This is the saved configuration, not confirmation that messages have reached members on other computers.
           </p>
           {allowed ? (

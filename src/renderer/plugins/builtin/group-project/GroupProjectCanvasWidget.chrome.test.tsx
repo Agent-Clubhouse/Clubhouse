@@ -182,14 +182,14 @@ describe('group project card (compact)', () => {
     projectScope = { level: 'app', reach: 'network' };
     projectHostMachine = 'LOCAL-FINGERPRINT';
     renderWidget();
-    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Host: This computer');
+    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Computer: This computer');
   });
 
   it('shows the other host fingerprint for a network project', () => {
     projectScope = { level: 'app', reach: 'network' };
     projectHostMachine = 'other-fingerprint';
     renderWidget();
-    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Host: other-fingerprint');
+    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Computer: other-fingerprint');
   });
   it('lets a missing reference select an existing project and resolve deferred wires', async () => {
     projectAvailable = false;

@@ -128,10 +128,10 @@ describe('GroupProjectWorkspace routing', () => {
     expect(screen.queryByRole('button', { name: 'Use post notifications' })).not.toBeInTheDocument();
   });
 
-  it('names the group, what it covers, and where its host is', async () => {
+  it('names the group, what it covers, and which computer holds it', async () => {
     mount();
     expect(await screen.findByRole('heading', { name: 'Release checks' })).toBeInTheDocument();
-    expect(screen.getByTestId('group-project-workspace-summary')).toHaveTextContent('App-wide. This computer. Host: This computer');
+    expect(screen.getByTestId('group-project-workspace-summary')).toHaveTextContent('App-wide. This computer. Computer: This computer');
   });
 
   it('says so, with a way back, when the group project is not on this computer', async () => {
@@ -417,7 +417,7 @@ describe('GroupProjectWorkspace other sections', () => {
     });
     const dismiss = vi.spyOn(api(), 'dismissRefusals');
     mount({ section: 'members' });
-    expect(await screen.findByRole('list', { name: 'Changes the host refused' })).toHaveTextContent('A post by Analyst: Not a member.');
+    expect(await screen.findByRole('list', { name: 'Refused changes' })).toHaveTextContent('A post by Analyst: Not a member.');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear this list' })); });
     expect(dismiss).toHaveBeenCalledWith(GP);
   });

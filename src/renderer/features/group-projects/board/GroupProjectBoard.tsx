@@ -76,7 +76,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
 
   // On a copy of a network group project, the host decides these (#3363).
   const copy = !ctx.isRemote && project?.network?.role === 'replica';
-  const hostName = project?.hostName ?? 'the host';
+  const hostName = project?.hostName ?? 'the computer that holds it';
   const hostOnlyReason = copy ? `Only ${hostName} can do this. This computer holds a copy.` : null;
   const readOnly = copy && project?.network?.state === 'host-removed';
 

@@ -122,7 +122,7 @@ describe('GroupProjectsSettingsView', () => {
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(await screen.findAllByText('0 members')).toHaveLength(2);
-    expect(screen.getAllByText('Host: This computer')).toHaveLength(2);
+    expect(screen.getAllByText('Computer: This computer')).toHaveLength(2);
     expect(screen.getAllByText('Post notifications: On')).toHaveLength(2);
     // The hub row says a legacy scope is unresolved in its own words.
     expect(screen.getByText('Scope unresolved. Existing members kept.')).toBeInTheDocument();
@@ -396,8 +396,8 @@ describe('GroupProjectsSettingsView', () => {
       vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([alpha, copy]);
       render(<GroupProjectsSettingsView />);
       await screen.findByRole('button', { name: 'Alpha' });
-      expect(screen.getByText('Host: Desk, offline. Showing a saved copy, 2 changes wait for it.')).toBeInTheDocument();
-      expect(screen.getByText('Host: This computer')).toBeInTheDocument();
+      expect(screen.getByText('Computer: Desk, offline. Showing a saved copy, 2 changes wait for it.')).toBeInTheDocument();
+      expect(screen.getByText('Computer: This computer')).toBeInTheDocument();
       expect(screen.queryByText(/aa:aa/)).not.toBeInTheDocument();
     });
 
@@ -407,7 +407,7 @@ describe('GroupProjectsSettingsView', () => {
       render(<GroupProjectsSettingsView />);
       await screen.findByRole('button', { name: 'Launch' });
       select('Launch');
-      expect(screen.getByRole('list', { name: 'Changes the host refused' })).toHaveTextContent('A post by builder@Studio: This group project was deleted.');
+      expect(screen.getByRole('list', { name: 'Refused changes' })).toHaveTextContent('A post by builder@Studio: This group project was deleted.');
       // Only the host can change the scope or delete: this computer holds a copy, and says so.
       select('Launch');
       expect(screen.queryByRole('region', { name: 'Scope' })).not.toBeInTheDocument();
@@ -416,7 +416,7 @@ describe('GroupProjectsSettingsView', () => {
       expect(screen.getAllByText(/Only Desk can/).length).toBe(2);
       fireEvent.click(screen.getByRole('button', { name: 'Clear this list' }));
       await waitFor(() => expect(dismiss).toHaveBeenCalledWith('gp-copy'));
-      await waitFor(() => expect(screen.queryByRole('list', { name: 'Changes the host refused' })).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByRole('list', { name: 'Refused changes' })).not.toBeInTheDocument());
     });
   });
 });

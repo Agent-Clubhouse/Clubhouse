@@ -289,7 +289,7 @@ function HostChoice({ hosts, error, value, disabled, onChange, onReload }: {
 }) {
   return (
     <fieldset disabled={disabled} className="flex flex-col gap-1">
-      <legend className={settingsLabel}>Host</legend>
+      <legend className={settingsLabel}>Computer</legend>
       {!hosts && !error && <p className={settingsHelp}>Checking your computers...</p>}
       {error && <p role="alert" className={settingsError}>Could not list your computers: {error}</p>}
       {(hosts ?? [{ machine: null, name: 'This computer', state: 'online' as const }]).map((h) => (
@@ -298,7 +298,7 @@ function HostChoice({ hosts, error, value, disabled, onChange, onReload }: {
           {h.name}{h.state !== 'online' && h.reason ? <span className={settingsHelp}>{h.reason}</span> : null}
         </label>
       ))}
-      <p className={settingsHelp}>The host keeps the group project and can't be changed later. Another computer asks a person there to approve it.</p>
+      <p className={settingsHelp}>The computer you choose holds the group project and can't be changed later. Another computer asks a person there to approve it.</p>
       <div><Button onClick={onReload} disabled={disabled}>Check again</Button></div>
     </fieldset>
   );

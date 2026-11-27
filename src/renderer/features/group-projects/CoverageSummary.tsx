@@ -32,7 +32,7 @@ export function OfferToLink({ coverage, className }: { coverage: GroupProjectCov
 }
 
 /** Said under a preview made here for a group another computer will host: only that host can verify its coverage. */
-export const VERIFIED_ON_HOST = 'Coverage is verified on the host when the group is created.';
+export const VERIFIED_ON_HOST = 'The computer that holds the group verifies its coverage when the group is created.';
 
 /**
  * What a group project covers, from the main process's read: the same text in the hub, Members and the

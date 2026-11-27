@@ -86,11 +86,11 @@ describe('GroupProjectsHub list', () => {
     expect(headings).toEqual(['Atlas', 'Beacon', 'Projects on Studio Mac', 'App-wide', 'Needs scope review']);
     const atlasRow = screen.getByRole('button', { name: 'Release checks' });
     expect(atlasRow).toHaveTextContent('Scope: Atlas. Reach: This computer.');
-    expect(atlasRow).toHaveTextContent('Host: This computer');
+    expect(atlasRow).toHaveTextContent('Computer: This computer');
     expect(await within(atlasRow).findByText('2 members')).toBeInTheDocument();
     const copyRow = screen.getByRole('button', { name: 'Release planning' });
     expect(copyRow).toHaveTextContent('Scope: a project on Studio Mac. Reach: Network.');
-    expect(copyRow).toHaveTextContent('Host: Studio Mac, offline. Showing a saved copy, 1 change waits for it.');
+    expect(copyRow).toHaveTextContent('Computer: Studio Mac, offline. Showing a saved copy, 1 change waits for it.');
     expect(screen.getByRole('button', { name: 'Legacy review' })).toHaveTextContent('Scope unresolved. Existing members kept.');
     expect(screen.getByText(/Coverage not verified on this computer/)).toBeInTheDocument();
   });

@@ -34,7 +34,7 @@ export function scopeDescription(scope: GroupProject['scope']): string {
   }
   const level = scope.level === 'app' ? 'App' : `Project (${scope.projectId})`;
   return scope.reach === 'local'
-    ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine.`
+    ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this computer.`
     : `${level} / Network: covers your other computers in your Annex Network too.`;
 }
 
@@ -248,26 +248,26 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
 export function hostLine(project: GroupProject): string {
   const host = project.hostName ?? 'This computer';
   const network = project.network;
-  if (!network || network.role === 'host') return `Host: ${host}`;
+  if (!network || network.role === 'host') return `Computer: ${host}`;
   const waiting = network.waitingWrites > 0
     ? `, ${network.waitingWrites} ${network.waitingWrites === 1 ? 'change waits' : 'changes wait'} for it`
     : '';
-  if (network.state === 'host-removed') return `Host: ${host} left your network. This copy is read-only.`;
-  if (network.state === 'cached') return `Host: ${host}, offline. Showing a saved copy${waiting}.`;
-  return `Host: ${host}${waiting}`;
+  if (network.state === 'host-removed') return `Computer: ${host} left your network. This copy is read-only.`;
+  if (network.state === 'cached') return `Computer: ${host}, offline. Showing a saved copy${waiting}.`;
+  return `Computer: ${host}${waiting}`;
 }
 
-/** Changes the host refused, shown to the person who made them, with a way to clear the list. */
+/** Changes the computer that holds the group project refused, shown to the person who made them, with a way to clear the list. */
 export function GroupProjectRefusals({ project }: { project: GroupProject }) {
   const dismiss = useGroupProjectStore((s) => s.dismissRefusals);
   const [error, setError] = useState<string | null>(null);
   const refusals = project.network?.refusals ?? [];
   if (refusals.length === 0) return null;
   return (
-    <SettingsSection title="Changes the host refused">
+    <SettingsSection title="Refused changes">
       <SettingsBlock>
         <div className="flex flex-col items-start gap-2">
-          <ul aria-label="Changes the host refused" className="list-disc pl-5 text-xs text-ctp-text">
+          <ul aria-label="Refused changes" className="list-disc pl-5 text-xs text-ctp-text">
             {refusals.map((r) => (
               <li key={r.id}>
                 {r.op === 'post' ? 'A post' : 'A change'} by {r.author.label}: {r.reason}
