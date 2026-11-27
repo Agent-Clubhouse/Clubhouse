@@ -36,10 +36,10 @@ Open **Settings** from the agent's row menu or hover card.
 |---------|--------------|
 | **Appearance** | Name, color and icon |
 | **Runs on** and **Model** | The CLI and model the agent uses. Changes apply the next time it starts or wakes. |
-| **Runtime** | Chat or CLI. Hidden when **Chat view** is off in **Settings > Agents & providers**. |
+| **View** | Chat or Terminal. Hidden when **Chat view** is off in **Settings > Agents & CLIs**. |
 | **Access** | The level the agent starts at. See **Access** below. |
 | **Instructions**, **Skills** and **MCP servers** | A Clubhouse managed agent's parts: the blocks it reads in order, the skills copied into its folder and the MCP servers it gets |
-| **Helpers** | Whether the agent orchestrates, and how it starts and disposes of helpers |
+| **Helpers** | Whether the agent orchestrates, and how it starts and deletes helpers |
 | **Quick agents** | What quick agents started from this agent inherit |
 | **Preview** | What a Clubhouse managed agent gets at its next start |
 
@@ -59,7 +59,7 @@ Each agent has one **Access** setting: the level its CLI starts at.
 | **Auto** | A check decides what needs your approval. It can be wrong. |
 | **Full access** | Runs everything without asking. |
 
-New agents start at **Default access** in **Settings > Agents & providers**. It starts at Ask first until you change it. You can pick another level when you create an agent, and change it later in the agent's settings or its details card while it sleeps. The hover card and details card show the level as plain text.
+New agents start at **Default access** in **Settings > Agents & CLIs**. It starts at Ask first until you change it. You can pick another level when you create an agent, and change it later in the agent's settings or its details card while it sleeps. The hover card and details card show the level as plain text.
 
 Each CLI only lists the levels it can start at. Claude Code has all five. In the terminal, Codex CLI has Ask first, Auto and Full access, and Copilot CLI has Ask first and Full access. In chat, each CLI offers the levels its chat connection supports. If an agent's level isn't one its CLI can start at where it runs, it starts at the nearest lower level that it can.
 

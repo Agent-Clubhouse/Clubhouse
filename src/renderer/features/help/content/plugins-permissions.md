@@ -70,6 +70,6 @@ The `agents.free-agent-mode` permission lets a plugin start agents at Auto or Fu
 }
 ```
 
-The agent starts at your **Default access** in **Settings > Agents & providers** when that is **Auto** or **Full access**. Otherwise it starts at the level Clubhouse used for these agents before the Access setting: **Full access**, or **Auto** if you had picked Auto. With Auto, a check decides what needs your approval, and it can be wrong. Without `freeAgentMode`, a plugin's agents start at your Default access.
+The agent starts at your **Default access** in **Settings > Agents & CLIs** when that is **Auto** or **Full access**. Otherwise it starts at the level Clubhouse used for these agents before the Access setting: **Full access**, or **Auto** if you had picked Auto. With Auto, a check decides what needs your approval, and it can be wrong. Without `freeAgentMode`, a plugin's agents start at your Default access.
 
 Only grant to plugins you fully trust.

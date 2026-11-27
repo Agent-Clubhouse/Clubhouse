@@ -5,9 +5,9 @@ Quick fixes for frequently encountered problems.
 ## Agent Won't Start
 
 **Check these in order:**
-1. **Agent provider installed?** In **Settings > Agents & providers**, look for a green checkmark. Red = not found; follow the setup prompt.
-2. **API keys configured?** Most providers need an API key (e.g., `ANTHROPIC_API_KEY` env var). See the provider's docs.
-3. **Agent provider enabled?** Ensure it's toggled on in **Settings > Agents & providers**.
+1. **CLI installed?** In **Settings > Agents & CLIs**, look for a green checkmark. Red = not found; follow the setup prompt.
+2. **API keys configured?** Most CLIs need an API key or sign-in (e.g., `ANTHROPIC_API_KEY` env var). See the CLI's docs.
+3. **CLI turned on?** Ensure it's toggled on in **Settings > Agents & CLIs**.
 
 ## Agent Stuck (Orange Ring)
 
@@ -48,10 +48,10 @@ Yellow banner = no `.git` directory found. Options:
 
 ## Missing Models
 
-Models come from the agent provider, not Clubhouse. If models are missing:
+Models come from the CLI, not Clubhouse. If models are missing:
 - Update the provider's CLI to the latest version
 - Verify API keys are valid with the required permissions
-- Check **Settings > Agents & providers** for status indicators
+- Check **Settings > Agents & CLIs** for status indicators
 
 ## Command Palette Not Opening
 

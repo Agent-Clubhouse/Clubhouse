@@ -90,7 +90,7 @@ describe('help-content', () => {
     it('covers the cards, access, control, limits, disposing and connections', () => {
       const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
       expect(content).toContain('**Let this agent orchestrate**');
-      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', '**Settings > Managed agents > Helpers**', '**Dispose anyway**', '**Needs you**']) {
+      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', 'the **Helpers** page in Settings', '**Dispose anyway**', '**Needs you**']) {
         expect(content, name).toContain(name);
       }
       for (const heading of ['## Access', '## Control levels', '## Limits', '## Disposing', '## Connections']) {
@@ -141,14 +141,14 @@ describe('help-content', () => {
     for (const t of articles) expect(t.content, t.id).not.toMatch(/\*\*(Default )?Orchestrator\*\*(?! persona)/);
     expect(find('agents-durable').content).toContain('**Runs on**');
     expect(find('agents-quick').content).toContain('**Runs on**');
-    expect(find('projects-settings').content).toContain('**Agents run on**');
+    expect(find('projects-settings').content).toContain('**Runs on**');
   });
 });
 
 describe('Antigravity CLI help (#3801)', () => {
   const find = (sections: typeof HELP_SECTIONS) => sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-antigravity')!;
 
-  it('follows Agent providers in both shells', () => {
+  it('follows Agents & CLIs in both shells', () => {
     for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
       const agents = sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
       expect(agents.indexOf('agents-antigravity')).toBe(agents.indexOf('orchestrators') + 1);
@@ -191,8 +191,8 @@ describe('Antigravity CLI help (#3801)', () => {
     const content = find(HELP_SECTIONS).content;
     expect(content).not.toContain('\u2014');
     expect(content).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
-    expect(content).toContain('**Settings > Agents & providers**');
-    expect(content).toContain('**Antigravity CLI provider** in **Settings > Experimental**');
+    expect(content).toContain('**Settings > Agents & CLIs**');
+    expect(content).toContain('**Antigravity CLI** in **Settings > Experimental**');
     expect(content).not.toContain('antigravityProvider');
     expect(content).not.toMatch(/\b(orchestrator|persona)\b/i);
   });
@@ -250,7 +250,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Smart routing', 'Actions', 'Dispatcher', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Agents & CLIs', 'Managed agents', 'Helpers', 'Smart routing', 'Actions', 'Dispatcher', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Experimental', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', 'Group Projects', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {

@@ -6,7 +6,7 @@ Quick fixes for problems people run into most.
 
 Check these in order:
 
-1. **Is the agent provider installed?** In **Settings > Agents & providers**, a provider whose CLI wasn't found can't be turned on, and its switch says **CLI not found**. Install the CLI so it's on your `PATH`, then restart Clubhouse.
+1. **Is the CLI installed?** In **Settings > Agents & CLIs**, a CLI that wasn't found can't be turned on, and its switch says **CLI not found**. Install the CLI so it's on your `PATH`, then restart Clubhouse.
 2. **Is it turned on?** Check its switch on the same page.
 3. **Is it signed in?** Most providers need an API key or a login. See the provider's own docs.
 
@@ -47,7 +47,7 @@ A banner appears when the project has no `.git` folder. Click **git init** in th
 
 ## Models are missing
 
-Models come from the agent provider. Update its CLI, check your API key, and look at its status in **Settings > Agents & providers**.
+Models come from the CLI. Update it, check your API key, and look at its status in **Settings > Agents & CLIs**.
 
 ## The command palette doesn't open
 

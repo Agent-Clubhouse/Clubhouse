@@ -131,20 +131,20 @@ describe('notificationStore', () => {
     });
 
     describe('stop events', () => {
-      it('sends notification when agentStopped is on', () => {
+      it('says the agent is idle, never stopped, when a turn ends (#2763)', () => {
         useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
         useNotificationStore.getState().checkAndNotify('Worker', 'stop');
 
         expect(mockSendNotification).toHaveBeenCalledWith(
-          'Worker finished',
-          'Agent has stopped',
+          'Worker is idle',
+          'It finished its turn.',
           false,
           undefined,
           undefined,
         );
       });
 
-      it('falls through to agentIdle when agentStopped is off', () => {
+      it('still notifies from either saved key alone', () => {
         useNotificationStore.setState({
           settings: { ...ALL_ON_SETTINGS, agentStopped: false },
         });
@@ -152,7 +152,7 @@ describe('notificationStore', () => {
 
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Worker is idle',
-          'Agent is waiting for input',
+          'It finished its turn.',
           false,
           undefined,
           undefined,

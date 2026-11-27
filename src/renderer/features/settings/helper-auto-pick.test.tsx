@@ -23,13 +23,13 @@ describe('autoPick (#3896)', () => {
     expect(autoPick(all(), false)).toBe('pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit');
   });
 
-  it('leaves Copilot out when it is turned off in Agents & providers', () => {
+  it('leaves Copilot out when it is turned off in Agents & CLIs', () => {
     expect(autoPick(all({ enabled: false }), true)).not.toContain('Copilot');
   });
 
   it('says when Copilot is the only one left', () => {
     expect(autoPick([['claude-code', view({ available: false })], ['copilot-cli', view()]], true))
-      .toBe('start a helper on Copilot, the only provider turned on and available right now');
+      .toBe('start a helper on Copilot, the only CLI turned on and available right now');
   });
 
   it('is null when nothing can be picked', () => {

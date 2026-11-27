@@ -288,7 +288,7 @@ describe('AgentSettingsView', () => {
         expect(screen.queryByLabelText('Instructions')).not.toBeInTheDocument();
         expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
         expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
-        expect(screen.queryByRole('heading', { name: 'Permissions' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Allow and deny rules' })).not.toBeInTheDocument();
         await waitFor(() => expect(scroll).toHaveBeenCalled());
         expect(scroll.mock.contexts[0]).toBe(screen.getByTestId('agent-settings-section-preview'));
         // A re-render with an equal agent doesn't load the setup again.
@@ -348,7 +348,7 @@ describe('AgentSettingsView', () => {
 
     it('renders permissions section', async () => {
       renderSettings();
-      expect(await screen.findByText('Permissions')).toBeInTheDocument();
+      expect(await screen.findByText('Allow and deny rules')).toBeInTheDocument();
     });
 
     it('renders an Access picker, not a Free Agent Mode switch', async () => {
@@ -502,18 +502,18 @@ describe('AgentSettingsView', () => {
       renderSettings();
       expect(await screen.findByTestId('agent-settings-access')).toBeInTheDocument();
       await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
-      expect(screen.queryByLabelText('Runtime')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('View')).not.toBeInTheDocument();
     });
 
-    it('shows Provider default when no override is saved', async () => {
+    it('shows CLI default when no override is saved', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
       renderSettings();
-      const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
+      const select = await screen.findByLabelText('View') as HTMLSelectElement;
       expect(select.value).toBe('');
-      expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Provider default', 'Chat', 'CLI']);
+      expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['CLI default', 'Chat', 'Terminal']);
     });
 
-    it('loads and persists the override, using null for Provider default', async () => {
+    it('loads and persists the override, using null for CLI default', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
       window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ runtimeMode: 'terminal' });
@@ -521,7 +521,7 @@ describe('AgentSettingsView', () => {
       (window.clubhouse.agent as any).updateDurableConfig = updateMock;
       renderSettings();
 
-      const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
+      const select = await screen.findByLabelText('View') as HTMLSelectElement;
       await waitFor(() => expect(select.value).toBe('terminal'));
 
       fireEvent.change(select, { target: { value: 'chat' } });
@@ -538,12 +538,12 @@ describe('AgentSettingsView', () => {
     it('keeps unknown runtime disabled after load failure and permits an explicit retry', async () => {
       window.clubhouse.agent.getDurableConfig = vi.fn().mockRejectedValue(new Error('read failed'));
       renderSettings();
-      const retry = await screen.findByRole('button', { name: 'Retry loading runtime' });
-      expect(screen.getByLabelText('Runtime')).toBeDisabled();
+      const retry = await screen.findByRole('button', { name: 'Retry loading view' });
+      expect(screen.getByLabelText('View')).toBeDisabled();
       vi.mocked(window.clubhouse.agent.getDurableConfig).mockResolvedValue({ runtimeMode: 'terminal' } as never);
       fireEvent.click(retry);
-      await waitFor(() => expect(screen.getByLabelText('Runtime')).not.toBeDisabled());
-      expect(screen.getByLabelText('Runtime')).toHaveValue('terminal');
+      await waitFor(() => expect(screen.getByLabelText('View')).not.toBeDisabled());
+      expect(screen.getByLabelText('View')).toHaveValue('terminal');
     });
 
     it('ignores a previous target configuration arriving after the current target loads', async () => {
@@ -555,10 +555,10 @@ describe('AgentSettingsView', () => {
       const other = { ...defaultAgent, id: 'agent-2' };
       useAgentStore.setState({ agents: { [other.id]: other } });
       view.rerender(<AgentSettingsView agent={other} />);
-      await waitFor(() => expect(screen.getByLabelText('Runtime')).not.toBeDisabled());
-      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      await waitFor(() => expect(screen.getByLabelText('View')).not.toBeDisabled());
+      expect(screen.getByLabelText('View')).toHaveValue('chat');
       await act(async () => resolveOld({ runtimeMode: 'terminal' }));
-      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      expect(screen.getByLabelText('View')).toHaveValue('chat');
     });
 
     it('rolls back a failed runtime save, prevents overlap, and permits retry', async () => {
@@ -567,7 +567,7 @@ describe('AgentSettingsView', () => {
       const update = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; })).mockResolvedValue(undefined);
       window.clubhouse.agent.updateDurableConfig = update;
       renderSettings();
-      const select = await screen.findByLabelText('Runtime');
+      const select = await screen.findByLabelText('View');
       await waitFor(() => expect(select).toHaveValue('terminal'));
       fireEvent.change(select, { target: { value: 'chat' } });
       expect(select).toBeDisabled();
@@ -587,16 +587,16 @@ describe('AgentSettingsView', () => {
       let reject!: (error: Error) => void;
       window.clubhouse.agent.updateDurableConfig = vi.fn(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
       const view = renderSettings();
-      const select = await screen.findByLabelText('Runtime');
+      const select = await screen.findByLabelText('View');
       await waitFor(() => expect(select).toHaveValue('terminal'));
       fireEvent.change(select, { target: { value: 'chat' } });
       const other = { ...defaultAgent, id: 'agent-2' };
       useAgentStore.setState({ agents: { [other.id]: other } });
       view.rerender(<AgentSettingsView agent={other} />);
-      await waitFor(() => expect(screen.getByLabelText('Runtime')).not.toBeDisabled());
-      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      await waitFor(() => expect(screen.getByLabelText('View')).not.toBeDisabled());
+      expect(screen.getByLabelText('View')).toHaveValue('chat');
       await act(async () => reject(new Error('old target failure')));
-      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      expect(screen.getByLabelText('View')).toHaveValue('chat');
       expect(screen.queryByText(/Couldn't save that setting/)).not.toBeInTheDocument();
     });
 
@@ -604,7 +604,7 @@ describe('AgentSettingsView', () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
       window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
       renderSettings({ status: 'running' });
-      const select = await screen.findByLabelText('Runtime');
+      const select = await screen.findByLabelText('View');
       expect(select).toBeDisabled();
       expect(select).toHaveAttribute('title', 'Stop the agent to change this');
     });

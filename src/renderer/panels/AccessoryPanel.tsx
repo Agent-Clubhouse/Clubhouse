@@ -22,7 +22,7 @@ export interface SettingsCategory {
   part?: boolean;
 }
 
-/** Clubhouse-managed agents (#2819): the group that follows About and Agents & providers. */
+/** Clubhouse-managed agents (#2819): the group that follows About and Agents & CLIs. */
 const MANAGED_PAGES: SettingsCategory[] = [
   { label: 'Instruction blocks', page: 'managed-blocks', group: 'managed', part: true },
   { label: 'Skills', page: 'managed-skills', group: 'managed', part: true },
@@ -54,7 +54,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
 
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
-    { label: 'Agents & providers', page: 'orchestrators' },
+    { label: 'Agents & CLIs', page: 'orchestrators' },
     ...MANAGED_PAGES,
     // Auto and the difficulty presets (#3186): they pick for more than helpers, so not under Managed agents.
     { label: 'Smart routing', page: 'smart-selection' },
@@ -80,7 +80,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   ];
   const project: SettingsCategory[] = [
     { label: 'General', page: 'project' },
-    { label: 'Agents & providers', page: 'orchestrators' },
+    { label: 'Agents & CLIs', page: 'orchestrators' },
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
   ];

@@ -22,7 +22,7 @@ Clubhouse opens your most recent project, or offers **Add Project** if you have 
 | **Project** | A folder on your machine (usually a Git repo). Each has its own agents, plugins, and settings. |
 | **Durable Agent** | A persistent agent with its own Git worktree and branch. Survives restarts. Best for complex, multi-session work. |
 | **Quick Agent** | A one-shot agent that runs a single task and exits. Best for small fixes and quick questions. |
-| **Runs on** | The CLI that runs an agent, such as Claude Code or Copilot CLI. Settings pages call these CLIs agent providers. |
+| **Runs on** | The CLI that runs an agent, such as Claude Code or Copilot CLI. |
 | **Orchestrator agent** | An agent that starts and manages helper agents. See **Orchestrated Helpers**. |
 | **Plugin** | An extension adding features like file browsing, canvases, or custom tools. |
 

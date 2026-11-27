@@ -79,7 +79,7 @@ describe('showChatDefaultTip', () => {
     expect(toasts()).toHaveLength(1);
   });
 
-  it('links straight to the provider on Settings > Agents & providers', async () => {
+  it('links straight to the provider on Settings > Agents & CLIs', async () => {
     await showChatDefaultTip();
     toasts()[0].action!.onClick();
     const ui = useUIStore.getState();

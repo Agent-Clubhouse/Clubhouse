@@ -341,7 +341,7 @@ for (const seed of [
   });
 }
 
-test('Preview off, saved Chat off: Agents & providers turns it back on', async () => {
+test('Preview off, saved Chat off: Agents & CLIs turns it back on', async () => {
   const cli = installIdleCli();
   const projectDir = makeProject(stableAgents());
   profile = createDisposableProfile({ label: 'stable-chat-off' });
@@ -357,7 +357,7 @@ test('Preview off, saved Chat off: Agents & providers turns it back on', async (
   expect(await wakesInChat(w, dispatcherFolder(profile), dispatcherId)).toBe(false);
 
   await w.locator('[data-testid="nav-settings"]').click();
-  await settingsNav(w, 'Agents & providers').click();
+  await settingsNav(w, 'Agents & CLIs').click();
   const chatView = w.getByRole('switch', { name: 'Chat view' });
   await expect(chatView).toHaveAttribute('aria-checked', 'false');
   await chatView.click();

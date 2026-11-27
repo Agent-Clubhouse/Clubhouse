@@ -129,7 +129,7 @@ When the orchestrator calls `dispose_helper`:
 
 When you dispose of a helper yourself from Orchestration, the dialog runs the same checks. A clean helper shows **Dispose**, work at risk shows **Dispose anyway**, and a failed check only offers **Check again**. **Just sleep** stops the helper and keeps everything.
 
-Disposed helpers move to a **Disposed** section at the end of Clubhouse helpers in Orchestration, where **Remove** deletes them for good. When you delete an orchestrator, Clubhouse removes its disposed helpers too. **Settings > Managed agents > Helpers** lists any disposed helpers left without an orchestrator, each with **Remove**, and **Clear all** removes them all.
+Disposed helpers move to a **Disposed** section at the end of Clubhouse helpers in Orchestration, where **Remove** deletes them for good. When you delete an orchestrator, Clubhouse removes its disposed helpers too. The **Helpers** page in Settings lists any disposed helpers left without an orchestrator under **Deleted helpers without an orchestrator**, each with **Remove**, and **Clear all** removes them all.
 
 If you delete an orchestrator that still has helpers, Clubhouse asks whether to dispose of them, with the same checks, or keep them as normal agents.
 

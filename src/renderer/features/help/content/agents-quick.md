@@ -15,7 +15,7 @@ Quick agents are one-shot task runners. Give them a mission, they execute it, an
 
 ## Access
 
-**Access** is the level the agent starts at. A quick agent starts at your **Default access**, set in **Settings > Agents & providers**. You can pick another level before you click **Run**.
+**Access** is the level the agent starts at. A quick agent starts at your **Default access**, set in **Settings > Agents & CLIs**. You can pick another level before you click **Run**.
 
 | Level | What the agent does |
 |-------|---------------------|

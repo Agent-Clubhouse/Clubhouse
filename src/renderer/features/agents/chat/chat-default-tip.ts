@@ -31,7 +31,7 @@ export const CHAT_TIP_RULED_OUT_KEY = 'clubhouse_chat_default_tip';
 
 type ChatTipRuledOut = 'saved_choice' | 'no_chat_agents';
 
-export const CHAT_DEFAULT_TIP_TEXT = 'Agents now open in Chat. You can choose the CLI view in Settings > Agents & providers.';
+export const CHAT_DEFAULT_TIP_TEXT = 'Agents now open in Chat. You can choose Terminal view in Settings > Agents & CLIs.';
 export const CHAT_DEFAULT_TIP_ACTION = 'Open settings';
 
 const DEFAULT_PROVIDER = 'claude-code';

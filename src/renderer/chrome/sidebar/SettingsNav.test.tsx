@@ -93,7 +93,7 @@ describe('SettingsNav', () => {
     expect(document.activeElement).toBe(screen.getByTestId('settings-nav-project-p2'));
   });
 
-  it('shows the Managed agents group after Agents & providers (#2819)', async () => {
+  it('shows the Managed agents group after Agents & CLIs (#2819)', async () => {
     render(<SettingsNav />);
     await screen.findByTestId('settings-nav-group-managed');
     const order = [...screen.getByTestId('settings-nav').querySelectorAll<HTMLElement>('[data-testid^="settings-nav-app-"], [data-testid="settings-nav-group-managed"]')]

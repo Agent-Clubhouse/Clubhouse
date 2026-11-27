@@ -19,7 +19,7 @@ export function SmartSelectionSettingsView() {
         title="Smart routing and presets"
         autoLabel="Smart routing"
         toggleText="Let orchestrators use Smart routing for helpers"
-        footer="Smart routing balances load across your providers. Built-in templates ask orchestrators to use it."
+        footer="Smart routing balances load across your CLIs. Built-in templates ask orchestrators to use it."
       />
     </SettingsPage>
   );

@@ -31,7 +31,7 @@ const CODE_CLASS = 'font-mono text-ctp-subtext1';
 
 const RUNTIME_MODE_OPTIONS: Array<{ value: AgentRuntimeMode; label: string }> = [
   { value: 'chat', label: 'Chat' },
-  { value: 'terminal', label: 'CLI' },
+  { value: 'terminal', label: 'Terminal' },
 ];
 
 /** Provider default when no runtime setting is saved. */
@@ -150,7 +150,7 @@ function idleChoiceLabel(minutes: number): string {
 
 function RuntimeModeControl({ value, onChange, disabled }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void; disabled?: boolean }) {
   return (
-    <div role="radiogroup" aria-label="Runtime" className="flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1">
+    <div role="radiogroup" aria-label="View" className="flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1">
       {RUNTIME_MODE_OPTIONS.map((opt) => {
         const selected = opt.value === value;
         return (
@@ -333,7 +333,7 @@ function AppAgentSettings() {
         <SettingsSection title="Chat">
           <SettingsField
             label="Chat view"
-            help="Agents open in a native chat view. Turn this off to run every agent in the CLI view, whatever its provider or its own setting says. Agents already running stay as they are until they sleep."
+            help="Agents open in a native chat view. Turn this off to show every agent in Terminal view, whatever its CLI or its own setting says. Agents already running stay as they are until they sleep."
             testId="chat-view-row"
           >
             <Toggle aria-label="Chat view" checked={chatEnabled} onChange={(on) => { void setChatFlag(on); }} />
@@ -353,7 +353,7 @@ function AppAgentSettings() {
         </SettingsSection>
       )}
 
-      <SettingsSection title="Agent providers">
+      <SettingsSection title="CLIs">
         {allOrchestrators.map((o) => {
           const isEnabled = enabled.includes(o.id);
           const avail = availability[o.id];
@@ -365,7 +365,7 @@ function AppAgentSettings() {
           const toggleDisabled = (isOnlyEnabled && !notInstalled) || (!!notInstalled && !isEnabled);
           const toggleTitle = !!notInstalled && !isEnabled
             ? 'CLI not found. Install it to enable.'
-            : isOnlyEnabled && !notInstalled ? 'At least one agent provider must be enabled' : undefined;
+            : isOnlyEnabled && !notInstalled ? 'At least one CLI must be turned on' : undefined;
           // The sub-rows only render when the orchestrator is enabled. The
           // hook server option shows only for hook-capable orchestrators, the
           // runtime option only with Chat on. Resolve the
@@ -418,8 +418,8 @@ function AppAgentSettings() {
                       data-highlighted={highlightedRuntime === o.id ? 'true' : undefined}
                     >
                       <SettingsField
-                        label="Runtime"
-                        help="Agents for this provider open in chat. Choose CLI to use the provider's own interface. Chat needs a supported CLI; until then agents open in the CLI view."
+                        label="View"
+                        help="Agents on this CLI open in Chat. Choose Terminal to see the CLI's own screen. Chat needs a supported CLI version; until then agents open in Terminal."
                       >
                         <RuntimeModeControl
                           value={runtimeMode}
@@ -452,7 +452,7 @@ function AppAgentSettings() {
 
         {allOrchestrators.length === 0 && (
           <SettingsBlock>
-            <p className={settingsHelp}>No agent providers registered.</p>
+            <p className={settingsHelp}>No CLIs registered.</p>
           </SettingsBlock>
         )}
       </SettingsSection>
@@ -513,7 +513,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     <>
       <SettingsSection title="Project environment">
         {enabledOrchestrators.length > 1 && (
-          <SettingsField label="Agents run on" help="The CLI new agents in this project run on." htmlFor={`${idBase}-orch`}>
+          <SettingsField label="Runs on" help="The CLI new agents in this project run on." htmlFor={`${idBase}-orch`}>
             <select
               id={`${idBase}-orch`}
               value={currentOrchestrator}
@@ -565,10 +565,10 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
 export function OrchestratorSettingsView({ projectId }: Props) {
   return (
     <SettingsPage
-      title="Agents & providers"
+      title="Agents & CLIs"
       description={projectId
-        ? 'Configure the agent provider and agent behavior for this project.'
-        : 'Configure agent providers and agent behavior.'}
+        ? 'Configure the CLI and agent behavior for this project.'
+        : 'Configure CLIs and agent behavior.'}
     >
       {projectId
         ? <ProjectAgentSettings projectId={projectId} />

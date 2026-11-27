@@ -69,12 +69,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (eventKind === 'permission_request' && s.permissionNeeded) {
       title = `${agentName} needs permission`;
       body = detail ? `Wants to use ${detail}` : 'Agent is waiting for approval';
-    } else if (eventKind === 'stop' && s.agentStopped) {
-      title = `${agentName} finished`;
-      body = 'Agent has stopped';
-    } else if (eventKind === 'stop' && s.agentIdle) {
+    } else if (eventKind === 'stop' && (s.agentIdle || s.agentStopped)) {
+      // A finished turn: the agent is idle, not stopped (#2763). Either saved key turns it on.
       title = `${agentName} is idle`;
-      body = 'Agent is waiting for input';
+      body = 'It finished its turn.';
     } else if (eventKind === 'tool_error' && s.agentError) {
       title = `${agentName} hit an error`;
       body = detail ? `${detail} failed` : 'A tool call failed';

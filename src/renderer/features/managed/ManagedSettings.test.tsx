@@ -257,7 +257,7 @@ describe('Templates page', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lead' } });
     // Without a CLI there is no model or effort to set.
     expect((screen.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'claude-code' } });
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'claude-code' } });
     await waitFor(() => expect((screen.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(false));
     fireEvent.change(screen.getByLabelText('Effort'), { target: { value: 'high' } });
     fireEvent.click(screen.getByRole('switch', { name: 'Orchestration' }));
@@ -308,10 +308,10 @@ describe('Templates page', () => {
     expect(screen.getByText('Not set, so an agent made from it starts at the Default access.')).toBeTruthy();
     expect([...access.options].map((o) => o.textContent)).toEqual(['Not set', 'Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
     expect(screen.queryByText(/Free Agent/)).toBeNull();
-    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'other' } });
     expect(access.disabled).toBe(true);
     expect(screen.getByText("Other CLI doesn't support it.")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'claude-code' } });
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'claude-code' } });
     fireEvent.change(access, { target: { value: 'auto' } });
     expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeTruthy();
     fireEvent.click(screen.getByTestId('managed-template-save'));
@@ -376,7 +376,7 @@ describe('Helpers page with managed agents', () => {
     expect(screen.getByRole('heading', { name: 'Smart routing' })).toBeTruthy();
     expect(await screen.findByTestId('helper-presets-auto')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Smart routing and presets' })).toBeTruthy();
-    expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart routing balances load across your providers. Built-in templates ask orchestrators to use it.');
+    expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart routing balances load across your CLIs. Built-in templates ask orchestrators to use it.');
   });
 
   it('offers no retired template for the default, but keeps one already chosen (D71)', async () => {

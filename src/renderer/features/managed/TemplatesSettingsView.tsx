@@ -211,7 +211,7 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
       </SettingsSection>
 
       <SettingsSection title="Settings">
-        <SettingsField label="CLI" htmlFor="managed-template-cli" help="Not set: an agent made from it runs on its project's CLI.">
+        <SettingsField label="Runs on" htmlFor="managed-template-cli" help="Not set: an agent made from it runs on its project's CLI.">
           <select
             id="managed-template-cli"
             className={selectClass}

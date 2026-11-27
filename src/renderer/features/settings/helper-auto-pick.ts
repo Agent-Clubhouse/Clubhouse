@@ -36,8 +36,8 @@ export function autoPick(providers: [string, ProviderRoutingView][], copilotAuto
   const active = providers.filter((entry): entry is [string, Eligible] => entry[1].autoEligible && entry[1].autoCandidate !== false && inactiveReason(entry[1]) === null);
   const main = active.filter(([id]) => id !== 'copilot-cli').map(([id]) => providerName(id));
   const lastResort = copilotAuto && active.some(([id]) => id === 'copilot-cli');
-  if (main.length === 0) return lastResort ? 'start a helper on Copilot, the only provider turned on and available right now' : null;
-  const pick = main.length > 1 ? `pick between ${main.join(' and ')} for a helper, ${resetAware ? 'preferring usable weekly budget within 48 hours of reset, especially the final 24 hours' : 'favoring the CLI that has used less of its plan limit'}` : `start a helper on ${main[0]}, the only provider ${lastResort ? 'besides Copilot ' : ''}that is turned on and available right now`;
+  if (main.length === 0) return lastResort ? 'start a helper on Copilot, the only CLI turned on and available right now' : null;
+  const pick = main.length > 1 ? `pick between ${main.join(' and ')} for a helper, ${resetAware ? 'preferring usable weekly budget within 48 hours of reset, especially the final 24 hours' : 'favoring the CLI that has used less of its plan limit'}` : `start a helper on ${main[0]}, the only CLI ${lastResort ? 'besides Copilot ' : ''}that is turned on and available right now`;
   return `${pick}${lastResort ? ', with Copilot as a last resort' : ''}`;
 }
 

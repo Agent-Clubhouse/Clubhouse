@@ -34,9 +34,9 @@ const LEVEL_NAMES: Record<AutoLevel, string> = { minimum: 'Minimum', easy: 'Easy
 const FOLLOW = '';
 
 function inactiveNote(name: string, reason: 'disabled' | 'unavailable' | 'both'): string {
-  const why = reason === 'disabled' ? 'turned off in Agents & providers'
+  const why = reason === 'disabled' ? 'turned off in Agents & CLIs'
     : reason === 'unavailable' ? 'not available on this computer'
-      : 'turned off in Agents & providers and not available on this computer';
+      : 'turned off in Agents & CLIs and not available on this computer';
   return `${name} is ${why}. Its presets are saved for later, and Smart routing does not pick it until that changes.`;
 }
 
@@ -49,8 +49,8 @@ function statusText(view: Eligible): string | null {
 /** What Smart routing can pick from now, in the page's intro. */
 function autoIntro(providers: [string, ProviderRoutingView][], copilotAuto: boolean, resetAware = false): string {
   const pick = autoPick(providers, copilotAuto, resetAware);
-  const tail = ' It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.';
-  if (pick === null) return `Smart routing has nothing to pick right now. No provider is turned on and available, and Copilot is not allowed as a last resort.${tail}`;
+  const tail = ' It balances plan use, not cost, and a helper stays on its CLI for its whole task. An orchestrator’s own switch wins, and a project can turn it off.';
+  if (pick === null) return `Smart routing has nothing to pick right now. No CLI is turned on and available, and Copilot is not allowed as a last resort.${tail}`;
   return `Lets an orchestrator ask Clubhouse to ${pick}.${tail}`;
 }
 
@@ -271,7 +271,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
               For new Auto helpers, prefer eligible weekly budget within 48 hours of reset, with stronger priority in the final 24 hours. Uses your existing tasks and mapped models. Does not turn on Smart routing itself.
             </p>
             <p className={settingsHelp}>
-              Reserves apply to each provider’s shared local login across orchestrators and every applicable reported window. Smart routing stops admitting at the threshold; running or outside work can still use more. Reserves never relax automatically. Burn pace is not measured.
+              Reserves apply to each CLI’s shared local login across orchestrators and every applicable reported window. Smart routing stops admitting at the threshold; running or outside work can still use more. Reserves never relax automatically. Burn pace is not measured.
             </p>
             {settings.autoBudget.invalid && (
               <p className="text-xs text-ctp-error" role="alert">The saved budget policy could not be read. Smart routing starts are paused. Choose this preference again, or turn it off, to save a valid policy.</p>
@@ -343,7 +343,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
                     <span>Allow Copilot as a last resort</span>
                   </label>
                   <p className="mt-0.5 text-xs text-ctp-overlay1">
-                    Copilot's quota is unknown. Smart routing picks it only when no other provider is eligible, even if another provider's limit is low or its usage could not be checked.
+                    Copilot's quota is unknown. Smart routing picks it only when no other CLI is eligible, even if another CLI's limit is low or its usage could not be checked.
                   </p>
                 </>
               )}

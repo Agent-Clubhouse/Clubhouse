@@ -11,10 +11,12 @@ import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { SettingsPage, SettingsSection, SettingsField, settingsHelp } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
-const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
+type NotificationToggleKey = keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>;
+
+const TOGGLES: { key: NotificationToggleKey; also?: NotificationToggleKey; label: string; description: string }[] = [
   { key: 'permissionNeeded', label: 'An agent needs permission', description: '' },
-  { key: 'agentStopped', label: 'An agent stops', description: '' },
-  { key: 'agentIdle', label: 'An agent is waiting for input', description: '' },
+  // One setting for a finished turn (#2763): both saved keys fire on the same event, so this sets them together.
+  { key: 'agentIdle', also: 'agentStopped', label: 'An agent goes idle', description: 'When it finishes a turn.' },
   { key: 'agentError', label: 'A tool call fails', description: '' },
   { key: 'agentRequestedAttention', label: 'An agent asks for me', description: 'When it calls the notify_user tool.' },
 ];
@@ -242,12 +244,12 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
       </div>
 
       <SettingsSection title="Notify me when">
-        {TOGGLES.map(({ key, label, description }) => (
+        {TOGGLES.map(({ key, also, label, description }) => (
           <SettingsField key={key} label={label} help={description || undefined}>
             <Toggle
               aria-label={label}
-              checked={settings[key]}
-              onChange={(v) => saveSettings({ [key]: v })}
+              checked={settings[key] || (also ? settings[also] : false)}
+              onChange={(v) => saveSettings(also ? { [key]: v, [also]: v } : { [key]: v })}
               disabled={!settings.enabled}
             />
           </SettingsField>
