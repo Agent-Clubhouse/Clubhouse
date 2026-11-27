@@ -374,7 +374,7 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
       />
       {diffEntries.length > 0 && (
         <div className="mt-2.5">
-          <div className={settingsLabel}>Default MCPs for new agents</div>
+          <div className={settingsLabel}>Default MCP servers for new agents</div>
           {diffEntries.map((entry) => {
             const checked = defaultMcps.includes(entry.id);
             const stateWord = MCP_STATE_WORDS[entry.state as keyof typeof MCP_STATE_WORDS];

@@ -98,11 +98,11 @@ function SettingsCategoryNav() {
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const { app, project } = useSettingsCategories();
 
-  const navButton = ({ label, page }: SettingsCategory) => (
+  const navButton = ({ label, page, group, part }: SettingsCategory) => (
     <button
       key={page}
       onClick={() => setSettingsSubPage(page)}
-      className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
+      className={`w-full ${part ? 'pl-9' : group ? 'pl-6' : 'pl-3'} pr-3 py-2 text-sm text-left cursor-pointer ${
         isSettingsPageActive(settingsSubPage, page)
           ? 'text-ctp-text bg-surface-1'
           : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
@@ -111,6 +111,22 @@ function SettingsCategoryNav() {
       {label}
     </button>
   );
+
+  // The same group labels as the new layout's sidebar (SettingsNav), so
+  // Skills and MCP servers read as parts of managed agents here too.
+  const appRow = (c: SettingsCategory, i: number) => {
+    if (c.group !== 'managed') return navButton(c);
+    const prev = app[i - 1];
+    return (
+      <div key={c.page} className="contents">
+        {prev?.group !== 'managed' && (
+          <div className="px-3 pt-2 pb-1 text-xs font-semibold text-ctp-subtext0" data-testid="settings-classic-group-managed">Managed agents</div>
+        )}
+        {c.part && !prev?.part && <div className="pl-6 pr-3 pt-1 pb-0.5 text-xs text-ctp-overlay1">Agent parts</div>}
+        {navButton(c)}
+      </div>
+    );
+  };
 
   const isApp = settingsContext === 'app';
 
@@ -122,7 +138,7 @@ function SettingsCategoryNav() {
         </span>
       </div>
       <nav className="py-1 flex-1 flex flex-col min-h-0 overflow-y-auto">
-        {(isApp ? app : project).map(navButton)}
+        {isApp ? app.map(appRow) : project.map(navButton)}
       </nav>
     </div>
   );
