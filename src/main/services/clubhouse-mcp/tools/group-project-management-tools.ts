@@ -231,7 +231,7 @@ export function registerGroupProjectManagementTools(legacyCreate?: (caller: stri
     }
     return outcome(id, result);
   });
-  register('set_group_project_member_settings', 'Set tools or saved instruction text for a current local member connection. Instructions require the revision from management and explicit replace_across_sources when its guidance review requires it. A copy cannot change host roles or other computers’ bindings.', { agent: string, disabled_tools: strings, instructions: { type: 'object', additionalProperties: string }, revision: string, replace_across_sources: boolean }, ['agent'], async (caller, args, id) => {
+  register('set_group_project_member_settings', 'Set tools or saved instruction text for a current local member connection. Instructions require the revision from management and explicit replace_across_sources when its guidance review requires it. A copy cannot change host roles or other computers’ connections.', { agent: string, disabled_tools: strings, instructions: { type: 'object', additionalProperties: string }, revision: string, replace_across_sources: boolean }, ['agent'], async (caller, args, id) => {
     const agent = requireString(args, 'agent');
     const binding = bindingManager.getBindingsForAgent(agent).find((b) => b.targetId === id && b.targetKind === 'group-project');
     if (!binding) throw new McpArgError('That agent has no local membership connection.');

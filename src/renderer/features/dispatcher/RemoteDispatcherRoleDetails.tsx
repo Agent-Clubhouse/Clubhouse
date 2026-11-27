@@ -78,7 +78,7 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
       {(value || snapshotOnly) && enabled === undefined && <CardNote>{omitted('dispatcher') ? 'Dispatcher settings were omitted from this host snapshot.' : 'Dispatcher on/off state is not included in the host snapshot.'}</CardNote>}
       {settings && <>
         <CardRow label="CLI">{settings.provider}</CardRow><CardRow label="Model">{settings.model}</CardRow>
-        <CardRow label="Next start">{settings.runtime === 'chat' ? 'Chat' : 'CLI'}</CardRow><CardRow label="Access">{settings.access}</CardRow>
+        <CardRow label="Next start">{settings.runtime === 'chat' ? 'Chat' : 'Terminal'}</CardRow><CardRow label="Access">{settings.access}</CardRow>
         <CardRow label="Sandbox and approvals" labelWidth="wide">{settings.executionPolicy}</CardRow>
         {settings.autoSleep !== null && <CardRow label="Auto-sleep">{settings.autoSleep}</CardRow>}
         {settings.context !== null && <CardRow label="Context">{settings.context}</CardRow>}

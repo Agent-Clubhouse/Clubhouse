@@ -11,7 +11,7 @@ Your **chat** uses that name. **Dispatcher controller** is its internal agent th
 The first time you open it, a short setup walks you through three steps, with a preview of how it will look and sound:
 
 1. **Name and look.** A name, a color, and an image or emoji. The name shows in the sidebar, in its chat and on your phone.
-2. **Behavior.** Light, Standard or Thorough, and **Runs on**, the provider it uses. If your Smart routing mapping doesn't cover that CLI yet, **Set up Smart routing** opens it.
+2. **Behavior.** Light, Standard or Thorough, and **Runs on**, the CLI it uses. If your Smart routing mapping doesn't cover that CLI yet, **Set up Smart routing** opens it.
 3. **Personality.** Friendly, Concise or Detailed fill in the text it's told, or pick Custom and write your own. The text is always shown and you can edit it. **Try it out** asks the chosen model one sample question with that personality and shows the real reply. No agent is involved.
 
 **Set up later** starts it with its name, Standard and Concise, and a line above its chat offers setup again. Upgrading from an earlier version, you see setup once, filled in with what you had.

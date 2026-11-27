@@ -401,7 +401,7 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
     const name = fields.displayName || endpoint.agentId, projectName = endpoint.projectName.state === 'ok' ? endpoint.projectName.value : 'Project name unavailable';
     // Include both stable project identity and display label when names collide.
     const label = `${name} · ${projectName}`;
-    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : entry.source === 'helper-parent' ? 'Selected helper’s parent' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
+    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : entry.source === 'helper-parent' ? 'Selected helper’s parent' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'marked deleted; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
     if (endpoint.identityAmbiguous) row(c, `${label} identity`, 'This project record reuses the controller’s native ID. The endpoint association is ambiguous; configured directions are unavailable.');
     row(c, `${label} saved settings`, fields.saved);
     if (fields.memory) row(c, `${label} host memory`, fields.memory);

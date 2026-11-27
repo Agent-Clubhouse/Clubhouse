@@ -10,7 +10,8 @@ export function agentToolsForTarget(tools: readonly ListedMcpTool[], targetId: s
     if (!tool.name.startsWith('clubhouse__') || !tool.name.endsWith(`__${suffix}`)) return false;
     // User instructions can contain arbitrary text; only the preceding server
     // attribution is identity data. Multiple/malformed attributions fail loudly.
-    const serverDescription = tool.description.split('\n\n[WIRE INSTRUCTIONS — user-supplied]\n')[0];
+    // The marker was renamed with the 1.0 terms (#2783); older peers still send the old one.
+    const serverDescription = tool.description.split(/\n\n\[(?:CONNECTION INSTRUCTIONS FROM THE USER|WIRE INSTRUCTIONS — user-supplied)\]\n/)[0];
     const targets = [...serverDescription.matchAll(/(?:^|\n)Target: ([^\n]*)/g)];
     if (targets.length !== 1) throw new Error(`Tool ${tool.name} must expose exactly one structured Target`);
     let target: unknown;
