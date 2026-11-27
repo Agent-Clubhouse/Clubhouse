@@ -177,7 +177,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
   }, [groupProjectId, setTopicProtection, copy]);
 
   const handleClearAll = useCallback(async () => {
-    const { promise } = showConfirmDialog('Clear every message? The description, instructions and wires stay.');
+    const { promise } = showConfirmDialog('Clear every message? The description, instructions and connections stay.');
     if (!(await promise)) return;
     await clearAllMessages(groupProjectId);
     setTopics([]);

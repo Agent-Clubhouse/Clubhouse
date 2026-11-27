@@ -140,7 +140,7 @@ describe('GroupProjectBoard without a canvas', () => {
     await renderBoard();
     dialogs.confirm.mockResolvedValueOnce(false);
     fireEvent.click(screen.getByTestId('group-project-clear-all'));
-    await waitFor(() => expect(dialogs.confirm).toHaveBeenCalledWith('Clear every message? The description, instructions and wires stay.'));
+    await waitFor(() => expect(dialogs.confirm).toHaveBeenCalledWith('Clear every message? The description, instructions and connections stay.'));
     expect(clear).not.toHaveBeenCalled();
     dialogs.confirm.mockResolvedValueOnce(true);
     fireEvent.click(screen.getByTestId('group-project-clear-all'));

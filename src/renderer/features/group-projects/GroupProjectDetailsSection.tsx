@@ -12,10 +12,10 @@ function editableFields(project: GroupProject) {
   return { name: project.name, description: project.description, instructions: project.instructions };
 }
 
-/** Only the host can do these: a copy of a network group project says so, plainly, instead of offering them. */
+/** Only the computer that holds it can do these: a copy of a network group project says so, plainly, instead of offering them. */
 export function hostOnlyReason(project: GroupProject, what: string): string | null {
   if (project.network?.role !== 'replica') return null;
-  return `Only ${project.hostName ?? 'the host'} can ${what}. This computer holds a copy, and there is no host transfer.`;
+  return `Only ${project.hostName ?? 'the computer that holds it'} can ${what}. This computer holds a copy, and a group project can't move to another computer.`;
 }
 
 /**
@@ -99,7 +99,7 @@ export function GroupProjectDetailsSection({ project }: { project: GroupProject 
       <SettingsSection title="Edit group project">
         <SettingsBlock>
           <p className={`${settingsHelp} mb-3 break-words`}>{scopeDescription(project.scope)}</p>
-          <p className={`${settingsHelp} mb-3 break-words`}>{hostLine(project)}. The host is set when a group project is created.</p>
+          <p className={`${settingsHelp} mb-3 break-words`}>{hostLine(project)}. The computer that holds a group project is chosen when it's created.</p>
           <form onSubmit={submit} className="flex flex-col items-start gap-2">
             <label htmlFor="group-project-name" className={settingsLabel}>Name</label>
             <input

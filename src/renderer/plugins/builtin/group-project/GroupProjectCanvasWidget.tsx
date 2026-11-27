@@ -114,7 +114,7 @@ function CreationForm({
       // flush surface here too.
       const message = err instanceof Error ? err.message : String(err);
       console.error('[group-project] create failed:', message);
-      setError(`Couldn't create project: ${message}`);
+      setError(`Couldn't create the group project. ${message}`);
     } finally {
       setCreating(false);
     }
@@ -156,8 +156,8 @@ function CreationForm({
         value={name}
         onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
         onKeyDown={handleKeyDown}
-        placeholder="Project name"
-        aria-label="Project name"
+        placeholder="Group project name"
+        aria-label="Group project name"
         className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text placeholder:text-ctp-overlay1 focus-ring"
         autoFocus
       />
@@ -220,7 +220,7 @@ function ProjectView({
     <div ref={containerRef} className="h-full w-full">
       {ctx.loaded && !ctx.project && !isRemote ? (
         <div className="h-full flex flex-col">
-          <div role="status" className="px-4 pt-4 text-xs text-ctp-subtext1">This group project isn't on this machine. Choose one or create one.</div>
+          <div role="status" className="px-4 pt-4 text-xs text-ctp-subtext1">This group project isn't on this computer. Choose one or create one.</div>
           <CreationForm projectId={projectId} onUpdateMetadata={onUpdateMetadata} referenceUnresolved />
         </div>
       ) : isExpanded ? (
@@ -335,7 +335,7 @@ function ProjectCard({
   );
 }
 
-/** One member: 18px avatar, name, "Lead" for a project lead, and the agent's status as a dot and a word. */
+/** One member: 18px avatar, name, "Lead" for a lead, and the agent's status as a dot and a word. */
 function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember; lead: boolean; onToggleLead: () => void }) {
   const agent = useAgentStore((s) => s.agents[member.agentId]);
   const detailed = useAgentStatus(agent ?? { id: member.agentId, status: 'sleeping' });
@@ -355,8 +355,8 @@ function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember;
         </span>
       )}
       <IconButton
-        label="Project lead"
-        tooltip="Project lead: can wake, sleep and manage members' context"
+        label="Lead"
+        tooltip="A lead can wake members, put them to sleep and manage their context"
         pressed={lead}
         onClick={(e) => { e.stopPropagation(); onToggleLead(); }}
       >

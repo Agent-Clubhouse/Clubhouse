@@ -147,7 +147,7 @@ describe('group project creation context', () => {
     const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ id: 'gp_new', name: 'Team' });
     renderWidget(metadata, { mode, projectId });
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'Project name' }), 'Team');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Group project name' }), 'Team');
     await userEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(create).toHaveBeenCalledWith('Team', options));
@@ -196,7 +196,7 @@ describe('group project card (compact)', () => {
     useGroupProjectStore.setState({ projects: [{ id: 'gp-existing', name: 'Shared', description: '', instructions: '', createdAt: '', metadata: {} }], loaded: true, loadError: null });
     const onUpdateMetadata = vi.fn();
     render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{ groupProjectId: 'gp-missing', __groupProjectReferenceUnresolved: true }} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
-    expect(screen.getByText("This group project isn't on this machine. Choose one or create one.")).toBeInTheDocument();
+    expect(screen.getByText("This group project isn't on this computer. Choose one or create one.")).toBeInTheDocument();
     expect(screen.queryByText(/gp-missing/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('Existing group project'), 'gp-existing');
@@ -208,7 +208,7 @@ describe('group project card (compact)', () => {
     projectAvailable = false;
     remoteProject = true;
     renderWidget({ groupProjectId: 'gp-missing' }, { mode: 'project', projectId: 'remote-project' });
-    expect(screen.queryByText(/isn't on this machine/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/isn't on this computer/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Existing group project')).not.toBeInTheDocument();
   });
 
@@ -218,7 +218,7 @@ describe('group project card (compact)', () => {
     const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ id: 'gp_new', name: 'Replacement' });
     const onUpdateMetadata = vi.fn();
     render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{ groupProjectId: 'gp-missing', __groupProjectReferenceUnresolved: true }} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
-    await userEvent.type(screen.getByRole('textbox', { name: 'Project name' }), 'Replacement');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Group project name' }), 'Replacement');
     await userEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() => expect(onUpdateMetadata).toHaveBeenCalledWith({ groupProjectId: 'gp_new', name: 'Replacement', __groupProjectReferenceUnresolved: false }));
     create.mockRestore();
@@ -249,10 +249,10 @@ describe('group project card (compact)', () => {
     expect(rows[1].querySelector('[data-dot]')).toBeNull();
   });
 
-  it('makes a member a project lead from its star button', async () => {
+  it('makes a member a lead from its star button', async () => {
     renderWidget();
     const falconRow = screen.getAllByTestId('group-project-member')[1];
-    const star = within(falconRow).getByRole('button', { name: 'Project lead' });
+    const star = within(falconRow).getByRole('button', { name: 'Lead' });
     expect(star).toHaveAttribute('aria-pressed', 'false');
     const setRole = vi.spyOn(window.clubhouse.groupProject, 'setRole').mockResolvedValue(rolesFor(['a2']));
     await userEvent.click(star);
@@ -265,7 +265,7 @@ describe('group project card (compact)', () => {
   it('keeps the star button\'s name fixed and says lead or not with aria-pressed', async () => {
     admins = ['a1'];
     renderWidget();
-    const stars = screen.getAllByRole('button', { name: 'Project lead' });
+    const stars = screen.getAllByRole('button', { name: 'Lead' });
     await waitFor(() => expect(stars.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false']));
   });
 
