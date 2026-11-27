@@ -508,6 +508,36 @@ describe('start_helper', () => {
     expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ orchestrator: 'copilot-cli' });
   });
 
+  it('takes the provider as provider, or as cli, its older name (#2776)', async () => {
+    controllableCreation();
+    for (const [name, args] of [['p', { provider: 'copilot-cli' }], ['c', { cli: 'copilot-cli' }], ['pc', { provider: 'copilot-cli', cli: 'copilot-cli' }]] as const) {
+      const result = await callTool('orch', 'start_helper', { name, task: 't', ...args });
+      expect(result.isError, name).toBeFalsy();
+    }
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(3);
+    for (const call of mockStartDurableCreation.mock.calls) expect(call[1]).toMatchObject({ orchestrator: 'copilot-cli' });
+    expect(mockResolveLaunch).toHaveBeenCalledWith(PROJECT, 'orch', { helperProvider: 'copilot-cli' });
+  });
+
+  it('refuses provider and cli that disagree, creating nothing (#2776)', async () => {
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', provider: 'codex-cli', cli: 'copilot-cli' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('provider "codex-cli" and cli "copilot-cli" name different CLIs. Pass only provider.');
+    const auto = await callTool('orch', 'start_helper', { name: 'h', task: 't', provider: 'auto', cli: 'codex-cli', difficulty: 'easy' });
+    expect(auto.isError).toBe(true);
+    expect(auto.content[0].text).toContain('name different CLIs');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown provider by either name', async () => {
+    for (const args of [{ provider: 'nope' }, { cli: 'nope' }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/^Unknown CLI "nope"\. Available: auto, /);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
   it('rejects an unknown cli and a bad access level', async () => {
     expect((await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'nope' })).isError).toBe(true);
     expect((await callTool('orch', 'start_helper', { name: 'h', task: 't', access: 'root' })).isError).toBe(true);
@@ -1227,6 +1257,26 @@ describe('start_helper cli "auto" (#2671)', () => {
     expect(mockRecordDecision).not.toHaveBeenCalled();
   });
 
+  it('takes "auto" as provider, as cli, or as both (#2776)', async () => {
+    controllableCreation();
+    const byProvider = parse(await callTool('orch', 'start_helper', { name: 'p', task: 't', provider: 'auto', difficulty: 'hard' }));
+    const byCli = parse(await start({ name: 'c', folder: 'c' }));
+    const byBoth = parse(await start({ name: 'pc', folder: 'pc', provider: 'auto' }));
+    for (const body of [byProvider, byCli, byBoth]) {
+      expect(body).toMatchObject({ routing: { mode: 'auto', requested: { provider: 'auto' } } });
+    }
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(3);
+  });
+
+  it('provider "auto" needs a difficulty, by either name', async () => {
+    for (const args of [{ provider: 'auto' }, { cli: 'auto' }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('provider "auto" needs a difficulty: easy, medium or hard.');
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
   it('needs a difficulty, and refuses a model or effort, which belong to one CLI', async () => {
     for (const args of [{ difficulty: undefined }, { model: 'opus' }, { effort: 'high' }]) {
       const result = await start(args);
@@ -1569,6 +1619,12 @@ describe('start approvals', () => {
     })]);
     // The desktop notice stays.
     expect(mockBroadcast).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'orch', expect.anything());
+  });
+
+  it('saves a held start\'s provider as cli, the name a request keeps (#2776)', async () => {
+    await ask({ name: 'impl-api', task: 'Build the API', provider: 'codex-cli' });
+    const [request] = listStartRequests();
+    expect(request.args).toEqual({ name: 'impl-api', task: 'Build the API', cli: 'codex-cli' });
   });
 
   it('checks the name, folder and branch before asking, with what the start would use', async () => {
@@ -2071,6 +2127,15 @@ describe('start_helper description', () => {
   it('says how to reach the wire from a CLI with a fixed tool list (#2603)', () => {
     const start = getScopedToolList('orch').find((t) => t.name === 'start_helper');
     expect(start?.description).toContain('If you have call_wire_tool');
+  });
+
+  it('takes provider, with cli described as its older name (#2776)', () => {
+    const start = getScopedToolList('orch').find((t) => t.name === 'start_helper');
+    const props = (start?.inputSchema as { properties: Record<string, { description: string }> }).properties;
+    expect(props.provider.description).toContain('CLI id');
+    expect(props.provider.description).toContain('"auto"');
+    expect(props.cli.description).toContain('older name for provider');
+    expect(start?.description).toContain('provider "auto"');
   });
 });
 

@@ -575,10 +575,10 @@ function validateStartArgs(args: HelperStartArgs): void {
     throw new McpArgError(`access must be one of: same, ${FIVE_LEVELS.join(', ')} (or ${ACCESS_LEVELS.join(', ')})`);
   }
   if (args.cli === AUTO_CLI) {
-    if (!args.difficulty) throw new McpArgError('cli "auto" needs a difficulty: easy, medium or hard.');
-    if (args.model || args.effort) throw new McpArgError('cli "auto" picks the model and effort, since they belong to one CLI. Name a CLI to choose them yourself.');
+    if (!args.difficulty) throw new McpArgError('provider "auto" needs a difficulty: easy, medium or hard.');
+    if (args.model || args.effort) throw new McpArgError('provider "auto" picks the model and effort, since they belong to one CLI. Name a CLI to choose them yourself.');
   } else if (args.cli && !getProvider(args.cli as OrchestratorId)) {
-    throw new McpArgError(`Unknown cli "${args.cli}". Available: auto, ${getAllProviders().map((p) => p.id).join(', ')}`);
+    throw new McpArgError(`Unknown CLI "${args.cli}". Available: auto, ${getAllProviders().map((p) => p.id).join(', ')}`);
   }
   if (args.difficulty && !isHelperDifficulty(args.difficulty)) {
     throw new McpArgError(`difficulty must be one of: ${HELPER_DIFFICULTIES.join(', ')}`);
@@ -588,9 +588,25 @@ function validateStartArgs(args: HelperStartArgs): void {
   }
 }
 
+/**
+ * start_helper's provider (#2776): `provider`, or `cli`, its older name, which
+ * still works. Kept as `cli` from here on, the name a held request saves.
+ * Both given and different is refused, since either could be the one meant.
+ */
+function startProvider(args: Record<string, unknown>): string | undefined {
+  const provider = optionalText(args, 'provider');
+  const cli = optionalText(args, 'cli');
+  if (provider && cli && provider !== cli) {
+    throw new McpArgError(`provider "${provider}" and cli "${cli}" name different CLIs. Pass only provider.`);
+  }
+  return provider ?? cli;
+}
+
 function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
   const parsed: HelperStartArgs = { name: requireText(args, 'name'), task: requireText(args, 'task') };
-  for (const key of ['persona', 'cli', 'model', 'effort', 'difficulty', 'taskProfile', 'access', 'branchFrom', 'folder', 'project', 'template'] as const) {
+  const provider = startProvider(args);
+  if (provider) parsed.cli = provider;
+  for (const key of ['persona', 'model', 'effort', 'difficulty', 'taskProfile', 'access', 'branchFrom', 'folder', 'project', 'template'] as const) {
     const value = optionalText(args, key);
     if (value) parsed[key] = value;
   }
@@ -921,7 +937,7 @@ onStartRequestsChanged((change) => {
 });
 
 /** Said in start_helper's result when an orchestrator passes a persona, which managed helpers don't take (#2901). */
-export const HELPER_PERSONA_IGNORED = 'persona was ignored: helpers start from a template. Pass cli or model to choose them.';
+export const HELPER_PERSONA_IGNORED = 'persona was ignored: helpers start from a template. Pass provider or model to choose them.';
 
 async function startHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   const parsed = parseStartArgs(args);
@@ -1163,7 +1179,8 @@ export async function describeHelper({ projectPath, config: helper }: HelperEntr
     project: await nameOfProject(projects, projectPath),
     status,
     ...(reason && { reason }),
-    ...(helper.orchestrator && { cli: helper.orchestrator }),
+    // provider is the parameter's name (#2776). cli stays for callers that read it.
+    ...(helper.orchestrator && { provider: helper.orchestrator, cli: helper.orchestrator }),
     ...(helper.model && { model: helper.model }),
     ...(helper.effort && { effort: helper.effort }),
     ...(helper.routing && { routing: helper.routing }),
@@ -1408,7 +1425,7 @@ export function registerHelperTools(): void {
         'reply with message_parent, and you can message it over the wire Clubhouse adds between you. ' +
         'If you have call_wire_tool, your tool list is fixed at session start, so reach that wire with it, using the helper id. ' +
         'With difficulty, Clubhouse picks a model and effort for the helper\'s CLI from the user\'s helper presets. Anything you name wins, and "routing" in the result says what was used and why. ' +
-        'cli "auto" with difficulty also picks the provider, once, for the helper\'s whole task. ' +
+        'provider "auto" with difficulty also picks the CLI, once, for the helper\'s whole task. ' +
         'Its access is never more than yours. If you are set to ask the user before starting helpers, ' +
         'it returns "needs_approval" with a requestId instead, and you get a message when the user ' +
         'approves or declines. With project, the helper is created in another Clubhouse project ' +
@@ -1425,9 +1442,13 @@ export function registerHelperTools(): void {
           template: { type: 'string', description: `${NEEDS_MANAGED} The template to build the helper from (list_agent_templates). Leave out for your helper template (the default helper template unless the person set one for you).` },
           addParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids (list_agent_parts) to add for this helper only.` },
           removeParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids from the template to leave out for this helper only. To swap a part, remove one and add another. The Clubhouse MCP part can't be removed.` },
+          provider: {
+            type: 'string',
+            description: 'Optional CLI id for the helper, for example claude-code, codex-cli or copilot-cli. Defaults to yours. Or "auto", with difficulty, if Smart routing is on for you. Clubhouse picks Claude Code or Codex, favoring the CLI that has used less of its plan limit. This balances plan use, not cost. Copilot is a last resort if allowed in Settings. Its quota is unknown, and it never outranks another eligible CLI, even one with low or temporarily unreadable quota. It refuses if Smart routing is off.',
+          },
           cli: {
             type: 'string',
-            description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours. Or "auto", with difficulty, if Smart routing is on for you. Clubhouse picks Claude or Codex, favoring the CLI that has used less of its plan limit. This balances plan use, not cost. Copilot is a last resort if allowed in Settings: its quota is unknown and it never outranks another eligible provider, even one with low or temporarily unreadable quota. It refuses if Auto provider is off.',
+            description: 'The older name for provider, and it still works. Pass one of them. If both are given they must match.',
           },
           model: {
             type: 'string',
@@ -1449,7 +1470,7 @@ export function registerHelperTools(): void {
             type: 'string',
             enum: [...HELPER_DIFFICULTIES],
             description:
-              'Optional: how demanding the task is, so the model and effort come from the presets for the helper\'s CLI (Claude and Codex). It never changes the CLI. ' +
+              'Optional: how demanding the task is, so the model and effort come from the presets for the helper\'s CLI. It never changes the CLI. ' +
               'easy: mechanical, well specified, easy to check. medium: normal feature or bug work in a known area with clear acceptance. ' +
               'hard: ambiguous, cross-cutting, concurrency, security or data-loss risk, or a mistake that is costly to catch.',
           },

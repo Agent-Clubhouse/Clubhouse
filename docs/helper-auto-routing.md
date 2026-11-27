@@ -30,6 +30,8 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 `cli: "auto"` while Auto isn't allowed is refused, not ignored.
 
+`start_helper` and `list_models` also take the CLI id as `provider` (#2776). `cli` is its older name and still works, `"auto"` included. A call that gives both with different values is refused. A held request still saves `cli`, and telemetry keeps `clubhouse.helper_routing.requested_cli`.
+
 `preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project `off` stops Auto but doesn't stop presets.
 
 A start that names no CLI, model, effort or difficulty is today's path. Nothing is decided and no `routing` is recorded.

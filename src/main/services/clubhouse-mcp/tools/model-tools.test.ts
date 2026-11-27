@@ -88,6 +88,7 @@ describe('list_models', () => {
     expect(body.note).toBe(LIST_SCOPE_NOTE);
     expect(body.providers.map((p: any) => p.cli)).toEqual(['claude-code', 'codex-cli']);
     expect(body.providers[0]).toEqual({
+      provider: 'claude-code',
       cli: 'claude-code',
       name: 'Claude Code',
       source: 'live',
@@ -102,6 +103,7 @@ describe('list_models', () => {
   it('marks a fallback list, with why the live list was unavailable', async () => {
     const body = parse(await callTool('orch', 'list_models', { cli: 'codex-cli' }));
     expect(body.providers).toEqual([{
+      provider: 'codex-cli',
       cli: 'codex-cli',
       name: 'Codex CLI',
       source: 'fallback',
@@ -123,7 +125,37 @@ describe('list_models', () => {
   it('refuses an unknown cli, naming the known ones', async () => {
     const result = await callTool('orch', 'list_models', { cli: 'aider' });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBe('Unknown cli "aider". Available: claude-code, codex-cli, copilot-cli');
+    expect(result.content[0].text).toBe('Unknown CLI "aider". Available: claude-code, codex-cli, copilot-cli');
+  });
+
+  it('takes the provider as provider, or as cli, its older name (#2776)', async () => {
+    for (const args of [{ provider: 'codex-cli' }, { cli: 'codex-cli' }, { provider: 'codex-cli', cli: 'codex-cli' }]) {
+      const body = parse(await callTool('orch', 'list_models', args));
+      expect(body.providers.map((p: any) => [p.provider, p.cli]), JSON.stringify(args)).toEqual([['codex-cli', 'codex-cli']]);
+    }
+  });
+
+  it('refuses provider and cli that disagree, asking no CLI (#2776)', async () => {
+    const result = await callTool('orch', 'list_models', { provider: 'codex-cli', cli: 'claude-code' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('provider "codex-cli" and cli "claude-code" name different CLIs. Pass only provider.');
+    expect(providers[0].listModels).not.toHaveBeenCalled();
+    expect(providers[1].listModels).not.toHaveBeenCalled();
+  });
+
+  it('has no "auto" by either name: it lists real providers only', async () => {
+    for (const args of [{ provider: 'auto' }, { cli: 'auto' }, { provider: 'auto', cli: 'auto' }]) {
+      const result = await callTool('orch', 'list_models', args);
+      expect(result.isError, JSON.stringify(args)).toBe(true);
+      expect(result.content[0].text).toBe('Unknown CLI "auto". Available: claude-code, codex-cli, copilot-cli');
+    }
+  });
+
+  it('describes provider as the parameter, with cli as its older name', () => {
+    const tool = getScopedToolList('orch').find((t) => t.name === 'list_models');
+    const props = (tool?.inputSchema as { properties: Record<string, { description: string }> }).properties;
+    expect(props.provider.description).toContain('CLI id');
+    expect(props.cli.description).toContain('older name for provider');
   });
 
   it('lists every provider when none is enabled', async () => {
@@ -141,6 +173,6 @@ describe('list_models', () => {
     providers[1].listModels!.mockRejectedValueOnce(new Error('boom'));
     const body = parse(await callTool('orch', 'list_models', {}));
     expect(body.providers[0].source).toBe('live');
-    expect(body.providers[1]).toEqual({ cli: 'codex-cli', name: 'Codex CLI', error: 'boom', models: [] });
+    expect(body.providers[1]).toEqual({ provider: 'codex-cli', cli: 'codex-cli', name: 'Codex CLI', error: 'boom', models: [] });
   });
 });

@@ -333,7 +333,7 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
       return {
         ok: false,
         code: 'no_valid_mapping',
-        message: `cli "auto" needs a difficulty: ${HELPER_DIFFICULTIES.join(', ')}.`,
+        message: `provider "auto" needs a difficulty: ${HELPER_DIFFICULTIES.join(', ')}.`,
         userReason: 'it named no difficulty Auto can use.',
       };
     }
