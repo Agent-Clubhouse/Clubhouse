@@ -360,7 +360,7 @@ describe('1.0 pages in the new layout (#3902)', () => {
     it('follows Agents in the agents section', () => {
       useChromeFlagStore.setState({ enabled: true });
       const agents = getHelpSections().find((s) => s.id === 'agents')!.topics.map((t) => t.id);
-      expect(agents.indexOf('agents-managed')).toBe(agents.indexOf('agents-overview') + 1);
+      expect(agents.indexOf('agents-managed')).toBe(agents.indexOf('agents-chat') + 1);
       expect(topic('agents-managed').title).toBe('Managed agents');
     });
 

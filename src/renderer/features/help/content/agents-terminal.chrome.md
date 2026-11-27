@@ -2,6 +2,8 @@
 
 Select an agent and the pane shows what it's doing, in a chat or in its CLI view. Agents open in chat by default. To use the CLI view, choose **Terminal** under **View** for a CLI in **Settings > Agents & CLIs**, or set one agent's **View** setting. If a CLI can't run chat, its agents open in the CLI view.
 
+For reading and sending in Chat, attachments, previews and approvals, see [Chat and media](#help:agents-chat).
+
 In chat, Cmd+B / Cmd+I (Ctrl on Windows/Linux) toggles bold / italic; typing `*word*` or `**word**` formats it as you finish. Start a list with `- `, `* ` or `1. `: markers render as you type, and Shift+Enter or Alt+Enter splits an item (an empty item exits or outdents). Tab / Shift+Tab indents / outdents selected list items; numbering updates automatically. Enter still sends, steers or queues as usual. Drafts are saved and sent as Markdown, and paste stays plain text.
 
 ## The agent's CLI view

@@ -10,6 +10,7 @@ import agentsOverview from './content/agents-overview.md';
 import agentsDurable from './content/agents-durable.md';
 import agentsQuick from './content/agents-quick.md';
 import agentsTerminal from './content/agents-terminal.md';
+import agentsChatChrome from './content/agents-chat.chrome.md';
 import agentsOrchestratedHelpers from './content/agents-orchestrated-helpers.md';
 import agentsActions from './content/agents-actions.md';
 import groupProjects from './content/group-projects.md';
@@ -231,6 +232,7 @@ export const GROUP_PROJECT_TOPICS: HelpTopic[] = [
  */
 export const NEW_LAYOUT_TOPICS: ReadonlyArray<{ after: string; topic: HelpTopic }> = [
   { after: 'agents-overview', topic: { id: 'agents-managed', title: 'Managed agents', content: agentsManagedChrome } },
+  { after: 'agents-overview', topic: { id: 'agents-chat', title: 'Chat and media', content: agentsChatChrome } },
 ];
 /** Puts each new-layout topic after the one it names, in order, in whichever section holds that one. */
 function withNewLayoutTopics(sections: HelpSection[]): HelpSection[] {
