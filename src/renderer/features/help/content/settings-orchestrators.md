@@ -9,8 +9,8 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 | CLI | Description | Status |
 |----------|-------------|--------|
 | **Claude Code** | Anthropic's CLI for Claude. Most complete Clubhouse integration. | Stable |
-| **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Beta |
-| **Codex CLI** | OpenAI's Codex CLI. Sandbox-based permissions, `--full-auto` mode. | Beta |
+| **GitHub Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Beta |
+| **Codex CLI** | OpenAI's Codex CLI. Its own sandbox and approval settings. | Beta |
 | **Antigravity CLI** | Google's `agy` CLI. Chat and terminal, no headless mode. See **Antigravity CLI**. | Experimental |
 
 ## Setup
@@ -19,9 +19,7 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 2. Turn each CLI on or off with its switch under **CLIs**
 3. Clubhouse auto-detects installed binaries via PATH
 
-**Status indicators:**
-- **Green checkmark**: binary found, ready to use
-- **Red indicator**: binary not found. Follow the setup prompt to install.
+Each CLI shows a dot and **Installed**, **Not found** or **Checking**. A CLI that isn't found can't be turned on until you install it.
 
 You can't turn off the last CLI that is on.
 
@@ -46,7 +44,7 @@ While **Rich chat content** is on, paired phones (Clubhouse Go) can read any fil
 | Headless mode | Yes | Yes | Yes | No (not offered; see **Antigravity CLI**) |
 | Structured output | Yes | Yes | Yes | No |
 | Hooks | Yes | Yes | Yes | Yes on macOS and Linux, no on Windows |
-| Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) | Yes (by hook-reported id, else most recent in folder) |
+| Session resume | Yes | Yes | Yes (resume by id when Clubhouse knows it, else `--last`, the most recent) | Yes (by hook-reported id, else most recent in folder) |
 | Permissions | Yes | Yes | Yes (sandbox) | Yes |
 
 ### Codex hooks
@@ -61,6 +59,6 @@ Each project can use a different CLI. To choose it, set **Runs on** on the proje
 
 ## Model selection
 
-Each CLI has its own model list. If models are missing:
+Each CLI has its own model list, which follows the account it's signed in to. If models are missing:
 - Update the CLI to the latest version
-- Check that API keys are valid and have the required permissions
+- Sign the CLI in again, then press **Check again** in **Settings > Smart routing**
