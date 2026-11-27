@@ -218,7 +218,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
 ];
 
 /** Annex has no classic article, so the new shell adds it to Settings. Annex is stable, so every build lists it (#2811). */
-const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
+const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex Network', content: settingsAnnexChrome };
 /** The Dispatcher is in the new layout only (#3053), so only the new shell lists it, after Orchestrated helpers. */
 export const DISPATCHER_TOPIC: HelpTopic = { id: 'agents-dispatcher', title: 'Dispatcher', content: agentsDispatcherChrome };
 export const GROUP_PROJECT_TOPICS: HelpTopic[] = [
