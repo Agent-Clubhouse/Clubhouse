@@ -404,7 +404,7 @@ async function canvasProblemSummary(): Promise<string> {
     // telemetry-exempt: the summary falls back to a general reason
   }
   const what = problems.length > 0 ? problems.join('; ') : 'a Canvas couldn\'t be read completely';
-  return `Members still come from Canvas wires, because ${what}. Restore the folder or remove the project; Clubhouse tries again when it next reloads connections.`;
+  return `Members still come from Canvas connections, because ${what}. Restore the folder or remove the project; Clubhouse tries again when it next reloads connections.`;
 }
 
 /**

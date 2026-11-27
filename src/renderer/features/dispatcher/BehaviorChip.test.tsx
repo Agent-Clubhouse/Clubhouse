@@ -83,7 +83,7 @@ describe('BehaviorChip (#3045)', () => {
   it('explains a provider with no Auto mapping and still lets the level change', async () => {
     const { onChange } = renderChip({ level: 'standard', provider: 'future-cli', auto: { ready: false, code: 'auto_not_supported' } });
     fireEvent.click(screen.getByTestId('dispatcher-behavior-chip'));
-    expect(screen.getByTestId('dispatcher-behavior-auto').textContent).toContain('Auto doesn’t support Codex CLI yet');
+    expect(screen.getByTestId('dispatcher-behavior-auto').textContent).toContain('Smart routing doesn’t support Codex CLI yet');
     expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();
     await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-behavior-light')); });
     expect(onChange).toHaveBeenCalledWith('light');

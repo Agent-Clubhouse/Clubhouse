@@ -31,7 +31,7 @@ describe('Helper header (#2232)', () => {
     const header = await screen.findByTestId('helper-header');
     expect(header).toHaveTextContent('Helper of');
     expect(screen.getByTestId('helper-header-parent')).toHaveTextContent('epic-lead');
-    expect(screen.getByTestId('helper-header-disposable')).toHaveTextContent('epic-lead may dispose of it when the work is done');
+    expect(screen.getByTestId('helper-header-disposable')).toHaveTextContent('epic-lead may delete it when the work is done');
     expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith(PROJECT, 'h1');
 
     fireEvent.click(screen.getByTestId('helper-header-parent'));

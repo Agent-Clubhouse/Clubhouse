@@ -201,10 +201,10 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
         </ul>
       )}
       {hasClubhouse && bindings.length > 0 && (
-        <ul className="flex flex-col pb-1" aria-label="Wires" data-testid="details-mcp-wires">
+        <ul className="flex flex-col pb-1" aria-label="Connections" data-testid="details-mcp-wires">
           {bindings.map((b) => (
             <li key={b.targetId} className="h-6 flex items-center gap-2 pl-[49px] pr-3.5 text-xs text-ctp-subtext1">
-              <span className="truncate">Wired to {b.targetKind === 'agent' ? dispatcherAgentDisplayName(b.targetId, b.targetName ?? b.label, dispatcher) : b.targetName ?? b.label}</span>
+              <span className="truncate">Connected to {b.targetKind === 'agent' ? dispatcherAgentDisplayName(b.targetId, b.targetName ?? b.label, dispatcher) : b.targetName ?? b.label}</span>
               <span className="ml-auto text-ctp-overlay1 whitespace-nowrap">{KIND_WORD[b.targetKind] ?? b.targetKind}</span>
             </li>
           ))}

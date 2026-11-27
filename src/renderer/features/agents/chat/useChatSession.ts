@@ -221,7 +221,7 @@ export function useChatActions(agentId: string): ChatActions {
     answerQuestion: async (requestId, answers) =>
       stillWaiting(store.getState().agents[agentId], requestId)
       && (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
-    setLevel: async (level) => (await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level)).ok,
+    setLevel: async (level) => (await wrap("Couldn't change the access", store.getState().setLevel)(agentId, level)).ok,
     setModel: async (modelId, effort) => { await wrap("Couldn't change the model", store.getState().setModel)(agentId, modelId, effort); },
     setEffort: async (effort) => { await wrap("Couldn't change the effort", store.getState().setEffort)(agentId, effort); },
   }), [agentId, store, wrap]);

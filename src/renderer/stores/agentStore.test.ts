@@ -1076,12 +1076,12 @@ describe('agentStore', () => {
       mockAgent.spawnAgent.mockResolvedValue(undefined);
     });
 
-    it('never starts a disposed helper (#2224)', async () => {
+    it('never starts a deleted helper (#2224)', async () => {
       const config = {
         id: 'durable_disposed', name: 'gone', color: 'indigo', createdAt: '2024-01-01',
         parentAgentId: 'durable_parent', disposedAt: '2026-10-18T00:00:00.000Z',
       };
-      await expect(getState().spawnDurableAgent('proj_1', '/project', config, false)).rejects.toThrow(/disposed/);
+      await expect(getState().spawnDurableAgent('proj_1', '/project', config, false)).rejects.toThrow(/deleted/);
       expect(mockAgent.spawnAgent).not.toHaveBeenCalled();
       expect(getState().agents['durable_disposed']).toBeUndefined();
     });
@@ -1380,7 +1380,7 @@ describe('agentStore', () => {
       expect(getState().agents['existing']).toMatchObject({ status: 'running' });
     });
 
-    it('drops a durable agent of the project whose config is gone or disposed', async () => {
+    it('drops a durable agent of the project whose config is gone or deleted', async () => {
       const mockAgent = window.clubhouse.agent as any;
       seedAgent({ id: 'kept', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
       seedAgent({ id: 'deleted', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
@@ -1508,7 +1508,7 @@ describe('agentStore', () => {
       expect(getState().agents['durable_e1'].emoji).toBe('🦊');
     });
 
-    it('leaves disposed helpers off the rail (#2224)', async () => {
+    it('leaves deleted helpers off the rail (#2224)', async () => {
       const mockAgent = window.clubhouse.agent as any;
       seedAgent({ id: 'durable_gone', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
       mockAgent.listDurable.mockResolvedValue([
@@ -1786,7 +1786,7 @@ describe('agentStore', () => {
         vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue(helperConfigs.map((config) => ({ projectId: 'proj_1', projectPath, config })));
         vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValue({ ok: true, message: '', helperIds: ['helper_1', 'helper_2'] });
         vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValue({
-          ok: true, message: 'Force deleted', deleted: true, helpers: { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
+          ok: true, message: 'Force deleted', deleted: true, helpers: { ok: true, message: 'Deleted 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
         });
         seedAgent({ id: 'helper_1', projectId: 'proj_1', status: 'running', kind: 'durable' });
         seedAgent({ id: 'helper_2', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
@@ -1800,7 +1800,7 @@ describe('agentStore', () => {
         expect(getState().agents['target']).toBeDefined();
       });
 
-      it('dispose: checks first, then main disposes the helpers and deletes the orchestrator in one call', async () => {
+      it('delete: checks first, then main deletes the helpers and deletes the orchestrator in one call', async () => {
         const result = await getState().executeDelete('force', projectPath, 'dispose');
 
         expect(result.ok).toBe(true);
@@ -1814,7 +1814,7 @@ describe('agentStore', () => {
         expect(getState().deleteDialogAgent).toBeNull();
       });
 
-      it('dispose: dirty, unpushed or unchecked helpers block the whole delete before anything stops', async () => {
+      it('delete: dirty, unpushed or unchecked helpers block the whole delete before anything stops', async () => {
         seedAgent({ id: 'child_1', projectId: 'proj_1', status: 'running', kind: 'quick', parentAgentId: 'target' });
         vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValueOnce({
           ok: false,
@@ -1831,7 +1831,7 @@ describe('agentStore', () => {
 
         expect(result.ok).toBe(false);
         expect(result.message).toBe(
-          "Nothing was deleted. Disposing would lose work in scout (2 uncommitted files), fixer (1 unpushed commit), mover (more than 99 unpushed commits) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
+          "Nothing was deleted. Deleting would lose work in scout (2 uncommitted files), fixer (1 unpushed commit), mover (more than 99 unpushed commits) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
         );
         expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
         expect(window.clubhouse.agent.deleteAgent).not.toHaveBeenCalled();
@@ -1840,13 +1840,13 @@ describe('agentStore', () => {
         expect(getState().agents['child_1']).toBeDefined();
       });
 
-      it('dispose: a helper that fails part way keeps the orchestrator, and the disposed ones leave the rail', async () => {
+      it('delete: a helper that fails part way keeps the orchestrator, and the deleted ones leave the rail', async () => {
         vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({
           ok: false,
-          message: 'Disposed 1 of 2 helpers',
+          message: 'Deleted 1 of 2 helpers',
           helpers: {
             ok: false,
-            message: 'Disposed 1 of 2 helpers',
+            message: 'Deleted 1 of 2 helpers',
             helperIds: ['helper_2'],
             failed: [{ agentId: 'helper_1', name: 'scout', reason: 'EBUSY: resource busy or locked' }],
           },
@@ -1856,7 +1856,7 @@ describe('agentStore', () => {
 
         expect(result).toEqual({
           ok: false,
-          message: 'Disposed 1 helper, but couldn\'t dispose scout (EBUSY: resource busy or locked), so the orchestrator was not deleted.',
+          message: 'Deleted 1 helper, but couldn\'t delete scout (EBUSY: resource busy or locked), so the orchestrator was not deleted.',
         });
         expect(getState().agents['helper_2']).toBeUndefined();
         expect(getState().agents['helper_1']).toBeDefined();
@@ -1864,11 +1864,11 @@ describe('agentStore', () => {
         expect(getState().deleteDialogAgent).toBe('target');
       });
 
-      it('dispose: helpers disposed before the orchestrator\'s own delete failed still leave the rail', async () => {
+      it('delete: helpers deleted before the orchestrator\'s own delete failed still leave the rail', async () => {
         vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({
           ok: false,
           message: 'The agent is changing state. Refresh before trying again.',
-          helpers: { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
+          helpers: { ok: true, message: 'Deleted 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
         });
 
         const result = await getState().executeDelete('force', projectPath, 'dispose');

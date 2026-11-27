@@ -138,7 +138,7 @@ describe('read-only quick Details target and cards', () => {
     m.registration.mockReturnValue(undefined); finishQuickAgentRun(run, 'completed');
     const value = await read();
     expect(value).toMatchObject({ running: false, providerId: 'actual-cli', sessionId: null, status: 'sleeping' });
-    expect(value.cards.find((c) => c.id === 'settings')?.rows).toContainEqual({ label: 'Last runtime', value: 'CLI (headless)' });
+    expect(value.cards.find((c) => c.id === 'settings')?.rows).toContainEqual({ label: 'Last view', value: 'Headless' });
     expect(JSON.stringify(value)).not.toContain('PRIVATE_AUTH_NONCE');
     expect(JSON.stringify(run)).not.toContain('PRIVATE_AUTH_NONCE');
   });
@@ -157,7 +157,7 @@ describe('read-only quick Details target and cards', () => {
     expect(result.cards.find((c) => c.id === 'settings')?.rows).toContainEqual({ label: 'Requested model', value: 'launch-model' });
     const connections = result.cards.find((c) => c.id === 'connections')!;
     expect(connections.state).toBe('error'); expect(connections.summary).toBe('Connection run association unavailable'); expect(m.connectionFixture).not.toHaveBeenCalled();
-    expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires');
+    expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP connections');
     expect(JSON.stringify(result)).not.toContain('PRIVATE_ERROR');
   });
   it.each(['replacement', 'finished', 'project-removed', 'nonce-changed', 'revoked'] as const)('withholds late quick evidence after %s', async (condition) => {
@@ -369,7 +369,7 @@ describe('actual selected Quick Connections evidence at final assembly', () => {
   });
 });
 
-it('keeps current Quick bindings while refusing inapplicable saved durable Dispatcher links for its native ID', async () => {
+it('keeps current Quick bindings while refusing inapplicable saved durable Dispatcher connections for its native ID', async () => {
   const run = start(), registration: AgentRegistration = { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'pty', nonce: 'PRIVATE_RUN_NONCE' };
   m.registration.mockReturnValue(registration); m.running.mockReturnValue(true); m.runtime.mockReturnValue({ kind: 'pty' }); noteQuickAgentRuntime(run, registration, () => m.registration() === registration);
   const bindings = await import('./clubhouse-mcp/binding-manager'), sources = await import('./persisted-bindings'), saved = await import('./dispatcher-saved-links-display'), owner = await import('./dispatcher-connections');

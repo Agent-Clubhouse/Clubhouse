@@ -44,7 +44,7 @@ describe('useChatActions results (#2057)', () => {
     useChatStore.setState({ setLevel: vi.fn(async () => { throw new Error('not live'); }) });
     const { result } = renderHook(() => useChatActions('agent-1'));
     await expect(result.current.setLevel('auto')).resolves.toBe(false);
-    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(["Couldn't change the permission level: not live"]);
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(["Couldn't change the access: not live"]);
   });
 });
 

@@ -39,7 +39,7 @@ const TOOL_HINTS: Record<string, string> = {
   read_message: 'Read a single message by ID',
   get_project_info: 'Get project details',
   wake_agent: 'Wake a sleeping agent in this project',
-  sleep_agent: 'Stop a connected agent in this project',
+  sleep_agent: 'Put a connected agent in this project to sleep',
   clear_topic: 'Delete a bulletin channel and all its messages',
   delete_messages: 'Delete specific messages by ID',
   invoke: 'Submit a task to the queue',

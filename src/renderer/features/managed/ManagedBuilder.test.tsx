@@ -512,7 +512,7 @@ describe('ManagedGeneralSection', () => {
     const mcp = within(dialog).getByRole('group', { name: 'MCP file .mcp.json' });
     expect(within(mcp).getByTestId('managed-plain-mcp-result').textContent).toContain('Servers docs, mine, keeping mine added since.');
     expect(within(dialog).getByTestId('managed-plain-skills').textContent).toBe('Skill folders stay as they are: .claude/skills/build/.');
-    expect(dialog.textContent).toContain('keeps its name, history, branch and wires. Its parts and templates stay in the library.');
+    expect(dialog.textContent).toContain('keeps its name, history, branch and connections. Its parts and templates stay in the library.');
     expect(dialog.textContent).not.toContain('\u2014');
     expect(unmanage).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Switch to plain' })); });

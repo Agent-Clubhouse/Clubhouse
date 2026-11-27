@@ -87,10 +87,10 @@ describe('help-content', () => {
       }
     });
 
-    it('covers the cards, access, control, limits, disposing and connections', () => {
+    it('covers the cards, access, control, limits, deleting and connections', () => {
       const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
       expect(content).toContain('**Let this agent orchestrate**');
-      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', 'the **Helpers** page in Settings', '**Dispose anyway**', '**Needs you**']) {
+      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', 'the **Helpers** page in Settings', '**Delete anyway**', '**Needs you**']) {
         expect(content, name).toContain(name);
       }
       for (const heading of ['## Access', '## Control levels', '## Limits', '## Disposing', '## Connections']) {

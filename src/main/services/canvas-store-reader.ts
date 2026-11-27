@@ -231,8 +231,8 @@ async function readInstances(kvDir: string, options: CanvasStoreReadOptions): Pr
 async function readWires(kvDir: string, options: CanvasStoreReadOptions): Promise<{ wires: PersistedCanvasWire[] | null; problem?: string }> {
   const read = await readKvKey(kvDir, KEY_WIRES, options);
   if (read.status === 'missing') return { wires: [] };
-  if (read.status === 'unreadable') return { wires: null, problem: `canvas wires unreadable: ${read.error}` };
-  if (!Array.isArray(read.value)) return { wires: null, problem: 'canvas wires are not an array' };
+  if (read.status === 'unreadable') return { wires: null, problem: `canvas connections unreadable: ${read.error}` };
+  if (!Array.isArray(read.value)) return { wires: null, problem: 'canvas connections are not an array' };
   if (options.strict) {
     const pairs = new Set<string>();
     for (const entry of read.value) {
@@ -243,10 +243,10 @@ async function readWires(kvDir: string, options: CanvasStoreReadOptions): Promis
         || (wire.disabledTools !== undefined && (!Array.isArray(wire.disabledTools) || !wire.disabledTools.every((tool) => typeof tool === 'string')))
         || (wire.instructions !== undefined && (!wire.instructions || typeof wire.instructions !== 'object'
           || Array.isArray(wire.instructions) || !Object.values(wire.instructions).every((value) => typeof value === 'string')))) {
-        return { wires: null, problem: 'canvas wires contain invalid or unknown rows' };
+        return { wires: null, problem: 'canvas connections contain invalid or unknown rows' };
       }
       const pair = JSON.stringify([wire.agentId, wire.targetId]);
-      if (pairs.has(pair)) return { wires: null, problem: 'canvas wires contain duplicate endpoint identities' };
+      if (pairs.has(pair)) return { wires: null, problem: 'canvas connections contain duplicate endpoint identities' };
       pairs.add(pair);
     }
   }
@@ -369,9 +369,9 @@ export async function readCanvasForNavigation(projectId?: string): Promise<Canva
   if (instances.status !== 'ok' || !normalizeInstances(instances.value, true)) {
     throw new Error('The saved Canvas is missing or unreadable. Retry Open to refresh its representations.');
   }
-  if (!wires.wires) throw new Error(wires.problem || 'Canvas wires could not be read.');
+  if (!wires.wires) throw new Error(wires.problem || 'Canvas connections could not be read.');
   if (zones.status === 'unreadable' || (zones.status === 'ok' && !Array.isArray(zones.value))) {
-    throw new Error('Canvas zone wires could not be read. Repair the saved Canvas and retry Open.');
+    throw new Error('Canvas zone connections could not be read. Repair the saved Canvas and retry Open.');
   }
   return {
     canvases: instances.value as unknown[],

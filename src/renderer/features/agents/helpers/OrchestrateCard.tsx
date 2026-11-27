@@ -64,12 +64,12 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle, chil
         {!policy ? (
           <CardNote>Couldn’t read this agent’s orchestration settings.</CardNote>
         ) : !policy.orchestrate ? (
-          <CardNote>Turn this on to give {agent.name} the tools to start, message and dispose of helper agents.</CardNote>
+          <CardNote>Turn this on to give {agent.name} the tools to start, message and delete helper agents.</CardNote>
         ) : (
           <>
-            <CardRow label="Helpers get">
+            <CardRow label="Helper access">
               <span className="flex flex-col items-start gap-1">
-                <label htmlFor={ids.access} className="sr-only">Helpers get</label>
+                <label htmlFor={ids.access} className="sr-only">Helper access</label>
                 <AccessSelect
                   id={ids.access}
                   value={policy.access}
@@ -84,9 +84,9 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle, chil
                 <span className="text-ctp-overlay1" data-testid="orchestrate-access-note">{accessNote(access, running, agent.name)}</span>
               </span>
             </CardRow>
-            <CardRow label="Control">
+            <CardRow label="Approvals">
               <span className="flex flex-col items-start gap-1">
-                <label htmlFor={ids.control} className="sr-only">Control</label>
+                <label htmlFor={ids.control} className="sr-only">Approvals</label>
                 <ControlSelect
                   id={ids.control}
                   value={policy.control}
@@ -98,7 +98,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle, chil
                 <span className="text-ctp-overlay1">{controlHelp(policy.control, agent.name)}</span>
               </span>
             </CardRow>
-            <CardRow label="At once">
+            <CardRow label="Helpers at once">
               <span className="flex flex-col items-start gap-1">
                 <label htmlFor={ids.count} className="sr-only">Helpers at once</label>
                 <HelperCountInput

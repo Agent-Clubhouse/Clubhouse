@@ -62,7 +62,7 @@ function canvases(raw: unknown): Canvas[] {
 /** Selected-only equivalent of the local zone expansion; never builds unrelated cross products.
  * Work admissions count all wire/contained-member/selected candidate visits. Exhaustion is explicit. */
 function zonePairs(raw: unknown, views: View[], selected: string): { pairs: Pair[]; limited: boolean } {
-  if (!Array.isArray(raw) || raw.length > 4096) throw new Error('Invalid saved zone wires.');
+  if (!Array.isArray(raw) || raw.length > 4096) throw new Error('Invalid saved zone connections.');
   const byId = new Map(views.map((v, i) => [v.id, { v, i }])), byAgent = new Map<string, View>(), zones = new Map<string, { agents: View[]; widgets: View[]; selected: boolean }>(), seen = new Set<string>(), pairs: Pair[] = [];
   for (const v of views) if (v.type === 'agent' && v.agentId && !byAgent.has(v.agentId)) byAgent.set(v.agentId, v);
   let left = 65536, limited = false;
@@ -88,7 +88,7 @@ function zonePairs(raw: unknown, views: View[], selected: string): { pairs: Pair
   const wireIds = new Set<string>();
   for (const w of raw) {
     if (!charge()) break;
-    if (!record(w) || !key(w.id) || wireIds.has(w.id) || !key(w.sourceZoneId) || !key(w.targetId) || !['zone', 'agent', 'browser', 'group-project'].includes(String(w.targetType))) throw new Error('Invalid or ambiguous zone wire.');
+    if (!record(w) || !key(w.id) || wireIds.has(w.id) || !key(w.sourceZoneId) || !key(w.targetId) || !['zone', 'agent', 'browser', 'group-project'].includes(String(w.targetType))) throw new Error('Invalid or ambiguous zone connection.');
     wireIds.add(w.id); const source = contents(w.sourceZoneId), sa = source.agents;
     if (w.targetType === 'agent') {
       const target = byAgent.get(w.targetId); if (!target?.agentId) continue;
@@ -143,7 +143,7 @@ export function readSavedCanvasConnectionsForDisplay(selected: { agentId: string
         if (!chosen) throw new Error('Saved active Canvas unavailable.'); views = chosen.views;
         const expanded = zonePairs(data.raw, views, selected.agentId); pairs = expanded.pairs; if (expanded.limited) { complete = false; unknownRows++; }
       } else {
-        if (!Array.isArray(data.raw) || data.raw.length > 4096) throw new Error('Saved wire limit.');
+        if (!Array.isArray(data.raw) || data.raw.length > 4096) throw new Error('Saved connection limit.');
         const valid: Pair[] = [];
         for (const w of data.raw) {
           if (!record(w) || !key(w.agentId) || !key(w.targetId) || !kinds.has(String(w.targetKind)) || typeof w.label !== 'string' || !w.label || w.label.length > 1024) { complete = false; unknownRows++; continue; }

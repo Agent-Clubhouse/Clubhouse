@@ -12,7 +12,7 @@ export function registerDispatcherPresenceTools(): void {
     {
       description:
         'List the Dispatchers on the person\'s other computers: each one\'s label ("<name> on <machine>"), state (online, working, asleep, ' +
-        'offline with last seen, off, or not known yet) and the state of your link to it, with the reason when it is paused or unavailable. ' +
+        'offline with last seen, off, or not known yet) and the state of your connection to it, with the reason when it is paused or unavailable. ' +
         'Read-only. Name them by their label, never by id. Use the address only as a send target.',
       inputSchema: { type: 'object', properties: {}, required: [] },
     },

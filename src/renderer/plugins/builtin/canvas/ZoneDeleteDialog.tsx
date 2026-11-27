@@ -34,7 +34,7 @@ export function ZoneDeleteDialog({ zoneName, containedCount, onConfirm, onCancel
         }
       >
         <p className="text-xs text-ctp-subtext1">
-          This zone holds {containedCount} widget{containedCount !== 1 ? 's' : ''}. Its wires are removed either way.
+          This zone holds {containedCount} widget{containedCount !== 1 ? 's' : ''}. Its connections are removed either way.
         </p>
       </Modal>
     </div>

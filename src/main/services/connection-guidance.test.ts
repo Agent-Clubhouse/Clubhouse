@@ -691,7 +691,7 @@ describe('durable directional connection guidance', () => {
     const [listed] = getScopedToolList('a');
     const preview = previewConnectionGuidance('a', targetId, instructions)[suffix];
     expect(preview).toBe(listed.description);
-    const target = JSON.parse(preview.split('\n\nTarget: ')[1].split('\n\n[WIRE INSTRUCTIONS')[0]);
+    const target = JSON.parse(preview.split('\n\nTarget: ')[1].split('\n\n[CONNECTION INSTRUCTIONS')[0]);
     expect(Object.keys(target)).toEqual(['name', 'project', 'id']);
     expect(target.id).toBe(targetId);
     expect(target.name.length).toBeLessThanOrEqual(128);

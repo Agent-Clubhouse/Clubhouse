@@ -44,7 +44,7 @@ export function RemoteSkillsMcpEvidence({ card, setup, live, skills, evidence, c
   return <>
     <Group title="Skills">
       {installed.length > 0 && <Group title="Installed by Clubhouse">
-        <CardNote>Installation recorded by the host; provider loading, use and execution are not verified.</CardNote>
+        <CardNote>Installation recorded by the host; CLI loading, use and execution are not verified.</CardNote>
         <ul className="pr-3.5 pl-[33px] py-1 text-xs break-words" aria-label="Installed by Clubhouse">{installed.map((r, i) => <li key={i}>{r.value}</li>)}</ul>
       </Group>}
       {(configuredSkills.length > 0 || !!fallbackSkills?.length) && <Group title="Set up by Clubhouse">
@@ -52,27 +52,27 @@ export function RemoteSkillsMcpEvidence({ card, setup, live, skills, evidence, c
         <ul className="pr-3.5 pl-[33px] py-1 text-xs break-words" aria-label="Set up by Clubhouse">{configuredSkills.map((r, i) => <li key={i}>{r.value}</li>)}{fallbackSkills?.map((name, i) => <li key={`saved-${i}`}>{name}</li>)}</ul>
       </Group>}
       {!installed.length && !configuredSkills.length && !fallbackSkills?.length && <CardNote>Clubhouse skill installation and setup groups are not available in this host evidence. No empty inventory is inferred.</CardNote>}
-      <Group title="Provider-reported skills">
+      <Group title="CLI-reported skills">
         {report ? <>
-          <CardNote>Session snapshot. Provider-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.</CardNote>
+          <CardNote>Session snapshot. CLI-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.</CardNote>
           <CardRow label="Source">Claude · system/init</CardRow><CardRow label="Session">{report.sessionId}</CardRow><CardRow label="Native session">{report.nativeSessionId}</CardRow><CardRow label="Reported">{new Date(report.reportedAt).toLocaleString()}</CardRow>
-          {report.names?.length ? <ul className="pr-3.5 pl-[33px] py-1 text-xs break-words" aria-label="Provider-reported skill names">{report.names.map((name, i) => <li key={i}>{name}</li>)}</ul> : <CardNote>{report.names ? 'Claude explicitly reported no skills in this snapshot.' : 'Skill names were not reported in this snapshot.'}</CardNote>}
-        </> : <CardNote>{!sessionAvailable ? 'Provider evidence is unavailable until a current authorized session read succeeds.' : skills.supported ? 'No valid skills report for this session has arrived.' : 'This provider does not report loaded skill names here.'}</CardNote>}
+          {report.names?.length ? <ul className="pr-3.5 pl-[33px] py-1 text-xs break-words" aria-label="CLI-reported skill names">{report.names.map((name, i) => <li key={i}>{name}</li>)}</ul> : <CardNote>{report.names ? 'Claude explicitly reported no skills in this snapshot.' : 'Skill names were not reported in this snapshot.'}</CardNote>}
+        </> : <CardNote>{!sessionAvailable ? 'CLI evidence is unavailable until a current authorized session read succeeds.' : skills.supported ? 'No valid skills report for this session has arrived.' : 'This CLI does not report loaded skill names here.'}</CardNote>}
       </Group>
     </Group>
     <Group title="MCP servers">
-      {live === null ? <CardNote>The provider has not reported its MCP connections in the current authorized session evidence.</CardNote> : !live.length && <CardNote>The provider explicitly reported no MCP connections.</CardNote>}
-      {!!mcps.rows.length && <ul aria-label="Provider-reported MCP servers">{mcps.rows.map((m, i) => <McpServerRow key={i} row={m} />)}</ul>}
+      {live === null ? <CardNote>The CLI has not reported its MCP connections in the current authorized session evidence.</CardNote> : !live.length && <CardNote>The CLI explicitly reported no MCP connections.</CardNote>}
+      {!!mcps.rows.length && <ul aria-label="CLI-reported MCP servers">{mcps.rows.map((m, i) => <McpServerRow key={i} row={m} />)}</ul>}
       {!!bridge.length && <Group title="Host Clubhouse MCP handshake"><Evidence card={{ ...card!, rows: bridge, notes: [], omitted: 0, state: 'ok' }} /></Group>}
       {!!mcps.configuredOnly.length && <Group title="Set in Clubhouse">
-        <CardNote>Configured names absent from the available provider report. Loading is not confirmed.</CardNote>
+        <CardNote>Configured names absent from the available CLI report. Loading is not confirmed.</CardNote>
         <ul aria-label="Configured-only MCP servers">{mcps.configuredOnly.map((name, i) => <McpServerRow key={i} row={{ name, status: 'configured' }} />)}</ul>
       </Group>}
       {!configuredKnown && <CardNote>The host has not shared a configured MCP inventory. Missing names are unknown.</CardNote>}
       {configuredKnown && !configured.length && <CardNote>The host explicitly shared no configured MCP names.</CardNote>}
-      <Group title="Wires"><RemoteOutgoingWiresEvidence wires={card?.state === 'ok' ? outgoingWires : undefined} /></Group>
+      <Group title="Outgoing connections"><RemoteOutgoingWiresEvidence wires={card?.state === 'ok' ? outgoingWires : undefined} /></Group>
     </Group>
-    <Group title="Provider inventory"><ProviderInventory evidence={evidence} />{!evidence?.values.inventory && <CardNote>No separate provider inventory report is available.</CardNote>}</Group>
+    <Group title="CLI inventory"><ProviderInventory evidence={evidence} />{!evidence?.values.inventory && <CardNote>No separate CLI inventory report is available.</CardNote>}</Group>
     {card ? <Evidence card={{ ...card, rows: remaining }} /> : <CardNote>{message}</CardNote>}
   </>;
 }

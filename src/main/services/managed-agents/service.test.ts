@@ -886,7 +886,7 @@ describe('letting orchestrators choose helper templates (D31)', () => {
     for (const args of [{ template: 'builtin-template-quality-assurance' }, { addParts: [BUILTIN_BLOCK_IDS.qa] }, { removeParts: [BUILTIN_BLOCK_IDS.basics] }]) {
       await expect(user(() => managedHelperSetup(service, args))).rejects.toThrow(HELPER_TEMPLATE_CHOICE_OFF);
     }
-    expect(HELPER_TEMPLATE_CHOICE_OFF).toContain('Settings › Managed agents › Helpers');
+    expect(HELPER_TEMPLATE_CHOICE_OFF).toContain('the Helpers page in Settings');
   });
 
   it('uses the orchestrator\'s own helper template, falling back to the app default when it is gone (#2895)', async () => {

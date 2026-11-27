@@ -289,7 +289,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
   it('words both outcomes in the plural for several helpers', async () => {
     const { dialog } = await openDialog();
     expect(dialog).toHaveTextContent('leaves them running or asleep as they are');
-    expect(dialog).toHaveTextContent('Disposing stops them and deletes their folders');
+    expect(dialog).toHaveTextContent('Deleting stops them and deletes their folders');
   });
 
   it('words both outcomes in the singular for one helper', async () => {
@@ -297,7 +297,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     configs = configs.filter((c) => c.id !== 'h2');
     const { dialog } = await openDialog();
     expect(dialog).toHaveTextContent('leaves it running or asleep as it is');
-    expect(dialog).toHaveTextContent('Disposing stops it and deletes its folder');
+    expect(dialog).toHaveTextContent('Deleting stops it and deletes its folder');
     expect(dialog).not.toHaveTextContent('stops them');
   });
 
@@ -322,10 +322,10 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(useAgentStore.getState().agents.h1).toBeDefined();
   });
 
-  it('disposes the helpers when nothing would be lost', async () => {
+  it('deletes the helpers when nothing would be lost', async () => {
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => {
       dispose('h1', 'h2');
-      return { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['h1', 'h2'], policy: resolved({ ...stored, orchestrate: false }) };
+      return { ok: true, message: 'Deleted 2 helper(s)', helperIds: ['h1', 'h2'], policy: resolved({ ...stored, orchestrate: false }) };
     });
     const { toggle } = await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
@@ -335,16 +335,16 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(useAgentStore.getState().agents.h2).toBeUndefined();
   });
 
-  it('shows the work at risk and offers Dispose anyway', async () => {
+  it('shows the work at risk and offers Delete anyway', async () => {
     const blocked: HelperCascadeResult = {
       ok: false,
-      message: 'impl-ipc has work that disposing would lose, or couldn\'t be checked',
+      message: 'impl-ipc has work that deleting would lose, or couldn\'t be checked',
       blocked: [{ agentId: 'h1', name: 'impl-ipc', checks: { dirty: 3, unpushed: 2, unmerged: 2 } }],
     };
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async (_p: string, _id: string, _c: string, force?: boolean) => {
       if (!force) return blocked;
       dispose('h1', 'h2');
-      return { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['h1', 'h2'], policy: resolved({ ...stored, orchestrate: false }) };
+      return { ok: true, message: 'Deleted 2 helper(s)', helperIds: ['h1', 'h2'], policy: resolved({ ...stored, orchestrate: false }) };
     });
     const { toggle } = await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
@@ -354,7 +354,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(list).toHaveTextContent('2 commits not pushed');
     // Not merged is information only, not a reason to block.
     expect(list).not.toHaveTextContent('not merged');
-    expect(screen.getByTestId('turn-off-blocked-note')).toHaveTextContent('Dispose anyway deletes this work');
+    expect(screen.getByTestId('turn-off-blocked-note')).toHaveTextContent('Delete anyway deletes this work');
     expect(toggle).toHaveAttribute('aria-checked', 'true');
 
     fireEvent.click(screen.getByTestId('turn-off-force'));
@@ -365,7 +365,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
   it('never offers force for a helper that couldn\'t be checked', async () => {
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({
       ok: false,
-      message: 'merge-1 has work that disposing would lose, or couldn\'t be checked',
+      message: 'merge-1 has work that deleting would lose, or couldn\'t be checked',
       blocked: [
         { agentId: 'h1', name: 'impl-ipc', checks: { dirty: 1, unpushed: 0, unmerged: 0 } },
         { agentId: 'h2', name: 'merge-1', checks: { dirty: 0, unpushed: 0, unmerged: null, error: 'couldn\'t check, its remote has never been fetched' } },
@@ -377,10 +377,10 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(list).toHaveTextContent('Couldn’t be checked because its remote has never been fetched');
     // Each kind is counted and worded on its own.
     expect(screen.getByTestId('turn-off-blocked-summary')).toHaveTextContent(
-      'impl-ipc has work that disposing would lose and merge-1 couldn’t be checked, so nothing was disposed and orchestration is still on.',
+      'impl-ipc has work that deleting would lose and merge-1 couldn’t be checked, so nothing was deleted and orchestration is still on.',
     );
     expect(screen.queryByTestId('turn-off-force')).not.toBeInTheDocument();
-    expect(screen.getByTestId('turn-off-blocked-note')).toHaveTextContent('A helper that couldn’t be checked can’t be disposed');
+    expect(screen.getByTestId('turn-off-blocked-note')).toHaveTextContent('A helper that couldn’t be checked can’t be deleted');
     // Keep is still there.
     expect(screen.getByTestId('turn-off-keep')).toBeInTheDocument();
   });
@@ -388,21 +388,21 @@ describe('Turning orchestration off with helpers (#2232)', () => {
   it('reports a failure without closing', async () => {
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => {
       dispose('h2');
-      return { ok: false, message: 'Disposed 1 of 2 helpers', helperIds: ['h2'], failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'EBUSY' }] };
+      return { ok: false, message: 'Deleted 1 of 2 helpers', helperIds: ['h2'], failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'EBUSY' }] };
     });
     await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
-    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('Disposed 1 of 2 helpers. impl-ipc (an error, details in the log) couldn’t be disposed.');
+    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('Deleted 1 of 2 helpers. impl-ipc (an error, details in the log) couldn’t be deleted.');
     // The one that went leaves the rail; the other stays.
     expect(useAgentStore.getState().agents.h2).toBeUndefined();
     expect(useAgentStore.getState().agents.h1).toBeDefined();
   });
-  it('treats a failed dispose that still turned orchestration off as off', async () => {
+  it('treats a failed delete that still turned orchestration off as off', async () => {
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => {
       dispose('h2');
       return {
         ok: false,
-        message: 'Disposed 1 of 2 helpers',
+        message: 'Deleted 1 of 2 helpers',
         helperIds: ['h2'],
         failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'EBUSY' }],
         policy: resolved({ ...stored, orchestrate: false }),
@@ -421,14 +421,14 @@ describe('Turning orchestration off with helpers (#2232)', () => {
   it('doesn\'t repeat main\'s "Orchestration is off" when helpers started during turn-off were blocked', async () => {
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({
       ok: false,
-      message: 'Orchestration is off, but late-helper has work that disposing would lose, or couldn\'t be checked',
+      message: 'Orchestration is off, but late-helper has work that deleting would lose, or couldn\'t be checked',
       blocked: [{ agentId: 'h3', name: 'late-helper', checks: { dirty: 1, unpushed: 0, unmerged: 0 } }],
       policy: resolved({ ...stored, orchestrate: false }),
     }));
     await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
     const partial = await screen.findByTestId('turn-off-partial');
-    expect(partial.textContent).toBe('Orchestration is off, but late-helper has work that disposing would lose, or couldn\'t be checked.');
+    expect(partial.textContent).toBe('Orchestration is off, but late-helper has work that deleting would lose, or couldn\'t be checked.');
   });
 
   describe('with helpers in other projects (#2512)', () => {
@@ -564,28 +564,28 @@ describe('turn-off failure reasons', () => {
   it('keeps a reason that reads as words', async () => {
     window.clubhouse.agent.setOrchestrationPolicy = vi.fn(async () => ({ ok: true, message: 'Choose', needsHelperChoice: { helperIds: ['h1'] } })) as never;
     window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({
-      ok: false, message: 'Disposed 0 of 1 helpers', failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'it is still being created in another Clubhouse window' }],
+      ok: false, message: 'Deleted 0 of 1 helpers', failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'it is still being created in another Clubhouse window' }],
     }));
     stored = { ...stored, orchestrate: true };
     const toggle = await renderCard();
     fireEvent.click(toggle);
     fireEvent.click(await screen.findByTestId('turn-off-dispose'));
-    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('impl-ipc (it is still being created in another Clubhouse window) couldn’t be disposed.');
+    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('impl-ipc (it is still being created in another Clubhouse window) couldn’t be deleted.');
   });
 });
 
 describe('blockedSummary', () => {
   const risk = (name: string) => ({ agentId: name, name, checks: { dirty: 1, unpushed: 0, unmerged: 0 } });
   const unread = (name: string) => ({ agentId: name, name, checks: { dirty: 0, unpushed: 0, unmerged: null, error: 'couldn\'t check, fatal: not a git repository' } });
-  const tail = ', so nothing was disposed and orchestration is still on.';
+  const tail = ', so nothing was deleted and orchestration is still on.';
 
   it('words work at risk and failed checks apart, with names or a count', () => {
-    expect(blockedSummary([risk('a')])).toBe(`a has work that disposing would lose${tail}`);
-    expect(blockedSummary([risk('a'), risk('b')])).toBe(`a and b have work that disposing would lose${tail}`);
-    expect(blockedSummary([risk('a'), risk('b'), risk('c')])).toBe(`3 helpers have work that disposing would lose${tail}`);
+    expect(blockedSummary([risk('a')])).toBe(`a has work that deleting would lose${tail}`);
+    expect(blockedSummary([risk('a'), risk('b')])).toBe(`a and b have work that deleting would lose${tail}`);
+    expect(blockedSummary([risk('a'), risk('b'), risk('c')])).toBe(`3 helpers have work that deleting would lose${tail}`);
     expect(blockedSummary([unread('a')])).toBe(`a couldn’t be checked${tail}`);
     expect(blockedSummary([unread('a'), unread('b')])).toBe(`a and b couldn’t be checked${tail}`);
-    expect(blockedSummary([risk('a'), unread('b')])).toBe(`a has work that disposing would lose and b couldn’t be checked${tail}`);
+    expect(blockedSummary([risk('a'), unread('b')])).toBe(`a has work that deleting would lose and b couldn’t be checked${tail}`);
   });
 });
 

@@ -218,7 +218,7 @@ export function registerGroupProjectManagementTools(legacyCreate?: (caller: stri
     if (grant !== 'deliver' && grant !== 'wake' && grant !== 'actions' || mode !== 'allow' && mode !== 'off') throw new McpArgError('Choose deliver/wake/actions and allow/off.');
     return outcome(id, await (await import('../../group-project-roles')).setOwnGrant(id, grant, mode, { author: author(caller) }));
   });
-  register('set_group_project_default_tools', 'Set default switches, explicitly choosing future-only or all existing local member bindings. Applying to all changes this computer’s bindings; each forwarded write still needs host admin Allow.', { disabled_tools: strings, apply_to_existing: boolean }, ['disabled_tools', 'apply_to_existing'], async (caller, args, id) => {
+  register('set_group_project_default_tools', 'Set default switches, explicitly choosing future-only or all existing local member connections. Applying to all changes this computer’s connections; each forwarded write still needs host admin Allow.', { disabled_tools: strings, apply_to_existing: boolean }, ['disabled_tools', 'apply_to_existing'], async (caller, args, id) => {
     const disabled = toolSwitches(args), apply = requireBoolean(args, 'apply_to_existing');
     const project = await groupProjectHost.get(id);
     const copy = project && groupProjectHost.isReplica(project);
@@ -231,10 +231,10 @@ export function registerGroupProjectManagementTools(legacyCreate?: (caller: stri
     }
     return outcome(id, result);
   });
-  register('set_group_project_member_settings', 'Set tools or saved instruction text for a current local member binding. Instructions require the revision from management and explicit replace_across_sources when its guidance review requires it. A copy cannot change host roles or other computers’ bindings.', { agent: string, disabled_tools: strings, instructions: { type: 'object', additionalProperties: string }, revision: string, replace_across_sources: boolean }, ['agent'], async (caller, args, id) => {
+  register('set_group_project_member_settings', 'Set tools or saved instruction text for a current local member connection. Instructions require the revision from management and explicit replace_across_sources when its guidance review requires it. A copy cannot change host roles or other computers’ bindings.', { agent: string, disabled_tools: strings, instructions: { type: 'object', additionalProperties: string }, revision: string, replace_across_sources: boolean }, ['agent'], async (caller, args, id) => {
     const agent = requireString(args, 'agent');
     const binding = bindingManager.getBindingsForAgent(agent).find((b) => b.targetId === id && b.targetKind === 'group-project');
-    if (!binding) throw new McpArgError('That agent has no local membership binding.');
+    if (!binding) throw new McpArgError('That agent has no local membership connection.');
     const disabled = args.disabled_tools === undefined ? undefined : toolSwitches(args);
     if (args.instructions === undefined && disabled === undefined) throw new McpArgError('Supply disabled_tools or instructions.');
     let guidance;

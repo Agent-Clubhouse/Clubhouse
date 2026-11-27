@@ -23,7 +23,7 @@ beforeEach(() => {
   setRail('sleeping');
   window.clubhouse.agent.getDisposeChecks = vi.fn(async () => checks);
   window.clubhouse.agent.killAgent = vi.fn(async () => { order.push('kill'); });
-  window.clubhouse.agent.disposeHelper = vi.fn(async () => { order.push('dispose'); return { ok: true, message: 'Disposed' }; });
+  window.clubhouse.agent.disposeHelper = vi.fn(async () => { order.push('dispose'); return { ok: true, message: 'Deleted' }; });
   window.clubhouse.agent.reportDisposeDecision = vi.fn(async () => ({ ok: true, delivered: true, message: 'Reported' }));
 });
 
@@ -39,17 +39,17 @@ function renderDialog(props: Partial<Parameters<typeof DisposeHelperDialog>[0]> 
   return { onClose, onDisposed, onDeclined };
 }
 
-describe('Dispose helper dialog (#2232)', () => {
-  it('disposes a clean helper with Dispose as the main action', async () => {
+describe('Delete helper dialog (#2232)', () => {
+  it('deletes a clean helper with Delete as the main action', async () => {
     const { onClose, onDisposed } = renderDialog();
     const dialog = screen.getByTestId('dispose-helper-dialog');
-    expect(dialog).toHaveTextContent('Dispose of impl-ipc?');
+    expect(dialog).toHaveTextContent('Delete impl-ipc?');
     expect(dialog).toHaveTextContent(path.join('.clubhouse', 'agents', 'impl-ipc'));
     const list = await screen.findByTestId('dispose-checks');
     expect(list).toHaveTextContent('No uncommitted files');
     expect(list).toHaveTextContent('Merged into the base branch');
     const confirm = screen.getByTestId('dispose-confirm');
-    expect(confirm).toHaveTextContent(/^Dispose$/);
+    expect(confirm).toHaveTextContent(/^Delete$/);
     // Asleep: nothing to stop, so no Just sleep.
     expect(screen.queryByTestId('dispose-sleep')).not.toBeInTheDocument();
 
@@ -91,7 +91,7 @@ describe('Dispose helper dialog (#2232)', () => {
     await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenLastCalledWith(PROJECT, 'h1', true, { dirty: 1, unpushed: 3, unmerged: 3 }));
   });
 
-  it('lists work at risk and forces only with Dispose anyway', async () => {
+  it('lists work at risk and forces only with Delete anyway', async () => {
     checks = { dirty: 3, unpushed: 2, unmerged: 4 };
     renderDialog();
     const list = await screen.findByTestId('dispose-checks');
@@ -100,9 +100,9 @@ describe('Dispose helper dialog (#2232)', () => {
     expect(lines[0]).toHaveAttribute('data-check', 'risk');
     expect(lines[1]).toHaveTextContent('2 commits not pushed');
     expect(list).toHaveTextContent('4 commits not merged into the base branch');
-    expect(screen.getByTestId('dispose-risk-note')).toHaveTextContent('Dispose anyway deletes this work');
+    expect(screen.getByTestId('dispose-risk-note')).toHaveTextContent('Delete anyway deletes this work');
     const confirm = screen.getByTestId('dispose-confirm');
-    expect(confirm).toHaveTextContent('Dispose anyway');
+    expect(confirm).toHaveTextContent('Delete anyway');
     fireEvent.click(confirm);
     await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', true, { dirty: 3, unpushed: 2, unmerged: 4 }));
   });
@@ -118,7 +118,7 @@ describe('Dispose helper dialog (#2232)', () => {
     // Check again runs the checks once more; once they pass, Dispose is back.
     checks = { dirty: 0, unpushed: 0, unmerged: 0 };
     fireEvent.click(screen.getByTestId('dispose-recheck'));
-    await waitFor(() => expect(screen.getByTestId('dispose-confirm')).toHaveTextContent(/^Dispose$/));
+    await waitFor(() => expect(screen.getByTestId('dispose-confirm')).toHaveTextContent(/^Delete$/));
     expect(window.clubhouse.agent.getDisposeChecks).toHaveBeenCalledTimes(2);
   });
 
@@ -132,29 +132,29 @@ describe('Dispose helper dialog (#2232)', () => {
     expect(within(list).getByText('Couldn’t be checked because git couldn’t read its folder')).toHaveAttribute('title', raw);
   });
 
-  it('says a refused dispose couldn\'t be checked without repeating git\'s output', async () => {
+  it('says a refused delete couldn\'t be checked without repeating git\'s output', async () => {
     const raw = 'Command failed: git status\nfatal: not a git repository';
     window.clubhouse.agent.disposeHelper = vi.fn(async () => ({
-      ok: false, message: `impl-ipc wasn't disposed (couldn't check, ${raw})`, checks: { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${raw}` },
+      ok: false, message: `impl-ipc wasn't deleted (couldn't check, ${raw})`, checks: { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${raw}` },
     }));
     renderDialog();
     await screen.findByTestId('dispose-checks');
     fireEvent.click(screen.getByTestId('dispose-confirm'));
     const error = await screen.findByTestId('dispose-error');
-    expect(error).toHaveTextContent('impl-ipc wasn’t disposed because it couldn’t be checked. Nothing was deleted.');
+    expect(error).toHaveTextContent('impl-ipc wasn’t deleted because it couldn’t be checked. Nothing was deleted.');
     expect(error).not.toHaveTextContent('fatal');
   });
 
   it('keeps the dialog open with main\'s reason when main refuses', async () => {
     window.clubhouse.agent.disposeHelper = vi.fn(async () => ({
-      ok: false, message: 'impl-ipc has work that disposing would lose', checks: { dirty: 1, unpushed: 0, unmerged: 0 },
+      ok: false, message: 'impl-ipc has work that deleting would lose', checks: { dirty: 1, unpushed: 0, unmerged: 0 },
     }));
     const { onClose } = renderDialog();
     await screen.findByTestId('dispose-checks');
     fireEvent.click(screen.getByTestId('dispose-confirm'));
-    expect(await screen.findByTestId('dispose-error')).toHaveTextContent('impl-ipc has work that disposing would lose. Nothing was deleted.');
+    expect(await screen.findByTestId('dispose-error')).toHaveTextContent('impl-ipc has work that deleting would lose. Nothing was deleted.');
     expect(screen.getByTestId('dispose-checks')).toHaveTextContent('1 file not committed');
-    expect(screen.getByTestId('dispose-confirm')).toHaveTextContent('Dispose anyway');
+    expect(screen.getByTestId('dispose-confirm')).toHaveTextContent('Delete anyway');
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -172,7 +172,7 @@ describe('Dispose helper dialog (#2232)', () => {
     checks = { dirty: 2, unpushed: 0, unmerged: 0 };
     const { onDeclined, onClose } = renderDialog({ requestedBy: 'epic-lead' });
     expect(await screen.findByTestId('dispose-checks')).toBeInTheDocument();
-    expect(screen.getByTestId('dispose-helper-dialog')).toHaveTextContent('epic-lead asked to dispose of impl-ipc, but it has work that would be lost.');
+    expect(screen.getByTestId('dispose-helper-dialog')).toHaveTextContent('epic-lead asked to delete impl-ipc, but it has work that would be lost.');
     fireEvent.click(screen.getByTestId('dispose-cancel'));
     expect(screen.getByTestId('dispose-cancel')).toHaveTextContent('Decline');
     expect(onDeclined).toHaveBeenCalled();
@@ -180,7 +180,7 @@ describe('Dispose helper dialog (#2232)', () => {
   });
 });
 
-describe('Dispose requests from Needs you (#2229)', () => {
+describe('Delete requests from Needs you (#2229)', () => {
   it('opens the confirmation for the request being reviewed and dismisses it on decline', async () => {
     const { useHelperDisposeRequestStore } = await import('../../../stores/helperDisposeRequestStore');
     const { HelperDisposeRequestDialog } = await import('./HelperDisposeRequestDialog');
@@ -193,7 +193,7 @@ describe('Dispose requests from Needs you (#2229)', () => {
 
     act(() => { useHelperDisposeRequestStore.getState().review('h1'); });
     const dialog = await screen.findByTestId('dispose-helper-dialog');
-    expect(dialog).toHaveTextContent('epic-lead asked to dispose of impl-ipc.');
+    expect(dialog).toHaveTextContent('epic-lead asked to delete impl-ipc.');
     await screen.findByTestId('dispose-checks');
     fireEvent.click(screen.getByTestId('dispose-cancel'));
     await waitFor(() => expect(screen.queryByTestId('dispose-helper-dialog')).not.toBeInTheDocument());
@@ -203,7 +203,7 @@ describe('Dispose requests from Needs you (#2229)', () => {
     await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith(PROJECT, 'h1', 'declined'));
   });
 
-  it('disposes on accept and clears the request', async () => {
+  it('deletes on accept and clears the request', async () => {
     const { useHelperDisposeRequestStore } = await import('../../../stores/helperDisposeRequestStore');
     const { HelperDisposeRequestDialog } = await import('./HelperDisposeRequestDialog');
     useHelperDisposeRequestStore.setState({ requests: {}, reviewing: null });

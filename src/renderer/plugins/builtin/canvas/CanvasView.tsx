@@ -766,7 +766,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           {/* MCP Link button (agent views with assigned agent, when MCP enabled) */}
           {view.type === 'agent' && (view as AgentCanvasViewType).agentId && (
             <div className="relative">
-              <Tooltip content="Link to widget">
+              <Tooltip content="Connect to widget">
                 <button
                   className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
                     linkDropdownOpen
@@ -775,7 +775,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
                   }`}
                   onClick={(e) => { e.stopPropagation(); setLinkDropdownOpen(!linkDropdownOpen); }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  aria-label="Link to widget"
+                  aria-label="Connect to widget"
                   data-testid="canvas-view-link"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

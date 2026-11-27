@@ -92,7 +92,7 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
       {card('settings') ? <Evidence card={card('settings')!} /> : <CardNote>{note}</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="connections" title="Connections" summary={card('connections')?.summary || 'unavailable'} open onToggle={() => {}}>
-      {publishedLink && <><CardRow label="Link from here" labelWidth="wide">{publishedLink}</CardRow><CardNote>This computer’s published controller-link observation. It is not the selected computer’s connection inventory.</CardNote></>}
+      {publishedLink && <><CardRow label="Connection from here" labelWidth="wide">{publishedLink}</CardRow><CardNote>This computer’s published controller-connection observation. It is not the selected computer’s connection inventory.</CardNote></>}
       {value && eligible && value.details.connectionPages === 1
         ? <RemoteDispatcherConnectionPages machine={machine} roleAgentId={value.agentId} sources={value.details.connectionPageSources} contextKey={key}>
           {card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}

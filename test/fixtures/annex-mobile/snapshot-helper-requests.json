@@ -54,7 +54,7 @@
         "agentId": "durable_chat",
         "name": "planner"
       },
-      "summary": "planner asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit."
+      "summary": "planner asked to delete this helper (forced). 2 uncommitted files, 1 unpushed commit."
     }
   ]
 }

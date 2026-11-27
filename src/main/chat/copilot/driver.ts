@@ -547,7 +547,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     const parsed = parseSlashCommand(texts[texts.length - 1]);
     if (!parsed) return undefined;
     if (HIDDEN_COMMANDS.has(parsed.name)) {
-      this.push({ type: 'notice', data: { level: 'info', code: 'command_hidden', message: `/${parsed.name} changes access from inside the CLI. Use the level menu here, or the CLI view.` } });
+      this.push({ type: 'notice', data: { level: 'info', code: 'command_hidden', message: `/${parsed.name} changes access from inside the CLI. Use the level menu here, or the Terminal view.` } });
       return 'hidden';
     }
     await this.commandsLoaded;
@@ -598,7 +598,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
           break;
         default:
           // A picker the CLI would draw in its own UI (show-dialog, and any kind newer than this SDK).
-          this.push({ type: 'notice', data: { level: 'info', code: 'command_needs_cli', message: `/${info.name} opens something only the CLI view can show.${info.name === 'model' ? ' Use the model menu here.' : ''}` } }, true);
+          this.push({ type: 'notice', data: { level: 'info', code: 'command_needs_cli', message: `/${info.name} opens something only the Terminal view can show.${info.name === 'model' ? ' Use the model menu here.' : ''}` } }, true);
       }
     } catch (err) {
       // The CLI's own words: "Nothing to compact." isn't a failed turn.

@@ -389,7 +389,7 @@ export async function tryStartChatAgent(
   // there is no chat to fail: the agent opens in the CLI view as before. The
   // explicit, no-fallback failure below applies once a driver exists and its start fails.
   if (candidates.length === 0) {
-    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` }, params);
+    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the Terminal view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` }, params);
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {
       meta: { agentId: params.agentId, provider: provider.id },
     });
@@ -589,9 +589,9 @@ async function runChatStart(
     ? {
         level: 'info',
         code: 'login_required',
-        message: `${cliLabel(provider.id)} needs you to log in. Opening the CLI view so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
+        message: `${cliLabel(provider.id)} needs you to log in. Opening the Terminal view so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
       }
-    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id, skipped.join('; '))}` }, params);
+    : { level: 'warn', code: 'fallback', message: `Opened in the Terminal view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id, skipped.join('; '))}` }, params);
   return 'terminal';
 
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */

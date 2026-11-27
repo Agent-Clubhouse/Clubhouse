@@ -22,14 +22,14 @@ import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 /** What removing a source does, in a sentence. */
 export function removalEffect(kind: ConnectionSourceKind, names: { agent: string; other: string; dispatcherEnd?: string }): string {
   switch (kind) {
-    case 'tool_link': return `Removes the link an agent made between ${names.agent} and ${names.other}. If nothing else connects them, it can't link them again this session.`;
-    case 'dispatcher_link': return `Removes the link the Dispatcher made. It can't connect them again unless you draw the wire yourself.`;
+    case 'tool_link': return `Removes the connection an agent made between ${names.agent} and ${names.other}. If nothing else connects them, it can't connect them again this session.`;
+    case 'dispatcher_link': return `Removes the connection the Dispatcher made. It can't connect them again unless you make the connection yourself.`;
     case 'card_link': return `Removes the connection made in the Connections card between ${names.agent} and ${names.other}.`;
-    case 'user_link': return `Removes the link you made from ${names.agent} to ${names.other}.`;
+    case 'user_link': return `Removes the connection you made from ${names.agent} to ${names.other}.`;
     case 'dispatcher_auto': return `Turns off Connect to Dispatcher for ${names.dispatcherEnd ?? names.other}. The Dispatcher can no longer message it or get its reports.`;
-    case 'canvas': return 'Remove it on its canvas. This card doesn’t change canvas wires.';
-    case 'dispatcher_federation': return 'Controller links follow Annex Network membership. Their tools are fixed.';
-    case 'helper': return `A helper stays connected to its orchestrator while it exists. To end it, dispose the helper from the Helpers card.`;
+    case 'canvas': return 'Remove it on its canvas. This card doesn’t change canvas connections.';
+    case 'dispatcher_federation': return 'Controller connections follow Annex Network membership. Their tools are fixed.';
+    case 'helper': return `A helper stays connected to its orchestrator while it exists. To end it, delete the helper from the Helpers card.`;
     default: return 'This source can’t be removed here.';
   }
 }

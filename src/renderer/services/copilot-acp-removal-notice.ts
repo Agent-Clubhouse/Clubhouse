@@ -2,7 +2,7 @@ import { COPILOT_ACP_REMOVED_NOTICE_KEY } from '../../shared/types';
 import { useToastStore } from '../stores/toastStore';
 
 export const COPILOT_ACP_REMOVED_MESSAGE =
-  'Legacy Copilot ACP was removed, so Copilot chat now uses the Copilot SDK. If Copilot chat does not start, the agent opens in the CLI view.';
+  'Legacy Copilot ACP was removed, so Copilot chat now uses the Copilot SDK. If Copilot chat does not start, the agent opens in the Terminal view.';
 
 /**
  * Show a one-time notice to users who had the removed legacy Copilot ACP

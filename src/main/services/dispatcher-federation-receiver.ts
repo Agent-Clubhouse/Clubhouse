@@ -26,11 +26,11 @@ export const federationReceiver: DispatcherAgentCallReceiver = {
       isError: true, annexDelivery: { state: 'retry_later', reason: 'target_not_ready' },
     };
     if (!controller && (!directNews || request.args.news !== undefined)) return {
-      content: [{ type: 'text', text: 'That controller is not linked by this computer’s Annex Network membership.' }],
+      content: [{ type: 'text', text: 'That controller is not connected through this computer’s Annex Network membership.' }],
       isError: true, annexDelivery: { state: 'refused', reason: 'not_connected' },
     };
     if (['send_message', 'send_file', 'hand_off_request'].includes(request.tool) && federatedRequests()?.allowed(caller.machineId!, request.args, request.tool) === false) return {
-      content: [{ type: 'text', text: 'This controller link is paused after a fixed limit was reached.' }],
+      content: [{ type: 'text', text: 'This controller connection is paused after a fixed limit was reached.' }],
       isError: true, annexDelivery: { state: 'refused', reason: 'controller_link_paused' },
     };
     if (request.tool === 'hand_off_request') return receiveFederatedRequest(request);

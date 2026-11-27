@@ -118,7 +118,7 @@ describe('the Dispatcher settings route (#3206)', () => {
 
   it('says where Auto can\'t give a level its models', async () => {
     S.auto = { ready: false, code: 'auto_not_supported' };
-    expect((await settings()).behavior).toMatchObject({ auto: { ready: false, code: 'auto_not_supported' }, note: expect.stringContaining('Auto doesn’t support Claude Code yet') });
+    expect((await settings()).behavior).toMatchObject({ auto: { ready: false, code: 'auto_not_supported' }, note: expect.stringContaining('Smart routing doesn’t support Claude Code yet') });
   });
 
   it('with the models chosen by hand: Behavior sets only how often it checks in, and CLI, model and context are honored (#3191)', async () => {

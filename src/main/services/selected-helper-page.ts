@@ -53,7 +53,7 @@ export async function readSelectedHelperPage(parent: AgentConfigTarget, helpers:
         const projects = disposedProjects.readable ? disposedProjects.projects.filter((p) => same(p.path, entry.projectPath)) : [];
         if (projects.length === 1) { options.receipts.push(captureReadOnlyProjectWitness(projects[0])); row.projectName = display(projects[0].displayName || projects[0].name, 240); }
       } catch { /* telemetry-exempt: disposed project display stays unavailable without a unique strict association. */ check(); }
-      page.notes.push('Disposed rows show saved selected-parent records; current runtime and Open are not inferred.'); continue;
+      page.notes.push('Deleted rows show saved selected-parent records; current runtime and Open are not inferred.'); continue;
     }
     try {
       const helper = await resolveAgentConfigTarget(h.id, undefined, { strict: true }); check();

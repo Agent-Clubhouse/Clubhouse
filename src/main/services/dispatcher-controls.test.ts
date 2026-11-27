@@ -441,7 +441,7 @@ describe('set_orchestrator_helpers', () => {
 
   it.each([
     ['a helper', 'helper', 'helper'],
-    ['a disposed agent', 'gone', 'unknown_agent'],
+    ['a deleted agent', 'gone', 'unknown_agent'],
     ['an agent not connected to the Dispatcher', 'plain', 'not_connected_to_dispatcher'],
     ['a connected agent that doesn\'t orchestrate', 'worker', 'not_connected_orchestrator'],
     ['an unknown id', 'nobody', 'unknown_agent'],
@@ -505,7 +505,7 @@ describe('set_orchestrator_helpers', () => {
 });
 
 describe('connect_orchestrators', () => {
-  it('inspects actual committed suspended-link guidance read-only without a collector, binding or write', async () => {
+  it('inspects actual committed suspended-connection guidance read-only without a collector, binding or write', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'c' });
     startConnectionGuidance();
     const before = await getConnectionGuidance('a', 'c');
@@ -555,7 +555,7 @@ describe('connect_orchestrators', () => {
     expect(lastAudit()).toMatchObject({ tool: 'connect_orchestrators', outcome: 'ok', targets: ['a', 'c'], code: 'created' });
   });
 
-  it('is a no-op for a link it already made', async () => {
+  it('is a no-op for a connection it already made', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     const again = await call('connect_orchestrators', { from: 'a', to: 'b' });
     expect(again.isError).toBeFalsy();
@@ -564,7 +564,7 @@ describe('connect_orchestrators', () => {
 
   it.each([
     ['a helper', 'helper', 'helper'],
-    ['a disposed agent', 'gone', 'unknown_agent'],
+    ['a deleted agent', 'gone', 'unknown_agent'],
     ['an unknown id', 'nobody', 'unknown_agent'],
     ['an agent with Connect to Dispatcher off', 'plain', 'not_connected_to_dispatcher'],
     ['the Dispatcher', 'dispatcher', 'dispatcher_wire'],
@@ -577,7 +577,7 @@ describe('connect_orchestrators', () => {
     expect(bindingManager.getBindingsForAgent('a')).toEqual([]);
   });
 
-  it('refuses a user wire rather than claiming it', async () => {
+  it('refuses a user connection rather than claiming it', async () => {
     userDraws('a', 'b');
     const result = await call('connect_orchestrators', { from: 'a', to: 'b' });
     expect(result.isError).toBe(true);
@@ -586,7 +586,7 @@ describe('connect_orchestrators', () => {
     expect(isBound('a', 'b')).toBe(true);
   });
 
-  it('refuses the outgoing link past the per-agent limit', async () => {
+  it('refuses the outgoing connection past the per-agent limit', async () => {
     const extra = Array.from({ length: MAX_DISPATCHER_LINKS_PER_AGENT + 1 }, (_, i) => agent(`x${i}`));
     state.agents.set(P2, [agent('c'), ...extra]);
     for (const target of extra.slice(0, MAX_DISPATCHER_LINKS_PER_AGENT)) {
@@ -599,7 +599,7 @@ describe('connect_orchestrators', () => {
     expect(isBound('a', extra[MAX_DISPATCHER_LINKS_PER_AGENT].id)).toBe(false);
   });
 
-  it('refuses the link past the total limit', async () => {
+  it('refuses the connection past the total limit', async () => {
     const many = Array.from({ length: 12 }, (_, i) => agent(`m${i}`));
     state.agents.set(P2, [agent('c'), ...many]);
     const entries = [];
@@ -620,7 +620,7 @@ describe('two_way is all or nothing', () => {
     expect((await storedPairs()).sort()).toEqual(['a>b', 'b>a']);
   });
 
-  it('writes neither leg when the reverse leg is a user wire', async () => {
+  it('writes neither leg when the reverse leg is a user connection', async () => {
     userDraws('b', 'a');
     const result = await call('connect_orchestrators', { from: 'a', to: 'b', two_way: true });
     expect(result.isError).toBe(true);
@@ -663,7 +663,7 @@ describe('two_way is all or nothing', () => {
 });
 
 describe('disconnect_orchestrators', () => {
-  it('severs a link it made', async () => {
+  it('severs a connection it made', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     const result = await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(JSON.parse(text(result)).links[0].outcome).toBe('unbound');
@@ -672,7 +672,7 @@ describe('disconnect_orchestrators', () => {
     expect(lastAudit()).toMatchObject({ tool: 'disconnect_orchestrators', outcome: 'ok', code: 'unbound' });
   });
 
-  it('refuses a user-created link and leaves it bound', async () => {
+  it('refuses a user-created connection and leaves it bound', async () => {
     userDraws('a', 'b');
     const result = await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(result.isError).toBe(true);
@@ -682,7 +682,7 @@ describe('disconnect_orchestrators', () => {
     expect(isBound('a', 'b')).toBe(true);
   });
 
-  it('refuses the Dispatcher\'s own wires, so a target stays connected to it', async () => {
+  it('refuses the Dispatcher\'s own connections, so a target stays connected to it', async () => {
     bindingManager.bind('dispatcher', { targetId: 'a', targetKind: 'agent', label: 'a' });
     bindingManager.bind('a', { targetId: 'dispatcher', targetKind: 'agent', label: 'Dispatcher' });
     for (const args of [{ from: 'dispatcher', to: 'a' }, { from: 'a', to: 'dispatcher' }, { from: 'a', to: 'dispatcher', two_way: true }]) {
@@ -692,7 +692,7 @@ describe('disconnect_orchestrators', () => {
     expect(isBound('dispatcher', 'a') && isBound('a', 'dispatcher')).toBe(true);
   });
 
-  it('drops its entry but keeps the wire when the user also drew the pair', async () => {
+  it('drops its entry but keeps the connection when the user also drew the pair', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     userDraws('a', 'b');
     const result = await call('disconnect_orchestrators', { from: 'a', to: 'b' });
@@ -708,7 +708,7 @@ describe('disconnect_orchestrators', () => {
   });
 });
 
-describe('tools on its links (#3215)', () => {
+describe('tools on its connections (#3215)', () => {
   const READ_AND_MESSAGE = ['get_status', 'read_output', 'check_connectivity', 'send_message', 'send_file'];
   const ONLY = ['get_status', 'read_output', 'send_message', 'wake_agent'];
   const links = async (args: Record<string, unknown>, tool = 'connect_orchestrators') => {
@@ -718,7 +718,7 @@ describe('tools on its links (#3215)', () => {
   };
   const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
 
-  it('a new link starts with clear and compact off and wake on, read back on each direction (2026-11-09 defaults)', async () => {
+  it('a new connection starts with clear and compact off and wake on, read back on each direction (2026-11-09 defaults)', async () => {
     const made = await links({ from: 'a', to: 'b', two_way: true });
     for (const link of made) {
       expect(link.tools).toEqual({ allowed: [...READ_AND_MESSAGE, 'wake_agent'], disabled: ['clear_agent', 'compact_agent'] });
@@ -771,13 +771,13 @@ describe('tools on its links (#3215)', () => {
     expect(entry('a', 'b')?.setBy).toBeUndefined();
   });
 
-  it('connecting a link it made again keeps its tools unless the call names new ones', async () => {
+  it('connecting a connection it made again keeps its tools unless the call names new ones', async () => {
     await links({ from: 'a', to: 'b', allow: ONLY });
     expect((await links({ from: 'a', to: 'b' }))[0].tools.allowed).toEqual(ONLY);
     expect((await links({ from: 'a', to: 'b', allow: ['get_status'] }))[0].tools.allowed).toEqual(['get_status']);
   });
 
-  it('set_connection_tools changes its own link and reads it back', async () => {
+  it('set_connection_tools changes its own connection and reads it back', async () => {
     await links({ from: 'a', to: 'b', two_way: true });
     const set = await links({ from: 'a', to: 'b', two_way: true, allow: ONLY }, 'set_connection_tools');
     expect(set.map((l) => [l.from, l.to, l.tools.allowed])).toEqual([['a', 'b', ONLY], ['b', 'a', ONLY]]);
@@ -792,7 +792,7 @@ describe('tools on its links (#3215)', () => {
     expect(entry('a', 'b')?.disabledTools).toEqual(['clear_agent', 'compact_agent']);
   });
 
-  it('set_connection_tools refuses a link it didn\'t make', async () => {
+  it('set_connection_tools refuses a connection it didn\'t make', async () => {
     userDraws('a', 'b');
     const result = await call('set_connection_tools', { from: 'a', to: 'b', allow: ONLY });
     expect(result.isError).toBe(true);
@@ -800,7 +800,7 @@ describe('tools on its links (#3215)', () => {
     expect(entry('a', 'b')).toBeUndefined();
   });
 
-  it('set_connection_tools refuses its own link once the user changed the tools, changing neither direction', async () => {
+  it('set_connection_tools refuses its own connection once the user changed the tools, changing neither direction', async () => {
     await links({ from: 'a', to: 'b', two_way: true });
     // The user turned a switch on the Connections card: their write, with no Dispatcher mark.
     await setConnectionTools({ agentId: 'b' }, { agentId: 'a' }, ['clear_agent']);
@@ -813,7 +813,7 @@ describe('tools on its links (#3215)', () => {
     expect(await linkRow('b', 'a')).toMatchObject({ tools_yours: false });
   });
 
-  it('set_connection_tools refuses its own link when the user also drew the pair', async () => {
+  it('set_connection_tools refuses its own connection when the user also drew the pair', async () => {
     await links({ from: 'a', to: 'b' });
     userDraws('a', 'b');
     expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ONLY })).isError).toBe(true);
@@ -821,7 +821,7 @@ describe('tools on its links (#3215)', () => {
     expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
   });
 
-  it('disconnecting drops the tools it set; while the user\'s wire still holds the pair it goes back to a new connection\'s defaults, the user\'s', async () => {
+  it('disconnecting drops the tools it set; while the user\'s connection still holds the pair it goes back to a new connection\'s defaults, the user\'s', async () => {
     await links({ from: 'a', to: 'b', allow: ONLY });
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(entry('a', 'b')).toBeUndefined();
@@ -834,11 +834,11 @@ describe('tools on its links (#3215)', () => {
   });
 });
 
-describe('wake the Dispatcher set never outlives its link (#3215 QA)', () => {
+describe('wake the Dispatcher set never outlives its connection (#3215 QA)', () => {
   const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
   const wakeOf = (from: string, to: string) => (entry(from, to)?.enabledTools ?? []).includes('wake_agent');
 
-  it('migrate, set tools, the user draws the pair, disconnect: the wire is handed back at the defaults, the user\'s, and stays so when removed and redrawn', async () => {
+  it('migrate, set tools, the user draws the pair, disconnect: the connection is handed back at the defaults, the user\'s, and stays so when removed and redrawn', async () => {
     fs.writeFileSync(dispatcherConnectionsPath(), JSON.stringify({ version: 1, connections: [
       { agentId: 'a', targetId: 'b', agentProjectPath: P1, targetProjectPath: P1, createdAt: '', createdBy: 'dispatcher' },
     ], removedByUser: [] }));
@@ -859,7 +859,7 @@ describe('wake the Dispatcher set never outlives its link (#3215 QA)', () => {
     expect(wakeOf('a', 'b')).toBe(true);
   });
 
-  it('a switch the user turns between the check and the write refuses the link, and nothing is saved', async () => {
+  it('a switch the user turns between the check and the write refuses the connection, and nothing is saved', async () => {
     // Lands right after the Dispatcher's store takes the link, before its tools are written.
     state.afterRename = () => { void setConnectionTools({ agentId: 'b' }, { agentId: 'a' }, ['send_file']); };
     const result = await call('connect_orchestrators', { from: 'a', to: 'b', two_way: true, allow: ['send_message', 'wake_agent'] });
@@ -874,7 +874,7 @@ describe('wake the Dispatcher set never outlives its link (#3215 QA)', () => {
   });
 });
 
-describe('links made before #3215 get the new defaults once', () => {
+describe('connections made before #3215 get the new defaults once', () => {
   const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
   /** Links saved by a build before #3215: in the Dispatcher's store, with no tools saved. */
   async function olderLinks(pairs: Array<[string, string]>): Promise<void> {
@@ -885,7 +885,7 @@ describe('links made before #3215 get the new defaults once', () => {
     await restart();
   }
 
-  it('a link only the Dispatcher holds, with nothing saved, gets clear and compact off and wake on, marked as its own', async () => {
+  it('a connection only the Dispatcher holds, with nothing saved, gets clear and compact off and wake on, marked as its own', async () => {
     await olderLinks([['a', 'b'], ['b', 'a']]);
     expect(isBound('a', 'b')).toBe(true);
     expect(entry('a', 'b')).toBeUndefined();
@@ -933,7 +933,7 @@ describe('links made before #3215 get the new defaults once', () => {
 });
 
 describe('provenance across a restart', () => {
-  it('restores its link, still its own to sever', async () => {
+  it('restores its connection, still its own to sever', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'c', two_way: true });
     await restart();
     expect(isBound('a', 'c') && isBound('c', 'a')).toBe(true);
@@ -945,7 +945,7 @@ describe('provenance across a restart', () => {
     expect(isBound('c', 'a')).toBe(true);
   });
 
-  it('still refuses a user wire after a restart', async () => {
+  it('still refuses a user connection after a restart', async () => {
     userDraws('a', 'b');
     await restart();
     expect(isBound('a', 'b')).toBe(true);
@@ -962,7 +962,7 @@ describe('provenance across a restart', () => {
   });
 });
 
-describe('a link the user removes stays removed', () => {
+describe('a connection the user removes stays removed', () => {
   beforeEach(async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     await userRemoves('a', 'b');
@@ -1020,7 +1020,7 @@ describe('a link the user removes stays removed', () => {
     expect(lastAudit()).toMatchObject({ code: 'already_linked' });
   });
 
-  it('leaves no tombstone for a wire the Dispatcher never made', async () => {
+  it('leaves no tombstone for a connection the Dispatcher never made', async () => {
     userDraws('b', 'c');
     await userRemoves('b', 'c');
     expect(storeFile().removedByUser).toHaveLength(1);
@@ -1190,7 +1190,7 @@ describe('a removal the store can\'t take', () => {
     it.each([
       ['only the store refuses', storeRefuses],
       ['nothing can be written', folderRefuses],
-    ])('%s: a user wire the canvas still lists comes back as the user\'s', async (_name, failWrite) => {
+    ])('%s: a user connection the canvas still lists comes back as the user\'s', async (_name, failWrite) => {
       state.failWrite = failWrite;
       await removeWire('a', 'b');
       await restart();
@@ -1200,7 +1200,7 @@ describe('a removal the store can\'t take', () => {
       expect(isBound('a', 'b')).toBe(true);
     });
 
-    it('the Dispatcher can\'t claim or drop the user\'s wire while the removal is pending', async () => {
+    it('the Dispatcher can\'t claim or drop the user\'s connection while the removal is pending', async () => {
       state.failWrite = storeRefuses;
       await removeWire('a', 'b');
       await restart();
@@ -1211,7 +1211,7 @@ describe('a removal the store can\'t take', () => {
       expect(isBound('a', 'b')).toBe(true);
     });
 
-    it('a user wire stays up, and stays the user\'s, while the store is suspended', async () => {
+    it('a user connection stays up, and stays the user\'s, while the store is suspended', async () => {
       state.failWrite = folderRefuses;
       await restart();
       expect(isBound('a', 'b')).toBe(true);
@@ -1239,7 +1239,7 @@ describe('a removal the store can\'t take', () => {
       expect(isBound('a', 'b')).toBe(true);
     });
 
-    it('a redraw folds its tombstone before pending cleanup; interruption preserves the user wire and fails closed', async () => {
+    it('a redraw folds its tombstone before pending cleanup; interruption preserves the user connection and fails closed', async () => {
       state.failWrite = storeRefuses;
       await removeWire('a', 'b');
       expect(pendingFile()).toBe(true);
@@ -1452,7 +1452,7 @@ describe('a removal the store can\'t take', () => {
       expect(lastAudit()).toMatchObject({ code: 'removed_by_user' });
     });
 
-    it('drawing the pair while nothing can be saved keeps the Dispatcher refused and leaves the wire', async () => {
+    it('drawing the pair while nothing can be saved keeps the Dispatcher refused and leaves the connection', async () => {
       state.failWrite = storeRefuses;
       await removeWire('a', 'b');
       userDraws('a', 'b');
@@ -1464,8 +1464,8 @@ describe('a removal the store can\'t take', () => {
   });
 });
 
-describe('links between agents that don\'t orchestrate (#3248)', () => {
-  it('links two connected agents across projects, both ways, with a new link\'s tools', async () => {
+describe('connections between agents that don\'t orchestrate (#3248)', () => {
+  it('connections two connected agents across projects, both ways, with a new connection\'s tools', async () => {
     const result = await call('connect_orchestrators', { from: 'worker', to: 'worker2', two_way: true });
     expect(result.isError).toBeFalsy();
     const { links } = JSON.parse(text(result));
@@ -1477,7 +1477,7 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
     expect(lastAudit()).toMatchObject({ tool: 'connect_orchestrators', outcome: 'ok', targets: ['worker', 'worker2'] });
   });
 
-  it('links an orchestrator to an agent that doesn\'t orchestrate, and sets and removes it', async () => {
+  it('connections an orchestrator to an agent that doesn\'t orchestrate, and sets and removes it', async () => {
     expect((await call('connect_orchestrators', { from: 'a', to: 'worker', allow: ['get_status'] })).isError).toBeFalsy();
     expect(isBound('a', 'worker')).toBe(true);
     expect((await call('set_connection_tools', { from: 'a', to: 'worker', allow: ['send_message'] })).isError).toBeFalsy();
@@ -1498,7 +1498,7 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
     expect(cases.map((c) => c.code)).toEqual(['not_connected_to_dispatcher', 'unknown_agent', 'unknown_agent', 'helper', 'dispatcher_wire']);
     expect(cases[0].message).toContain('Connect to Dispatcher');
     expect(cases[1].message).toContain('No agent on this computer has the id "nobody"');
-    expect(cases[1].message).toContain('Links can only join agents on this computer.');
+    expect(cases[1].message).toContain('Connections can only join agents on this computer.');
     expect(cases[3].message).toContain('is a helper');
     expect(new Set([cases[0].message, cases[1].message, cases[3].message, cases[4].message]).size).toBe(4);
     expect(await storedPairs()).toEqual([]);
@@ -1507,7 +1507,7 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
   it.each([
     ['off for an end that orchestrated', 'a', { orchestrate: false }],
     ['on for an end that didn\'t', 'worker', { orchestrate: true, connectToDispatcher: true }],
-  ])('orchestration turned %s leaves the link alone', async (_name, id, policy) => {
+  ])('orchestration turned %s leaves the connection alone', async (_name, id, policy) => {
     await call('connect_orchestrators', { from: 'a', to: 'worker', two_way: true });
     state.policies.set(id, policy);
     agentChanged();
@@ -1522,7 +1522,7 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
     expect(isBound('a', 'worker') && isBound('worker', 'a')).toBe(true);
   });
 
-  it('turning orchestration on creates no link', async () => {
+  it('turning orchestration on creates no connection', async () => {
     state.policies.set('worker', { orchestrate: true, connectToDispatcher: true });
     state.policies.set('worker2', { orchestrate: true, connectToDispatcher: true });
     agentChanged();
@@ -1531,7 +1531,7 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
     expect(isBound('worker', 'worker2')).toBe(false);
   });
 
-  it('lists the links of an agent that doesn\'t orchestrate, without helper settings for it', async () => {
+  it('lists the connections of an agent that doesn\'t orchestrate, without helper settings for it', async () => {
     await call('connect_orchestrators', { from: 'worker', to: 'c' });
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     const result = await controls({ agent_id: 'worker' });
@@ -1548,7 +1548,7 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
   });
 });
 
-describe('suspended links', () => {
+describe('suspended connections', () => {
   beforeEach(async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
   });
@@ -1634,7 +1634,7 @@ describe('suspended links', () => {
 });
 
 describe('readback', () => {
-  it('never claims an external link', async () => {
+  it('never claims an external connection', async () => {
     userDraws('b', 'a');
     bindingManager.bind('dispatcher', { targetId: 'a', targetKind: 'agent', label: 'a' });
     await call('connect_orchestrators', { from: 'a', to: 'c' });
@@ -1643,14 +1643,14 @@ describe('readback', () => {
     expect(await listDispatcherLinksForUser()).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'c', status: 'active' })]);
   });
 
-  it('marks a pair the user also drew, and the card treats it as an ordinary wire', async () => {
+  it('marks a pair the user also drew, and the card treats it as an ordinary connection', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     userDraws('a', 'b');
     expect(await linkRow('a', 'b')).toMatchObject({ also_user_wire: true });
     expect(await listDispatcherLinksForUser()).toEqual([]);
   });
 
-  it('does not say suspended about a user wire that stays up', async () => {
+  it('does not say suspended about a user connection that stays up', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
     userDraws('a', 'b');
     state.policies.set('b', { connectToDispatcher: false });

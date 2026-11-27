@@ -23,7 +23,7 @@ Orchestration goes through Clubhouse MCP, which is always on for every agent. If
 If you turn it off while the agent has helpers, Clubhouse asks what to do with them, including helpers in other projects.
 
 - **Keep helpers as normal agents** clears their link to the orchestrator and leaves them as they are.
-- **Dispose helpers** runs the dispose checks for each one. If a helper would lose work, the dialog lists it, and **Dispose anyway** appears only when every blocked helper has work at risk. If a check couldn't run, only keeping or cancelling is offered.
+- **Delete helpers** runs the delete checks for each one. If a helper would lose work, the dialog lists it, and **Delete anyway** appears only when every blocked helper has work at risk. If a check couldn't run, only keeping or cancelling is offered.
 - **Cancel** changes nothing.
 
 Turn on **Cross-project helpers** to let the agent start helpers in other projects you have added to Clubhouse. It sits with the other orchestration settings, is off by default, and only shows while orchestration is on. Turning it off stops new starts in other projects. Helpers already started there keep running, and the orchestrator can still manage them.
@@ -70,12 +70,12 @@ The link from a helper to an orchestrator in another project is saved in the hel
 
 A helper never gets more access than its orchestrator has right now, on the full ladder: under an orchestrator at **Plan**, a helper starts at Plan too. Clubhouse reads the orchestrator's live Access level when the helper starts and at every wake. If the orchestrator isn't running, or its level isn't known, the ceiling is **Ask first**.
 
-| Helpers get | What that means |
+| Helper access | What that means |
 |-------------|-----------------|
 | **Same as**, with the orchestrator's name | The orchestrator's live level. This is the default, so an orchestrator with **Full access** starts helpers with full access. |
 | **Ask first**, **Auto** or **Full access** | That level, or the ceiling if it's lower |
 
-When an orchestrator asks `start_helper` for a level above its own, the start is refused and says both levels. A level from the **Helpers get** setting is lowered to the ceiling instead, since you chose it.
+When an orchestrator asks `start_helper` for a level above its own, the start is refused and says both levels. A level from the **Helper access** setting is lowered to the ceiling instead, since you chose it.
 
 A helper's level is lowered until its CLI's own flags fit under the ceiling. Copilot CLI helpers only run at Ask first or Full access, so under an orchestrator at Auto they start at Ask first. When a helper gets less than it asked for, `start_helper` says so.
 
@@ -83,11 +83,11 @@ When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ce
 
 ## Control levels
 
-| Control | What needs you |
+| Approvals | What needs you |
 |---------|----------------|
-| **Hands-off** | Nothing. Helpers start and are disposed without asking. This is the default. |
+| **Hands-off** | Nothing. Helpers start and are deleted without asking. This is the default. |
 | **Ask before starting** | Starting a helper |
-| **Ask for everything** | Starting a helper, and every dispose |
+| **Ask for everything** | Starting a helper, and deleting one |
 
 At any level the orchestrator can still ask you when it judges a choice is yours, such as when the scope is unclear or work could be lost.
 
@@ -97,7 +97,7 @@ Under **Ask before starting** and **Ask for everything**, `start_helper` creates
 
 ## Limits
 
-- **Helpers at once** caps how many helpers one orchestrator can have. The default is 5. The Orchestration card shortens the label to **At once**.
+- **Helpers at once** caps how many helpers one orchestrator can have. The default is 5.
 - **Helpers running at once** on the **Helpers** page in Settings sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
 
 Both count helpers in every project, so a helper in another project counts against its orchestrator's limit.
@@ -127,9 +127,9 @@ When the orchestrator calls `dispose_helper`:
 - **Something holds it.** Nothing is deleted and the helper keeps running. The orchestrator gets back the facts, such as which files are uncommitted and how many commits weren't pushed. It can finish the work, ask you, or call again with `force` when the only problem is work at risk.
 - **Under Ask for everything**, the request goes to **Needs you** instead, and `force` is refused. Selecting it opens the dispose dialog, where you dispose of the helper or decline. If the orchestrator is running, it's told what you chose.
 
-When you dispose of a helper yourself from Orchestration, the dialog runs the same checks. A clean helper shows **Dispose**, work at risk shows **Dispose anyway**, and a failed check only offers **Check again**. **Just sleep** stops the helper and keeps everything.
+When you delete a helper yourself from Orchestration, the dialog runs the same checks. A clean helper shows **Delete**, work at risk shows **Delete anyway**, and a failed check only offers **Check again**. **Just sleep** stops the helper and keeps everything.
 
-Disposed helpers move to a **Disposed** section at the end of Clubhouse helpers in Orchestration, where **Remove** deletes them for good. When you delete an orchestrator, Clubhouse removes its disposed helpers too. The **Helpers** page in Settings lists any disposed helpers left without an orchestrator under **Deleted helpers without an orchestrator**, each with **Remove**, and **Clear all** removes them all.
+Deleted helpers move to a **Deleted** section at the end of Clubhouse helpers in Orchestration, where **Remove** deletes them for good. When you delete an orchestrator, Clubhouse removes its deleted helpers too. The **Helpers** page in Settings lists any deleted helpers left without an orchestrator under **Deleted helpers without an orchestrator**, each with **Remove**, and **Clear all** removes them all.
 
 If you delete an orchestrator that still has helpers, Clubhouse asks whether to dispose of them, with the same checks, or keep them as normal agents.
 

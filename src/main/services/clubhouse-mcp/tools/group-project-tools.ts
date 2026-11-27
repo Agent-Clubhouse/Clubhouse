@@ -494,7 +494,7 @@ export function registerGroupProjectTools(): void {
         'Put a connected agent in this group project to sleep.\n\n' +
         'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action, ' +
         'and returns once it has exited. Without force, it refuses a chat agent that is mid-turn and any ' +
-        'agent in the CLI view, whose turn state is unknown. Running helpers of the target are listed in the result. ' +
+        'agent in the Terminal view, whose turn state is unknown. Running helpers of the target are listed in the result. ' +
         'Use list_members first; the target_agent_id must be a member of this project.',
       inputSchema: {
         type: 'object',

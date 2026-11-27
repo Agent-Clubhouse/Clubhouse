@@ -101,7 +101,7 @@ describe('Connections card (#2232)', () => {
     useAgentStore.setState({ agents: {} } as never);
   });
 
-  it('lists the wires like the Canvases card, read-only without the connection tools', async () => {
+  it('lists the connections like the Canvases card, read-only without the connection tools', async () => {
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} />);
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('5');
     const rows = screen.getAllByTestId('connection-row');
@@ -187,7 +187,7 @@ describe('Connections card (#2232)', () => {
     await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(5));
     const rows = screen.getAllByTestId('connection-row');
     expect(within(rows[0]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Helper');
-    expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an agent, Canvas wire');
+    expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an agent, Canvas connection');
 
     fireEvent.click(within(rows[4]).getByTestId('connection-sources'));
     const dialog = screen.getByTestId('connection-sources-dialog');
@@ -196,7 +196,7 @@ describe('Connections card (#2232)', () => {
     expect(within(dialog).queryByTestId('connection-source-remove-canvas')).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByTestId('connection-source-remove-tool_link'));
     await waitFor(() => expect(removeConnectionSource).toHaveBeenCalledWith('lead', 'rev', 'tool_link'));
-    expect(await within(dialog).findByTestId('connection-source-result')).toHaveTextContent('Still connected through: Canvas wire.');
+    expect(await within(dialog).findByTestId('connection-source-result')).toHaveTextContent('Still connected through: Canvas connection.');
   });
 
   it('shows federation tools read-only and offers no individual removal', async () => {
@@ -225,7 +225,7 @@ describe('Connections card (#2232)', () => {
     window.clubhouse.mcpBinding.removeConnectionSource = removeConnectionSource;
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
     fireEvent.click(await screen.findByTestId('connection-sources'));
-    expect(screen.getByTestId('connection-source-unreadable')).toHaveTextContent('Couldn\u2019t check: Canvas wire');
+    expect(screen.getByTestId('connection-source-unreadable')).toHaveTextContent('Couldn\u2019t check: Canvas connection');
     fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_auto'));
     fireEvent.click(screen.getByTestId('connection-source-confirm-dispatcher_auto'));
     await waitFor(() => expect(removeConnectionSource).toHaveBeenCalledTimes(1));
@@ -299,7 +299,7 @@ describe('Connections card (#2232)', () => {
     expect(wake).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('has no Wake it switch on a wire with the Dispatcher, whose own wake doesn\'t depend on it (#3215)', async () => {
+  it('has no Wake it switch on a connection with the Dispatcher, whose own wake doesn\'t depend on it (#3215)', async () => {
     useMcpBindingStore.setState({ bindings: [wire('lead', 'disp', ['epic-lead', 'Dispatcher'])] });
     useAgentStore.setState({ agents: { lead, disp: { id: 'disp', projectId: '__dispatcher__', name: 'Dispatcher', kind: 'durable', status: 'running', color: 'teal' } } } as never);
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
@@ -376,18 +376,18 @@ describe('Connections card (#2232)', () => {
     }
   });
 
-  it('a helper link says to dispose the helper; it can\'t be removed here', async () => {
+  it('a helper connection says to delete the helper; it can\'t be removed here', async () => {
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
       pairs: [{ agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] }],
       unreadable: [],
     }));
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
     fireEvent.click(await within(screen.getAllByTestId('connection-row')[0]).findByRole('button', { name: 'Edit' }));
-    expect(screen.getByTestId('connection-source-helper')).toHaveTextContent('dispose the helper from the Helpers card');
+    expect(screen.getByTestId('connection-source-helper')).toHaveTextContent('delete the helper from the Helpers card');
     expect(screen.queryByTestId('connection-source-remove-helper')).not.toBeInTheDocument();
   });
 
-  it('stays read-only for a two-way wire when only one direction is tool-made', async () => {
+  it('stays read-only for a two-way connection when only one direction is tool-made', async () => {
     useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer']), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });
     window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [{ agentId: 'lead', targetId: 'rev' }]);
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
@@ -395,7 +395,7 @@ describe('Connections card (#2232)', () => {
     expect(screen.queryByTestId('connection-disconnect')).not.toBeInTheDocument();
   });
 
-  it('disconnects a tool-made group project wire in Agent details through the plain unbind, with no cause', async () => {
+  it('disconnects a tool-made group project connection in Agent details through the plain unbind, with no cause', async () => {
     const { AgentDetails } = await import('../details/AgentDetails');
     const { useProjectStore } = await import('../../../stores/projectStore');
     const { useAgentDetailsStore } = await import('../details/detailsStore');
@@ -436,7 +436,7 @@ describe('Connections card (#2232)', () => {
       render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
       fireEvent.click(await screen.findByTestId('connection-sources'));
       expect(screen.getByTestId('connection-meta')).toHaveTextContent('Dispatcher, two-way');
-      expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('can\'t connect them again unless you draw the wire yourself');
+      expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('can\'t connect them again unless you make the connection yourself');
       fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_link'));
       // It can't be drawn back by the Dispatcher, so it's confirmed first.
       expect(removeConnectionSource).not.toHaveBeenCalled();
@@ -469,7 +469,7 @@ describe('Connections card (#2232)', () => {
       await waitFor(() => expect(screen.queryByTestId('connection-meta')).not.toBeInTheDocument());
     });
 
-    it('leaves a wire main doesn\'t list as the Dispatcher\'s unmarked and read-only', async () => {
+    it('leaves a connection main doesn\'t list as the Dispatcher\'s unmarked and read-only', async () => {
       useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer'])] });
       window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => []);
       const getDispatcherLinks = vi.fn(async (): Promise<DispatcherLink[]> => []);
@@ -501,11 +501,11 @@ describe('Connections card (#2232)', () => {
     }
   });
 
-  it('says where wires come from when there are none', () => {
+  it('says where connections come from when there are none', () => {
     useMcpBindingStore.setState({ bindings: [] });
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} />);
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('none');
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('No Clubhouse MCP wires.');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('No Clubhouse MCP connections.');
   });
 
   it.each(['browser', 'terminal', 'group-project'] as const)('offers Edit and guidance inspection for a %s row without requiring Canvas metadata', async (kind) => {

@@ -65,8 +65,8 @@ export const REMOTE_DISPATCHER_STATE_LABELS: Readonly<Record<RemoteDispatcherSta
 };
 
 export const CONTROLLER_LINK_STATE_LABELS: Readonly<Record<ControllerLinkState, string>> = {
-  active: 'Link active',
-  paused: 'Link paused',
-  tripped: 'Link tripped',
-  unavailable: 'Link unavailable',
+  active: 'Connection active',
+  paused: 'Connection paused',
+  tripped: 'Connection tripped',
+  unavailable: 'Connection unavailable',
 };

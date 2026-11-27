@@ -132,7 +132,7 @@ export function BehaviorChip({ behavior, providerName, onChange, onSetUpAuto, di
                   className="self-start h-6 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-text hover:bg-surface-1"
                   data-testid="dispatcher-behavior-setup-auto"
                 >
-                  Set up Auto
+                  Set up Smart routing
                 </button>
               )}
             </div>

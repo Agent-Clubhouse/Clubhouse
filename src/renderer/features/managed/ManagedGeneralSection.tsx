@@ -377,7 +377,7 @@ function SwitchToPlainDialog({ projectPath, agentId, agentName, onClose }: {
             {preview.excludesAdded > 0 && <>, and the {preview.excludesAdded} CLAUDE.md {plural(preview.excludesAdded, 'exclude', 'excludes')} it added to <code className={CODE}>.claude/settings.local.json</code></>}.
           </p>
         )}
-        <p className="text-xs text-ctp-overlay1">{agentName} keeps its name, history, branch and wires. Its parts and templates stay in the library. The change applies when its next session starts.</p>
+        <p className="text-xs text-ctp-overlay1">{agentName} keeps its name, history, branch and connections. Its parts and templates stay in the library. The change applies when its next session starts.</p>
         {error && <p role="alert" className="text-xs text-ctp-error">{error}</p>}
       </div>
     </Modal>

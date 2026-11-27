@@ -36,10 +36,10 @@ describe('helperDisposeRequestStore (#2229)', () => {
 
   it('describes who asked and what the checks found', () => {
     expect(describeHelperDispose(pending({ dirty: 1, unpushed: 2, unmerged: 3 }, true)))
-      .toBe('Orch asked to dispose this helper (forced). 1 uncommitted file, 2 unpushed commits, 3 unmerged commits.');
+      .toBe('Orch asked to delete this helper (forced). 1 uncommitted file, 2 unpushed commits, 3 unmerged commits.');
     expect(describeHelperDispose(pending({ dirty: 0, unpushed: 0, unmerged: null, error: "couldn't check, git failed" })))
-      .toBe("Orch asked to dispose this helper. Couldn't check, git failed.");
+      .toBe("Orch asked to delete this helper. Couldn't check, git failed.");
     expect(describeHelperDispose(pending({ dirty: 0, unpushed: 0, unmerged: 0 })))
-      .toBe('Orch asked to dispose this helper. Nothing would be lost.');
+      .toBe('Orch asked to delete this helper. Nothing would be lost.');
   });
 });

@@ -113,7 +113,7 @@ describe('WireConfigPopover', () => {
     expect(within(bToA).getByRole('switch', { name: 'Clear its context (B to A)' })).toHaveAttribute('aria-checked', 'false');
     expect(within(bToA).getByRole('switch', { name: 'Wake it (B to A)' })).toHaveAttribute('aria-checked', 'false');
     const dialog = within(getByTestId('wire-tool-permissions-dialog'));
-    expect(dialog.getByTestId('connection-source-canvas')).toHaveTextContent('Canvas wire');
+    expect(dialog.getByTestId('connection-source-canvas')).toHaveTextContent('Canvas connection');
     expect(dialog.getByTestId('connection-source-tool_link')).toHaveTextContent('Made by an agent');
     expect(dialog.getByTestId('connection-guidance-editor')).toBeInTheDocument();
     expect(dialog.getByText(/sender's Clubhouse permissions can still turn a tool off or require Ask first/)).toBeInTheDocument();
@@ -196,7 +196,7 @@ describe('WireConfigPopover', () => {
     expect(queryByText('Wake it')).toBeNull();
   });
 
-  it('keeps group-project permissions wire-scoped and preserves existing disabled tool data (#3213)', async () => {
+  it('keeps group-project permissions connection-scoped and preserves existing disabled tool data (#3213)', async () => {
     const group: McpBindingEntry = { agentId: 'agent-1', targetId: 'group', targetKind: 'group-project', label: 'Group', disabledTools: ['broadcast', 'future_tool'] };
     const setDisabledTools = vi.fn(async () => {});
     useMcpBindingStore.setState({ bindings: [group], setDisabledTools });
@@ -209,7 +209,7 @@ describe('WireConfigPopover', () => {
     await waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-1', 'group', ['broadcast', 'future_tool', 'post_bulletin']));
   });
 
-  it('turning two-way on gives the new reverse direction the new-wire default (#2969)', async () => {
+  it('turning two-way on gives the new reverse direction the new-connection default (#2969)', async () => {
     const bindMock = vi.fn().mockResolvedValue(undefined);
     const setDisabledTools = vi.fn().mockResolvedValue(undefined);
     const onAddWireDefinition = vi.fn();
@@ -230,7 +230,7 @@ describe('WireConfigPopover', () => {
     expect(getByTestId('wire-instructions-button').textContent).toContain('Set instructions');
   });
 
-  it('does not expose a wire-level wake action for sleeping agent targets', () => {
+  it('does not expose a connection-level wake action for sleeping agent targets', () => {
     useAgentStore.setState({
       agents: {
         'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'durable', status: 'sleeping', projectId: 'project-1' } as any,
@@ -309,7 +309,7 @@ describe('WireConfigPopover', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('does not mirror instruction writes for bidirectional agent-to-agent wires', async () => {
+  it('does not mirror instruction writes for bidirectional agent-to-agent connections', async () => {
     const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
     const reverseBinding: McpBindingEntry = {
       agentId: 'agent-2',
@@ -449,7 +449,7 @@ describe('WireConfigPopover', () => {
     });
   });
 
-  it('does not set instructions on reverse binding for unidirectional wires', async () => {
+  it('does not set instructions on reverse binding for unidirectional connections', async () => {
     const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
     // Only forward binding, no reverse
     useMcpBindingStore.setState({

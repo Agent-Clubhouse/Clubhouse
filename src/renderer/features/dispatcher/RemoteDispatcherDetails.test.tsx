@@ -48,7 +48,7 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     for (const name of ['HOST_CLI', 'HOST_SKILL', 'HOST_MCP', 'Host template']) expect(screen.getByTestId('details-card-settings')).toHaveTextContent(name);
     expect(screen.getByTestId('details-card-connections')).toHaveTextContent('HOST_connections_EVIDENCE');
     expect(screen.getByTestId('details-card-actions')).toHaveTextContent('HOST_actions_EVIDENCE');
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('published controller-link observation');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('published controller-connection observation');
     expect(screen.getByTestId('other-machine-HOST_PRIVATE_PEER')).toBeInTheDocument();
     expect(screen.queryByTestId('other-machine-LOCAL_ONLY_PEER')).not.toBeInTheDocument();
     expect(cards().innerHTML).not.toContain('published-controller');
@@ -90,7 +90,7 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     for (const id of ['settings', 'connections', 'actions', 'other-machines']) expect(screen.getByTestId(`details-card-${id}`)).toHaveTextContent(limitation);
     expect(screen.queryByText('HOST_MODEL')).not.toBeInTheDocument(); expect(screen.queryByTestId('other-machine-HOST_PRIVATE_PEER')).not.toBeInTheDocument();
     expect(view.container.innerHTML).not.toContain('PRIVATE_DENIAL');
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('published controller-link observation');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('published controller-connection observation');
   });
 
   it.each(['forbidden', 'error', 'offline', 'rate_limited'] as const)('keeps role %s distinct from empty cards and never revives snapshot peers as a fallback', async (status) => {
@@ -217,7 +217,7 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
     api.mockImplementation(async (_machine: string, query?: { offset?: number }) => query ? { status: 'ok', value: page(query.offset ?? 0, pageAgent) } : { status: 'ok', value: overview });
     render(<RemoteDispatcherDetails machineId="target" />); await loaded();
     const connections = within(screen.getByTestId('details-card-connections'));
-    act(() => connections.getByRole('button', { name: 'Incoming bindings' }).click());
+    act(() => connections.getByRole('button', { name: 'Incoming connections' }).click());
     await connections.findByText('Incoming row 0');
     expect(api).toHaveBeenLastCalledWith('target', { card: 'connections', source: 'incoming', offset: 0, projectOffset: 0 }, 'role1');
     act(() => connections.getByRole('button', { name: 'Next' }).click());
@@ -240,7 +240,7 @@ describe('no-chat selected-host Dispatcher role consumer', () => {
   it('shows the Connections summary only for an older host without role pages', async () => {
     render(<RemoteDispatcherDetails machineId="target" />); await loaded();
     const connections = within(screen.getByTestId('details-card-connections'));
-    expect(connections.queryByRole('button', { name: 'Incoming bindings' })).not.toBeInTheDocument();
+    expect(connections.queryByRole('button', { name: 'Incoming connections' })).not.toBeInTheDocument();
     expect(connections.getByText('This host shares the Dispatcher Connections summary only. Source pages need a host update.')).toBeInTheDocument();
     expect(api).toHaveBeenCalledExactlyOnceWith('target');
   });

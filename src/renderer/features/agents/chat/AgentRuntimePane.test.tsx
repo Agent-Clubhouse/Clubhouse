@@ -55,7 +55,7 @@ describe('AgentRuntimePane', () => {
     expect(screen.getByTestId('terminal-pane-bar')).toBeInTheDocument();
     expect(screen.getByTestId('agent-details-toggle')).toBeInTheDocument();
     // No Chat to switch to: the switch is CLI, with the Changes review beside it.
-    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal']);
     expect(screen.getByTestId('view-changes')).toBeInTheDocument();
   });
 
@@ -65,7 +65,7 @@ describe('AgentRuntimePane', () => {
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await screen.findByTestId('fake-terminal');
     await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalled());
-    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal']);
     expect(screen.queryByRole('radio', { name: 'Chat' })).not.toBeInTheDocument();
   });
 
@@ -275,7 +275,7 @@ describe('AgentRuntimePane', () => {
 
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await screen.findByTestId('chat-turn-footer');
-    fireEvent.click(screen.getByRole('radio', { name: 'CLI' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
     await waitFor(() => expect(spawnDurableAgent).toHaveBeenCalled());
     expect(updateDurableConfig).toHaveBeenCalledWith('/work/clubhouse', FIXTURE_AGENT_ID, { runtimeMode: 'terminal' });
     // Waits for the exit so the respawn resumes the session the old process just saved.
@@ -293,7 +293,7 @@ describe('AgentRuntimePane', () => {
 
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await screen.findByTestId('chat-queue');
-    fireEvent.click(screen.getByRole('radio', { name: 'CLI' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
     expect(await screen.findByText('Interrupt and switch?')).toBeInTheDocument();
     expect(killAgent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));

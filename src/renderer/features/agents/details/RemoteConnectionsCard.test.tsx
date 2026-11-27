@@ -40,7 +40,7 @@ it('does not query old hosts or malformed remote identities, while preserving au
   expect(screen.queryByText('Selected host records')).not.toBeInTheDocument(); expect(request).not.toHaveBeenCalled();
 });
 it('offers the canonical Dispatcher inventory independently of normal durable manual/helper sources', () => {
-  show({ dispatcher: true }); expect(screen.getByRole('button', { name: 'Automatic agent links' })).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher links' })).not.toBeInTheDocument();
+  show({ dispatcher: true }); expect(screen.getByRole('button', { name: 'Automatic agent connections' })).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher connections' })).not.toBeInTheDocument();
 });
 it('rejects a successful response for a different page instead of rendering its records', async () => {
   request.mockResolvedValue({ status: 'ok', value: { ...details, cards: [{ ...card, rows: [{ label: 'PRIVATE_WRONG_PAGE', value: 'wrong' }], connectionPage: { source: 'incoming', offset: 0, projectOffset: 0, known: 1, complete: true, next: null } }] } });
@@ -51,26 +51,26 @@ it('rejects a successful response for a different page instead of rendering its 
 });
 
 it('offers new saved-source views only when the admitted host explicitly advertises them', async () => {
-  const view = show(); expect(screen.queryByRole('button', { name: 'Saved tool links' })).not.toBeInTheDocument();
+  const view = show(); expect(screen.queryByRole('button', { name: 'Saved tool connections' })).not.toBeInTheDocument();
   view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: ['tool-records'] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
-  expect(screen.queryByRole('button', { name: 'Outgoing bindings' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Saved tool links' }));
+  expect(screen.queryByRole('button', { name: 'Outgoing connections' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Saved tool connections' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'tool-records', offset: 0, projectOffset: 0 }));
 });
 it('offers only explicitly supported live Quick inventories and no durable source readers', async () => {
   show({ agent: { ...agent, kind: 'quick' }, details: { ...details, connectionPageSources: ['outgoing', 'incoming', 'directions', 'sources'] } });
-  expect(screen.queryByRole('button', { name: 'Saved tool links' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher links' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Outgoing bindings' })); await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'outgoing', offset: 0, projectOffset: 0 }));
+  expect(screen.queryByRole('button', { name: 'Saved tool connections' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Saved Dispatcher connections' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Helper relationships' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Outgoing connections' })); await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'outgoing', offset: 0, projectOffset: 0 }));
 });
-it.each([['canvas-records', 'Saved Canvas wires'], ['zone-records', 'Saved zone wires']] as const)('requires explicit capability and reads the bounded %s page on the selected host', async (source, label) => {
+it.each([['canvas-records', 'Saved Canvas connections'], ['zone-records', 'Saved zone connections']] as const)('requires explicit capability and reads the bounded %s page on the selected host', async (source, label) => {
   const view = show(); expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
   view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: [source] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
   fireEvent.click(screen.getByRole('button', { name: label })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source, offset: 0, projectOffset: 0 });
   fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true })); await screen.findByText('Final helper'); expect(screen.queryByText('First helper')).not.toBeInTheDocument();
 });
 it('uses admitted host parent applicability even when cached snapshot helper metadata is absent', async () => {
-  const view = show(); expect(screen.queryByRole('button', { name: 'Saved parent link' })).not.toBeInTheDocument();
+  const view = show(); expect(screen.queryByRole('button', { name: 'Saved parent connection' })).not.toBeInTheDocument();
   view.rerender(<RemoteConnectionsCard agent={agent} details={{ ...details, connectionPageSources: ['helper-parent'] }} status="ok" freshnessKey="run1" dispatcher={false} open onToggle={() => {}} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Saved parent link' })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'helper-parent', offset: 0, projectOffset: 0 });
+  fireEvent.click(screen.getByRole('button', { name: 'Saved parent connection' })); await screen.findByText('First helper'); expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'connections', source: 'helper-parent', offset: 0, projectOffset: 0 });
 });
 it('offers the selected saved group registry page only with explicit host support', async () => {
   const view = show(); expect(screen.queryByRole('button', { name: 'Saved group membership' })).not.toBeInTheDocument();

@@ -263,7 +263,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     <ConfirmDestructiveAction
       open={confirm !== null}
       title="Interrupt and switch?"
-      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the CLI view'} stops the current turn, then resumes the same session there.`}
+      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the Terminal view'} stops the current turn, then resumes the same session there.`}
       confirmLabel="Interrupt and switch"
       onConfirm={() => { if (confirm) void doSwitch(confirm); }}
       onCancel={() => setConfirm(null)}

@@ -15,11 +15,11 @@ export { ACCESS_LEVEL_LABELS, CONTROL_LABELS, accessLabel } from '../../../../sh
 export function controlHelp(control: OrchestrationControl, orchestratorName: string): string {
   switch (control) {
     case 'hands-off':
-      return `Helpers start and are disposed without asking you. ${orchestratorName} can still ask when it judges it should.`;
+      return `Helpers start and are deleted without asking you. ${orchestratorName} can still ask when it judges it should.`;
     case 'ask-before-start':
       return `New helpers wait for your approval in ${orchestratorName}’s Helpers card. The sidebar shows when one is waiting.`;
     case 'ask-everything':
-      return 'Starting a helper and every dispose come to you.';
+      return 'Starting a helper and deleting one both come to you.';
   }
 }
 

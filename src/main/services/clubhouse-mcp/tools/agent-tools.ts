@@ -172,7 +172,7 @@ export function registerAgentTools(): void {
     label: 'Send Message',
     mcp: { targetKind: 'agent', nameSuffix: 'send_message', grant: { actions: ['agent.message'], target: 'bound' } },
     description:
-      'Send a message to the linked agent. The message is injected as input to the agent and submitted.\n\n' +
+      'Send a message to the connected agent. The message is injected as input to the agent and submitted.\n\n' +
       'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
       'and may be in the middle of other work. There is no inline response.\n\n' +
       'Your identity (name and project) is automatically included in the message so the target ' +
@@ -184,7 +184,7 @@ export function registerAgentTools(): void {
       'Reply instructions are included in the message automatically.\n' +
       '3. If UNIDIRECTIONAL: poll read_output and search for your task_id marker. Output may contain ' +
       'unrelated content — filter by the marker. Allow time for the agent to process.\n\n' +
-      'Use check_connectivity to determine the link direction if unsure.\n\n' +
+      'Use check_connectivity to determine the connection direction if unsure.\n\n' +
       'A sleeping Dispatcher is woken to take the message, if you have permission to wake it.',
     inputSchema: {
       type: 'object',
@@ -321,7 +321,7 @@ export function registerAgentTools(): void {
     category: 'agent',
     label: 'Get Agent Status',
     mcp: { targetKind: 'agent', nameSuffix: 'get_status', grant: { actions: ['agent.read'], target: 'bound' } },
-    description: 'Get the current status of the linked agent.',
+    description: 'Get the current status of the connected agent.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -359,7 +359,7 @@ export function registerAgentTools(): void {
     label: 'Read Agent Output',
     mcp: { targetKind: 'agent', nameSuffix: 'read_output', grant: { actions: ['agent.read'], target: 'bound' } },
     description:
-        'Read recent output from the linked agent.\n\n' +
+        'Read recent output from the connected agent.\n\n' +
         'Use this to poll for responses after send_message. The output is a raw terminal buffer ' +
         'and will contain ALL agent output — tool calls, reasoning, status messages, and any replies.\n\n' +
         'To find a specific response, search the output for the TASK_RESULT:<task_id> marker you ' +
@@ -418,11 +418,11 @@ export function registerAgentTools(): void {
     label: 'Check Connectivity',
     mcp: { targetKind: 'agent', nameSuffix: 'check_connectivity', grant: { actions: ['agent.read'], target: 'bound' } },
     description:
-        'Check whether communication with the linked agent is bidirectional or unidirectional.\n\n' +
+        'Check whether communication with the connected agent is bidirectional or unidirectional.\n\n' +
         'Returns a JSON object with:\n' +
         '- direction: "bidirectional" or "unidirectional"\n' +
         '- guidance: how to handle responses based on the direction\n\n' +
-        'BIDIRECTIONAL means the target agent also has a link back to you and can call send_message ' +
+        'BIDIRECTIONAL means the target agent also has a connection back to you and can call send_message ' +
         'to deliver responses directly into your input. You can include a task_id and the target ' +
         'will send back a message tagged with TASK_RESULT:<task_id>.\n\n' +
         'UNIDIRECTIONAL means the target agent cannot send messages back to you. You must poll ' +
@@ -486,7 +486,7 @@ export function registerAgentTools(): void {
     label: 'Send File',
     mcp: { targetKind: 'agent', nameSuffix: 'send_file', grant: { actions: ['agent.message'], target: 'bound' } },
     description:
-        'Send a message to the linked agent via a temp file.\n\n' +
+        'Send a message to the connected agent via a temp file.\n\n' +
         'The message content is written to a temporary file on disk and the agent receives a ' +
         'single-line notification with the file path. The target agent reads the file with its ' +
         'normal file-reading tool.\n\n' +
@@ -608,7 +608,7 @@ export function registerAgentTools(): void {
     label: 'Clear Agent Context',
     mcp: { targetKind: 'agent', nameSuffix: 'clear_agent', grant: { actions: ['agent.reset'], target: 'bound' } },
     description:
-        'Send a /clear command to the linked agent, clearing its conversation context.\n\n' +
+        'Send a /clear command to the connected agent, clearing its conversation context.\n\n' +
         'Injects /clear directly into the agent\'s CLI. Use this when the agent\'s context ' +
         'is bloated or stale and a fresh slate would improve its performance.\n\n' +
         'The agent must be running. Use get_status to check first.',
@@ -644,7 +644,7 @@ export function registerAgentTools(): void {
     label: 'Compact Agent Context',
     mcp: { targetKind: 'agent', nameSuffix: 'compact_agent', grant: { actions: ['agent.reset'], target: 'bound' } },
     description:
-        'Send a /compact command to the linked agent, compacting its conversation context.\n\n' +
+        'Send a /compact command to the connected agent, compacting its conversation context.\n\n' +
         'Injects /compact directly into the agent\'s CLI. Use this when the agent\'s context ' +
         'is large and you want it summarized without losing continuity.\n\n' +
         'The agent must be running. Use get_status to check first.',
@@ -680,7 +680,7 @@ export function registerAgentTools(): void {
     label: 'Wake Agent',
     mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', grant: [{ actions: ['agent.wake'], target: 'bound' }, { actions: ['agent.message'], target: 'bound', ifArgs: ['message'] }] },
     description:
-      'Wake the linked agent if it is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
+      'Wake the connected agent if it is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
       'An optional message is delivered as its first prompt, tagged like send_message, so include what to do and why. ' +
       'The result says whether it is running, already_running, starting or still stopping, and, ' +
       'when you sent a message, messageDelivered.',
@@ -714,8 +714,8 @@ export function registerAgentTools(): void {
     label: 'Sleep Agent',
     mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher', grant: { actions: ['agent.sleep'], target: 'bound' } },
     description:
-      'Put the linked agent to sleep. Returns once it has stopped, or already_sleeping if it was. Its session stays; wake_agent resumes it.\n\n' +
-      'Without force, this refuses a chat agent that is mid-turn and any agent in the CLI view, whose turn state is unknown. ' +
+      'Put the connected agent to sleep. Returns once it has stopped, or already_sleeping if it was. Its session stays; wake_agent resumes it.\n\n' +
+      'Without force, this refuses a chat agent that is mid-turn and any agent in the Terminal view, whose turn state is unknown. ' +
       'Only use force when losing the turn in progress is fine, and ask the user if you are not sure. ' +
       'Running helpers of the agent are listed in the result; they keep running.',
     inputSchema: {
@@ -737,13 +737,13 @@ export function registerAgentTools(): void {
     'call_wire_tool',
     {
       description:
-        'Call a tool of one of your wires by the id of what it connects to. Your CLI reads its tool list once, ' +
-        'when your session starts, so a wire added later (a helper you started, a newly connected agent) ' +
-        'has no tools of its own in your list. The next session lists them. A wrong target lists your wires.',
+        'Call a tool of one of your connections by the id of what it connects to. Your CLI reads its tool list once, ' +
+        'when your session starts, so a connection added later (a helper you started, a newly connected agent) ' +
+        'has no tools of its own in your list. The next session lists them. A wrong target lists your connections.',
       inputSchema: {
         type: 'object',
         properties: {
-          target: { type: 'string', description: 'The id on the other end of the wire, such as an agent id or helper id.' },
+          target: { type: 'string', description: 'The id on the other end of the connection, such as an agent id or helper id.' },
           tool: { type: 'string', description: 'The tool to call, without its prefix: send_message, read_output, get_status and so on.' },
           arguments: { type: 'object', description: 'The tool\'s arguments.' },
         },
@@ -755,7 +755,7 @@ export function registerAgentTools(): void {
       const binding = bindings.find((b) => b.targetId === args.target);
       if (!binding) {
         const wires = bindings.map((b) => `${isDispatcherAgentId(b.targetId) ? dispatcherDisplayName() : b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
-        return { content: [{ type: 'text', text: `You have no wire to ${String(args.target)}. Your wires: ${wires}.` }], isError: true };
+        return { content: [{ type: 'text', text: `You have no connection to ${String(args.target)}. Your connections: ${wires}.` }], isError: true };
       }
       return callTool(agentId, buildToolName(binding, String(args.tool)), (args.arguments as Record<string, unknown>) ?? {});
     },

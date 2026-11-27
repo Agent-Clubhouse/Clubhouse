@@ -122,13 +122,13 @@ describe('the missing-Auto line', () => {
 
   it('explains a provider Auto doesn\'t support, with nothing to set up', () => {
     const note = behaviorAutoNote({ ready: false, code: 'auto_not_supported' }, 'Future CLI');
-    expect(note).toContain('Auto doesn’t support Future CLI yet');
+    expect(note).toContain('Smart routing doesn’t support Future CLI yet');
     expect(note).not.toMatch(/coordinator|session/i);
     expect(canSetUpAuto({ ready: false, code: 'auto_not_supported' })).toBe(false);
   });
 
   it('offers to set up Auto where the mapping has nothing for the level', () => {
-    expect(behaviorAutoNote({ ready: false, code: 'no_valid_mapping' }, 'Codex')).toContain('until Auto is set up');
+    expect(behaviorAutoNote({ ready: false, code: 'no_valid_mapping' }, 'Codex')).toContain('until Smart routing is set up');
     expect(canSetUpAuto({ ready: false, code: 'no_valid_mapping' })).toBe(true);
   });
 });

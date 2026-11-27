@@ -1093,7 +1093,7 @@ describe('AgentTools', () => {
     });
   });
 
-  describe('a client that lists every wire tool (#2603)', () => {
+  describe('a client that lists every connection tool (#2603)', () => {
     const wire = makeBinding({
       agentId: 'dispatcher', targetId: 'target', targetKind: 'agent',
       label: 'Boss', agentName: 'Dispatcher', targetName: 'boss', projectName: 'app',
@@ -1171,7 +1171,7 @@ describe('AgentTools', () => {
       const via = (target: string, tool: string, args?: Record<string, unknown>) =>
         callTool('dispatcher', 'call_wire_tool', { target, tool, ...(args && { arguments: args }) });
 
-      it('reaches a wire added after the session listed its tools', async () => {
+      it('reaches a connection added after the session listed its tools', async () => {
         const first = getScopedToolList('dispatcher').map((t) => t.name);
         expect(first).toContain('call_wire_tool');
         const late = makeBinding({ agentId: 'dispatcher', targetId: 'late', targetKind: 'agent', label: 'Late', targetName: 'late', projectName: 'app' });
@@ -1189,17 +1189,17 @@ describe('AgentTools', () => {
         expect(result.content[0].text).toBe('Missing required argument: message');
       });
 
-      it('lists the caller\'s wires when it has none to that target', async () => {
+      it('lists the caller\'s connections when it has none to that target', async () => {
         const result = await via('stranger', 'get_status');
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toBe('You have no wire to stranger. Your wires: boss (target).');
+        expect(result.content[0].text).toBe('You have no connection to stranger. Your connections: boss (target).');
       });
 
-      it('refuses a tool turned off on the wire', async () => {
+      it('refuses a tool turned off on the connection', async () => {
         bindingManager.setDisabledTools('dispatcher', 'target', ['send_message']);
         const result = await via('target', 'send_message', { message: 'hi' });
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toBe('send_message is turned off on this wire.');
+        expect(result.content[0].text).toBe('send_message is turned off on this connection.');
         expect(refusalReasonOf(result)).toBe('tool_denied');
       });
 

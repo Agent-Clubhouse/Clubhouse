@@ -167,7 +167,7 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
   },
   fixedToolList: {
     isEnabled: keepsFirstToolList,
-    refusal: 'Your CLI refreshes its tool list, so call the wire\'s own tools instead.',
+    refusal: 'Your CLI refreshes its tool list, so call the connection\'s own tools instead.',
   },
 };
 
@@ -796,7 +796,7 @@ export function buildBindingToolDescription(
   }
   const raw = instructions?.[suffix] || instructions?.['*'];
   if (raw) {
-    description += `\n\n[WIRE INSTRUCTIONS — user-supplied]\n${sanitizeWireInstruction(raw)}\n[END WIRE INSTRUCTIONS]`;
+    description += `\n\n[CONNECTION INSTRUCTIONS FROM THE USER]\n${sanitizeWireInstruction(raw)}\n[END CONNECTION INSTRUCTIONS]`;
   }
   return description;
 }
@@ -975,7 +975,7 @@ export async function callTool(
         availableBindings: bindings.map(b => ({ targetId: b.targetId, toolKey: buildToolKey(b), targetKind: b.targetKind })),
       },
     });
-    return refuse('no_binding', `No binding found for target: ${parsed.toolKey}`);
+    return refuse('no_binding', `No connection found for target: ${parsed.toolKey}`);
   }
 
   const templates = templatesFor(binding);
@@ -1008,7 +1008,7 @@ export async function callTool(
       const action = CONNECTION_TOOLS.find((t) => t.tool === parsed.suffix)?.action;
       recordGrantDecision({ agentId, toolName, decision: 'refused', reason: 'no_grant', actions: action ? [action] : [], targetKind: 'connection' });
     }
-    return refuse('tool_denied', `${parsed.suffix} is turned off on this wire.`);
+    return refuse('tool_denied', `${parsed.suffix} is turned off on this connection.`);
   }
 
   // Validate arguments against the tool's declared inputSchema

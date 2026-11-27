@@ -220,7 +220,7 @@ describe('Settings card (#2280)', () => {
     const codex: Agent = { ...agent, orchestrator: 'codex-cli' };
     render(<AgentDetails agent={codex} />);
     await waitFor(() => expect(screen.getByTestId('details-card-settings-summary'))
-      .toHaveTextContent('CLI · gpt-5.5 · Set by the CLI'));
+      .toHaveTextContent('Terminal · gpt-5.5 · Set by the CLI'));
     const card = openSettings();
     expect(card.getByTestId('details-setting-cli')).toHaveTextContent('Codex');
     expect(card.queryByTestId('details-setting-effort')).not.toBeInTheDocument();

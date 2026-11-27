@@ -62,9 +62,9 @@ export function blockedSummary(blocked: readonly HelperDisposeBlock[]): string {
   const unchecked = blocked.filter((b) => !!b.checks.error).map((b) => b.name);
   const atRisk = blocked.filter((b) => !b.checks.error).map((b) => b.name);
   const parts: string[] = [];
-  if (atRisk.length > 0) parts.push(`${subject(atRisk, 'has', 'have')} work that disposing would lose`);
+  if (atRisk.length > 0) parts.push(`${subject(atRisk, 'has', 'have')} work that deleting would lose`);
   if (unchecked.length > 0) parts.push(`${subject(unchecked, 'couldn’t be checked', 'couldn’t be checked')}`);
-  return `${parts.join(' and ')}, so nothing was disposed and orchestration is still on.`;
+  return `${parts.join(' and ')}, so nothing was deleted and orchestration is still on.`;
 }
 
 interface ListedHelper {
@@ -167,7 +167,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, help
       setPhase({ kind: 'blocked', blocked: result.blocked, message: result.message });
     } else {
       const failed = result.failed?.map((f) => `${f.name} (${failureReason(f.reason)})`).join(', ');
-      setPhase({ kind: 'failed', message: failed ? `${result.message}. ${failed} couldn’t be disposed.` : result.message });
+      setPhase({ kind: 'failed', message: failed ? `${result.message}. ${failed} couldn’t be deleted.` : result.message });
     }
   };
 
@@ -183,7 +183,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, help
       <>
         <Button kind="quiet" onClick={cancel} data-testid="turn-off-cancel">Cancel</Button>
         <Button kind="ghost" onClick={() => void run('keep')} data-testid="turn-off-keep">Keep helpers as normal agents</Button>
-        {forceable && <Button kind="danger-solid" onClick={() => void run('dispose', true)} data-testid="turn-off-force">Dispose anyway</Button>}
+        {forceable && <Button kind="danger-solid" onClick={() => void run('dispose', true)} data-testid="turn-off-force">Delete anyway</Button>}
       </>
     );
   } else {
@@ -191,7 +191,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, help
       <>
         <Button kind="quiet" onClick={cancel} disabled={working} data-testid="turn-off-cancel">Cancel</Button>
         <Button kind="ghost" onClick={() => void run('dispose')} disabled={working} data-testid="turn-off-dispose">
-          {working && phase.choice === 'dispose' ? 'Disposing…' : 'Dispose helpers'}
+          {working && phase.choice === 'dispose' ? 'Deleting…' : 'Delete helpers'}
         </Button>
         <Button kind="primary" onClick={() => void run('keep')} disabled={working} data-testid="turn-off-keep">
           {working && phase.choice === 'keep' ? 'Keeping…' : 'Keep helpers as normal agents'}
@@ -217,15 +217,15 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, help
           </ul>
           <p className="text-xs text-ctp-overlay1" data-testid="turn-off-blocked-note">
             {forceable
-              ? 'Dispose anyway deletes this work along with the helpers’ folders.'
-              : 'A helper that couldn’t be checked can’t be disposed. Keep the helpers, or cancel and try again once the check can run.'}
+              ? 'Delete anyway deletes this work along with the helpers’ folders.'
+              : 'A helper that couldn’t be checked can’t be deleted. Keep the helpers, or cancel and try again once the check can run.'}
           </p>
         </div>
       ) : (
         <div className="flex flex-col gap-3 text-[13px] text-ctp-subtext1 leading-normal">
           <p>
             {agent.name} has {plural(count, 'helper', 'helpers')}. Turning this off removes its helper and connection tools,
-            so it can no longer start, message or dispose of {count === 1 ? 'it' : 'them'}.
+            so it can no longer start, message or delete {count === 1 ? 'it' : 'them'}.
           </p>
           {helpers.length > 0 && (
             <ul className="flex flex-col gap-1 text-xs" data-testid="turn-off-helpers">
@@ -242,7 +242,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, help
           )}
           <p className="text-xs text-ctp-overlay1">
             Keeping clears the parent link and leaves {count === 1 ? 'it running or asleep as it is' : 'them running or asleep as they are'}.
-            Disposing {count === 1 ? 'stops it and deletes its folder' : 'stops them and deletes their folders'}, after checking that no work would be lost.
+            Deleting {count === 1 ? 'stops it and deletes its folder' : 'stops them and deletes their folders'}, after checking that no work would be lost.
           </p>
           {phase.kind === 'failed' && <p className="text-xs text-ctp-error" role="alert" data-testid="turn-off-error">{phase.message}</p>}
         </div>

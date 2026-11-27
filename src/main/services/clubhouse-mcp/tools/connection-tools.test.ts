@@ -650,7 +650,7 @@ describe('scoping refusals', () => {
     expect(await readConnections(projectPath)).toEqual([]);
   });
 
-  it('refuses a disposed helper', async () => {
+  it('refuses a deleted helper', async () => {
     configs.set(projectPath, configs.get(projectPath)!.map((a) =>
       a.id === 'durable_h2' ? { ...a, disposedAt: '2026-10-18T01:00:00.000Z' } : a));
     const res = await call('connect_agents', { from: 'h1', to: 'h2' });
@@ -690,7 +690,7 @@ describe('scoping refusals', () => {
     expect((await call('add_to_group_project', { group_project: 'Raid', project: 'Elsewhere', helper: 'h1' })).isError).toBe(true);
   });
 
-  it('allows a group project the caller belongs to through a canvas wire', async () => {
+  it('allows a group project the caller belongs to through a canvas connection', async () => {
     groupProjects.set('gp_canvas', { id: 'gp_canvas', name: 'Canvas GP', description: '', instructions: '', createdAt: '', metadata: {} });
     bindingManager.bind('durable_lead', { targetId: 'gp_canvas', targetKind: 'group-project', label: 'Canvas GP' });
     const res = await call('add_to_group_project', { project: 'Canvas GP', helper: 'h1' });
@@ -715,7 +715,7 @@ describe('connecting and persistence', () => {
     expect(groupProjects.size).toBe(0);
   });
 
-  it('records the creator and joins members, announcing the join like a drawn wire', async () => {
+  it('records the creator and joins members, announcing the join like a drawn connection', async () => {
     initGroupProjectLifecycle();
     const res = await call('create_group_project', { name: 'Raid', members: ['h1', 'lead'] });
     expect(res.isError).toBe(false);
@@ -843,7 +843,7 @@ describe('disconnect', () => {
     expect(boundPairs()).toEqual(['durable_lead->durable_h1']);
   });
 
-  it('never removes a canvas wire for the same pair', async () => {
+  it('never removes a canvas connection for the same pair', async () => {
     const canvasWires: PersistedBinding[] = [
       { agentId: 'durable_h1', targetId: 'durable_h2', targetKind: 'agent', label: 'h2 card' },
     ];
@@ -855,7 +855,7 @@ describe('disconnect', () => {
     const connected = await call('connect_agents', { from: 'h1', to: 'h2' });
     expect(connected.text).toMatch(/already connected/);
     const res = await call('disconnect_agents', { from: 'h1', to: 'h2' });
-    expect(res.text).toMatch(/canvas wire/);
+    expect(res.text).toMatch(/canvas connection/);
     expect(boundPairs()).toEqual(['durable_h1->durable_h2']);
     expect(await readConnections(projectPath)).toEqual([]);
   });
@@ -878,7 +878,7 @@ describe('disconnect', () => {
 });
 
 describe('helper disposal', () => {
-  it('drops a disposed helper\'s connections from the store and its live bindings', async () => {
+  it('drops a deleted helper\'s connections from the store and its live bindings', async () => {
     const { stop, rebuilt } = watchWithRebuilds();
     await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
     await call('connect_agents', { from: 'h2', to: 'lead' });
@@ -899,7 +899,7 @@ describe('helper disposal', () => {
     stop();
   });
 
-  it('skips a disposed helper at startup even if the store still lists it', async () => {
+  it('skips a deleted helper at startup even if the store still lists it', async () => {
     await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
     configs.set(projectPath, configs.get(projectPath)!.map((a) =>
       a.id === 'durable_h1' ? { ...a, disposedAt: '2026-10-18T02:00:00.000Z' } : a));
@@ -1091,7 +1091,7 @@ describe('a helper in another project (#2513)', () => {
     for (const listener of configListeners) listener(farPath);
   };
 
-  it('connects it, records its project, and labels each wire with its target\'s project', async () => {
+  it('connects it, records its project, and labels each connection with its target\'s project', async () => {
     const res = await call('connect_agents', { from: 'h1', to: 'far', twoWay: true });
     expect(res.isError).toBe(false);
     expect(boundPairs()).toEqual(['durable_far->durable_h1', 'durable_h1->durable_far']);
@@ -1126,7 +1126,7 @@ describe('a helper in another project (#2513)', () => {
     expect(boundPairs()).toEqual(['durable_far->gp_1', 'durable_lead->durable_far']);
   });
 
-  it('drops the connection once the helper is disposed in its own project', async () => {
+  it('drops the connection once the helper is deleted in its own project', async () => {
     await call('connect_agents', { from: 'lead', to: 'far' });
     const { stop, rebuilt } = watchWithRebuilds();
     setFar(configs.get(farPath)!.map((a) => (a.id === 'durable_far' ? { ...a, disposedAt: '2026-10-31T00:00:00.000Z' } : a)));
@@ -1187,7 +1187,7 @@ describe('names and user removals', () => {
     expect(await readConnections(projectPath)).toEqual([]);
   });
 
-  it('keeps a tool-made wire the user deleted in the UI deleted across restarts', async () => {
+  it('keeps a tool-made connection the user deleted in the UI deleted across restarts', async () => {
     const { stop } = watchWithRebuilds();
     await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
     await call('create_group_project', { name: 'Raid', members: ['h1'] });

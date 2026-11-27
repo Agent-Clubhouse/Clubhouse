@@ -21,7 +21,7 @@ One plain-text brief, at most 16,000 characters, with these parts:
 - **Goal:** what the work is for.
 - **Done:** what is finished, with the commits or files.
 - **Remaining:** what is left, its real dependencies and any suggested order. The receiver chooses routine sequencing within scope.
-- **Authority and boundaries:** the approved scope, delegated decisions, constraints, authorized links, measured resource guards and real approval gates. The receiver decides implementation within these bounds without a supervisor or Dispatcher routing gate. No new scope, access, deletion, spending, release or restart authority transfers.
+- **Authority and boundaries:** the approved scope, delegated decisions, constraints, authorized connections, measured resource guards and real approval gates. The receiver decides implementation within these bounds without a supervisor or Dispatcher routing gate. No new scope, access, deletion, spending, release or restart authority transfers.
 - **How to verify:** independent review and risk-targeted checks on the exact head, with commands and observed results. Identify work in progress and deferred acceptance honestly.
 - **Coordination:** direct authorized contacts, milestones to report and actionable exceptions. Use judgment and ask when useful, for example for a user-owned choice, missing access, a concrete conflict or being stuck after bounded investigation. These examples are not a closed list. No routine go-ahead, start/end handshake or status reply is required. Preserve custom text, setups, named identities and every app, host, human and security gate.
 - **Open questions:** what the person or the receiver still has to decide.

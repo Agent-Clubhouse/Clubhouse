@@ -198,7 +198,7 @@ describe('host selected-agent Details projections', () => {
     } finally { setAgentCardSource(null); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it.each(['on', 'off', 'missing-controller', 'mismatched-id', 'wrong-folder', 'unreadable-primary', 'removed-late', 'role-cleared-late', 'revoked'] as const)('uses only a strictly admitted canonical Dispatcher wires identity: %s', async (mode) => {
+  it.each(['on', 'off', 'missing-controller', 'mismatched-id', 'wrong-folder', 'unreadable-primary', 'removed-late', 'role-cleared-late', 'revoked'] as const)('uses only a strictly admitted canonical Dispatcher connections identity: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-dispatcher-wires-'))); m.base = root; m.realWitness = true; m.realDispatcher = true;
     const folder = path.join(root, 'dispatcher'), chatFolder = path.join(root, 'dispatcher-chat');
     const controller = { ...agent(), id: 'controller1', name: 'Operations', worktreePath: folder }, chat = { ...agent(), id: 'chat1', name: 'Dispatcher chat', worktreePath: chatFolder };
@@ -230,7 +230,7 @@ describe('host selected-agent Details projections', () => {
         const cards = (response.body as RemoteAgentDetails).cards;
         const connections = cards.find((c) => c.id === 'connections')!;
         expect(connections.state).toBe(missing ? 'error' : 'ok');
-        if (missing) { expect(m.connectionFixture).not.toHaveBeenCalled(); expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires'); }
+        if (missing) { expect(m.connectionFixture).not.toHaveBeenCalled(); expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP connections'); }
         else expect(m.connectionFixture).toHaveBeenCalledWith('controller1');
         for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes']) expect(cards.find((c) => c.id === id)?.state).toBe('not-applicable');
       }
@@ -355,7 +355,7 @@ describe('host selected-agent Details projections', () => {
     expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio')?.value).toContain('saved network link · names from retained metadata');
     expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio host record')?.value).toBe('Studio · retained transport: disconnected · snapshot missing or incomplete');
     expect.soft(connections.rows.find((r) => r.label === 'Peer B on Studio outgoing switches')?.value).toContain('Off: Send messages');
-    expect.soft(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires');
+    expect.soft(connections.notes.join(' ')).not.toContain('No Clubhouse MCP connections');
     expect.soft(JSON.stringify(value)).not.toMatch(/PRIVATE_OTHER|PRIVATE_UNRELATED|PRIVATE_CERTIFICATE|PRIVATE_UNUSED/i);
     expect.soft(m.satellite.mock.calls.every(([id]) => id === PEER_MACHINE)).toBe(true);
   });
@@ -420,7 +420,7 @@ describe('host selected-agent Details projections', () => {
   });
   it('projects policy and the selected host folder/branch without invented usage or local defaults', async () => {
     const value = await read();
-    expect(value.cards.find((c) => c.id === 'orchestrate')?.rows).toContainEqual({ label: 'At once', value: '5' });
+    expect(value.cards.find((c) => c.id === 'orchestrate')?.rows).toContainEqual({ label: 'Helpers at once', value: '5' });
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Folder', value: '/host/selected' });
     expect(m.branch).not.toHaveBeenCalled(); // strict paged Changes uses its own selected-target read, never this swallowing legacy reader.
     expect(m.helpers).toHaveBeenCalledWith('/host/project', 'a1', { includeDisposed: true, readOnly: true, receipts: expect.any(Array) });
@@ -626,7 +626,7 @@ describe('host selected-agent Details projections', () => {
     expect(value.cards.find((c) => c.id === 'canvases')).toMatchObject({ state: 'ok', omitted: 12 });
     expect(JSON.stringify(value)).not.toContain('PRIVATE_ERROR');
   });
-  it('rejects aliases/disposed agents and rechecks authority after awaited work', async () => {
+  it('rejects aliases/deleted agents and rechecks authority after awaited work', async () => {
     m.target.mockResolvedValueOnce({ agent: { ...agent(), id: 'other' }, project });
     expect((await readRemoteAgentDetails('a1', () => true)).status).toBe(404);
     expect(m.provider).not.toHaveBeenCalled();
@@ -663,19 +663,19 @@ describe('host selected-agent Details projections', () => {
   it('keeps unqualified helper runtime/work facts unknown while preserving independent counters', async () => {
     const helpers = Array.from({ length: 10 }, (_, i) => ({ projectPath: project.path, config: { ...agent(), id: `h${i}`, name: `Helper ${i}`, parentAgentId: 'a1' } }));
     helpers.push({ projectPath: project.path, config: { ...agent(), id: 'starting', name: 'Starting helper', parentAgentId: 'a1', creation: { state: 'creating' } } } as never);
-    helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', parentAgentId: 'a1', disposedAt: '2026-11-19' } } as never);
+    helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Deleted helper', parentAgentId: 'a1', disposedAt: '2026-11-19' } } as never);
     m.helpers.mockResolvedValue(helpers);
     const value = await read(), c = value.cards.find((c) => c.id === 'orchestrate')!;
     expect(c.rows).toContainEqual({ label: 'Helpers', value: '11 · 1 starting' });
-    expect(c.rows).toContainEqual({ label: 'Disposed helpers', value: '1' });
+    expect(c.rows).toContainEqual({ label: 'Deleted helpers', value: '1' });
     expect(value.helperPage).toMatchObject({ total: 12, liveCount: 11, disposedCount: 1, next: 8 });
     expect(value.helperPage?.rows[0]).toMatchObject({ status: 'unknown', projectName: null, work: { state: 'unavailable', reason: 'identity' } });
     expect(value.helperPage?.rows[0].target).toBeUndefined(); expect(m.work).not.toHaveBeenCalled();
   });
-  it('keeps disposed and live handed-off helpers distinct with their real timestamps', async () => {
-    m.helpers.mockResolvedValue([{ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed helper', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } }, { projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed helper', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } }]);
+  it('keeps deleted and live handed-off helpers distinct with their real timestamps', async () => {
+    m.helpers.mockResolvedValue([{ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Deleted helper', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } }, { projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed helper', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } }]);
     const rows = (await read()).cards.find((c) => c.id === 'orchestrate')!.rows;
-    expect(rows.find((r) => r.label === 'Disposed helper')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
+    expect(rows.find((r) => r.label === 'Deleted helper')?.value).toContain('Deleted · feature · 2026-11-18T12:00:00Z');
     expect(rows.find((r) => r.label === 'Handed helper')?.value).toContain('Handed off');
   });
   it.each([1024, 1025, 2048])('keeps nested Settings valid for a %i-character MCP name', async (length) => {
@@ -792,7 +792,7 @@ describe('actual selected Connections receipts at the complete Details boundary'
 });
 
 
-describe('cold manual Dispatcher link evidence at final Details assembly', () => {
+describe('cold manual Dispatcher connection evidence at final Details assembly', () => {
   it.each(['unchanged', 'primary-late', 'owner-only-late', 'revoked-and-primary'] as const)('keeps independent saved and process-known final receipts: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-manual-link-')));
     const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root), projectPath = path.join(root, 'selected-project');
@@ -831,7 +831,7 @@ describe('cold manual Dispatcher link evidence at final Details assembly', () =>
       if (mode === 'primary-late' || mode === 'revoked-and-primary') { expect(primary.some((receipt) => !receipt.current())).toBe(true); expect(memory.every((receipt) => receipt.current())).toBe(true); }
       if (mode === 'unchanged') {
         expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
-        expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value).toBe('No removal record in saved settings');
+        expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.find((row) => row.label === 'manual-target saved Dispatcher connection')?.value).toBe('No removal record in saved settings');
         expect((response.body as RemoteAgentDetails).cards.find((card) => card.id === 'connections')?.rows.find((row) => row.label === 'manual-target Dispatcher availability')?.value).toContain('This agent’s Connect to Dispatcher is off');
         expect(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|createdBy|targetProjectPath/);
       } else {
@@ -1128,7 +1128,7 @@ describe('selected Connections envelope admission', () => {
   });
 });
 
-it('keeps typed outgoing Wires absent from denied and source-only Details responses', async () => {
+it('keeps typed outgoing Connections absent from denied and source-only Details responses', async () => {
   const full = await read(); expect(full.outgoingWires).toEqual({ source: 'selected-outgoing-binding-records', state: 'recorded', rows: [], total: 0, omitted: 0 });
   const page = await readRemoteAgentDetails('a1', () => true, { card: 'connections', source: 'outgoing' });
   expect(page.status).toBe(200); expect(page.body).toHaveProperty('connectionPageOnly', true); expect(page.body).not.toHaveProperty('outgoingWires');
@@ -1154,13 +1154,13 @@ describe('structured selected helper pages at the complete Details boundary', ()
   });
 });
 
-it('preserves valid saved disposed dates and handoff words in legacy summaries outside the selected helper page', async () => {
+it('preserves valid saved deleted dates and handoff words in legacy summaries outside the selected helper page', async () => {
   const helpers = Array.from({ length: 9 }, (_, i) => ({ projectPath: project.path, config: { ...agent(), id: `valid-${i}`, name: `Valid ${i}`, parentAgentId: 'a1' } }));
-  helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Disposed beyond page', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } } as never);
+  helpers.push({ projectPath: project.path, config: { ...agent(), id: 'disposed', name: 'Deleted beyond page', parentAgentId: 'a1', disposedAt: '2026-11-18T12:00:00Z' } } as never);
   helpers.push({ projectPath: project.path, config: { ...agent(), id: 'handoff', name: 'Handed beyond page', parentAgentId: 'a1', handoff: { at: '2026-11-19' } } } as never);
   m.helpers.mockResolvedValue(helpers); const value = await read(), rows = value.cards.find((c) => c.id === 'orchestrate')!.rows;
   expect(value.helperPage?.rows).toHaveLength(8); expect(value.helperPage).toMatchObject({ total: 11, liveCount: 10, disposedCount: 1 });
-  expect(rows.find((r) => r.label === 'Disposed beyond page')?.value).toContain('Disposed · feature · 2026-11-18T12:00:00Z');
+  expect(rows.find((r) => r.label === 'Deleted beyond page')?.value).toContain('Deleted · feature · 2026-11-18T12:00:00Z');
   expect(rows.find((r) => r.label === 'Handed beyond page')?.value).toContain('Handed off');
 });
 

@@ -168,12 +168,12 @@ describe('a relayed merge or release go-ahead (#3578)', () => {
     expect(handOff).not.toHaveBeenCalled();
   });
 
-  it('leaves the acting to the Dispatcher, whose tools still need its own wires and grants', async () => {
+  it('leaves the acting to the Dispatcher, whose tools still need its own connections and grants', async () => {
     await callTool('chat', 'start_work', { request: relay });
     // Reaching a project agent takes a wire the user made: with none, the Dispatcher's message is refused.
     const refused = await callTool('dispatcher', 'clubhouse__release_lead__send_message', { message: relay });
     expect(refused.isError).toBe(true);
-    expect(refused.content[0]).toMatchObject({ text: expect.stringContaining('No binding found') });
+    expect(refused.content[0]).toMatchObject({ text: expect.stringContaining('No connection found') });
     // And the chat itself has no wire tools to act with.
     expect((await callTool('chat', 'clubhouse__release_lead__send_message', { message: relay })).isError).toBe(true);
   });

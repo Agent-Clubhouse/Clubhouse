@@ -822,7 +822,7 @@ describe('BrowserTools', () => {
       for (const name of toolNames) {
         const result = await callTool('agent-1', name, { url: 'https://x.com', selector: '#a', text: 'a', expression: '1' });
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('No binding');
+        expect(result.content[0].text).toContain('No connection');
       }
     });
 

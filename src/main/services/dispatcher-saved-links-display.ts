@@ -35,7 +35,7 @@ const offsetValid = (offset: number) => Number.isSafeInteger(offset) && offset >
 const key = (r: { agentId: string; targetId: string }) => `${r.agentId}\0${r.targetId}`;
 
 function project(selected: string, projectPath: string, offset: number, baseDir: string): DisplayValue<SavedDispatcherLinksPage> {
-  const inputs = [{ field: 'Selected saved Dispatcher links', source: 'primary' as const, observedAt: Date.now() }];
+  const inputs = [{ field: 'Selected saved Dispatcher connections', source: 'primary' as const, observedAt: Date.now() }];
   const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
   const unavailable = <T>(reason: 'invalid' | 'unreadable' | 'limit' = 'invalid'): DisplayValue<T> => ({ state: 'unavailable', reason, inputs });
   if (!id(selected) || !folder(projectPath) || !folder(baseDir) || !offsetValid(offset)) return unavailable();

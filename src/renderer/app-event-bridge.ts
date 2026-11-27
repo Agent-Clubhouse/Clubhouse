@@ -418,7 +418,7 @@ export function handleHelperDisposeRequest(request: HelperDisposeRequest): void 
     undefined,
     request.helperId,
     helper.projectId,
-    { title: `${orchestratorName} asked to dispose ${request.helperName}`, message: describeHelperDispose(pending) },
+    { title: `${orchestratorName} asked to delete ${request.helperName}`, message: describeHelperDispose(pending) },
   );
 }
 
@@ -470,9 +470,9 @@ export function initGrantRequestListener(): () => void {
 
 /** Notices that explain a start that didn't go as asked; a launch error card shows them. */
 const LAUNCH_FAILURE_CODES = new Set(['fallback', 'login_required']);
-const CLI_FALLBACK_PREFIX = 'Opened in the CLI view: ';
+const CLI_FALLBACK_PREFIX = 'Opened in the Terminal view: ';
 
-/** The reason inside a chat fallback notice, without the "Opened in the CLI view" lead-in. */
+/** The reason inside a chat fallback notice, without the "Opened in the Terminal view" lead-in. */
 export function launchFailureReason(message: string): string {
   return message.startsWith(CLI_FALLBACK_PREFIX) ? message.slice(CLI_FALLBACK_PREFIX.length) : message;
 }

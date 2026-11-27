@@ -13,7 +13,7 @@ export function RemoteQuickSettingsCard({ card, session, runtimeUnconfirmed, mes
   const cli = card?.rows.find((r) => r.label === 'CLI')?.value ?? session?.provider;
   const context = session ? contextSummary(session.contextLimits, session.usage.context?.size) : null;
   const liveAccess = session?.level && card?.rows.find((r) => r.label === 'Access')?.value !== 'Set by the CLI' ? session.level : null;
-  const rows = card?.rows.filter((r) => !(runtimeUnconfirmed && ['CLI', 'Runs in', 'Access'].includes(r.label))
+  const rows = card?.rows.filter((r) => !(runtimeUnconfirmed && ['CLI', 'View', 'Runs in', 'Access'].includes(r.label))
     && !(session?.cliVersion && r.label === 'CLI') && !(liveAccess && r.label === 'Access'));
   return <DetailsCard id="settings" title="Settings" summary={card?.summary || message} open={open} onToggle={() => setOpen(!open)}>
     {session?.cliVersion && <CardRow label="CLI" labelWidth="wide">{cli} {session.cliVersion}</CardRow>}

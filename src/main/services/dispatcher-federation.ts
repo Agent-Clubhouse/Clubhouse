@@ -215,9 +215,9 @@ export function watchFederation(changed: () => void, connected: (machine: string
   const offStatus = setFederationStatus((from, to) => {
     if (!controllerDirection(from, to)) return undefined;
     const remote = from.machineId ? from : to;
-    if (!isDispatcherEnabled()) return { state: 'unavailable', reason: 'This Dispatcher is off. Controller links are unavailable.' };
-    if (!remoteFederationController(remote.machineId!)?.enabled) return { state: 'unavailable', reason: 'The other Dispatcher is off. Controller links are unavailable.' };
-    if (!connected(remote.machineId!)) return { state: 'paused', reason: 'The other computer is offline. Controller links are paused until it reconnects.' };
+    if (!isDispatcherEnabled()) return { state: 'unavailable', reason: 'This Dispatcher is off. Controller connections are unavailable.' };
+    if (!remoteFederationController(remote.machineId!)?.enabled) return { state: 'unavailable', reason: 'The other Dispatcher is off. Controller connections are unavailable.' };
+    if (!connected(remote.machineId!)) return { state: 'paused', reason: 'The other computer is offline. Controller connections are paused until it reconnects.' };
     return undefined;
   });
   listeners.add(changed);

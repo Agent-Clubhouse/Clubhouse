@@ -21,29 +21,29 @@ describe('Other machines (#3349)', () => {
     const list = screen.getByRole('list', { name: 'Dispatchers on other machines' });
     const rows = within(list).getAllByRole('listitem');
     expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual([
-      'Studio on Desk. Working. Link active.',
-      'Studio on Laptop. Offline, last seen 2h ago. Link paused: The other computer is offline.',
-      'Studio on Studio. Turned off. Link unavailable: The other Dispatcher is off.',
-      'Dispatcher on Attic. Not known yet. Link unavailable: Not shared yet.',
+      'Studio on Desk. Working. Connection active.',
+      'Studio on Laptop. Offline, last seen 2h ago. Connection paused: The other computer is offline.',
+      'Studio on Studio. Turned off. Connection unavailable: The other Dispatcher is off.',
+      'Dispatcher on Attic. Not known yet. Connection unavailable: Not shared yet.',
     ]);
-    expect(screen.getByTestId('other-machine-laptop-state').textContent).toBe('Offline, last seen 2h ago. Link paused: The other computer is offline.');
+    expect(screen.getByTestId('other-machine-laptop-state').textContent).toBe('Offline, last seen 2h ago. Connection paused: The other computer is offline.');
     expect(screen.queryByText('controller@desk')).toBeNull();
   });
 
   it('shows a link a fixed limit tripped as tripped, with the limit, in full and compact lists', () => {
-    const tripped = remote('desk', { link: { state: 'tripped', reason: 'The controller link rate limit was reached.' } });
+    const tripped = remote('desk', { link: { state: 'tripped', reason: 'The controller connection rate limit was reached.' } });
     const { unmount } = render(<OtherMachinesList remotes={[tripped]} />);
-    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online. Link tripped: The controller link rate limit was reached.');
-    expect(screen.getByTestId('other-machine-desk').getAttribute('aria-label')).toBe('Studio on Desk. Online. Link tripped: The controller link rate limit was reached.');
+    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online. Connection tripped: The controller connection rate limit was reached.');
+    expect(screen.getByTestId('other-machine-desk').getAttribute('aria-label')).toBe('Studio on Desk. Online. Connection tripped: The controller connection rate limit was reached.');
     unmount();
     render(<OtherMachinesList compact remotes={[tripped]} />);
-    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online. Link tripped');
+    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online. Connection tripped');
   });
 
   it('keeps the compact list short: state, and the link only when it isn\'t active', () => {
     render(<OtherMachinesList compact remotes={[remote('desk'), remote('laptop', { state: 'offline', link: { state: 'paused', reason: 'x' } })]} />);
     expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online');
-    expect(screen.getByTestId('other-machine-laptop-state').textContent).toBe('Offline. Link paused');
+    expect(screen.getByTestId('other-machine-laptop-state').textContent).toBe('Offline. Connection paused');
   });
 
   it('reads an unparseable last-seen as plain offline', () => {
@@ -63,6 +63,6 @@ describe('Other machines (#3349)', () => {
     expect(screen.queryByText('Other computers')).toBeNull();
     act(() => push!({ remotes: [remote('desk', { state: 'asleep' })] }));
     expect(await screen.findByText('Other computers')).toBeTruthy();
-    expect((await screen.findByTestId('other-machine-desk-state')).textContent).toBe('Asleep. Link active');
+    expect((await screen.findByTestId('other-machine-desk-state')).textContent).toBe('Asleep. Connection active');
   });
 });

@@ -3846,7 +3846,7 @@ export async function setHelperHandoff(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const helper = agentsById.get(helperId);
   if (!helper || helper.parentAgentId !== parentAgentId) throw new Error('Not a helper of this agent');
-  if (isDisposedAgent(helper)) throw new Error(`${helper.name} was already disposed`);
+  if (isDisposedAgent(helper)) throw new Error(`${helper.name} was already deleted`);
   const record: HelperHandoff = { how: handoff.how, note: handoff.note, at: new Date().toISOString() };
   helper.handoff = record;
   await writeAgents(projectPath, agents);
@@ -4291,7 +4291,7 @@ async function disposeAgent(projectPath: string, agentId: string, options: { exp
   if (!agent || isDisposedAgent(agent)) return;
   checkParent(agent);
   const creating = helperCreationBlock(agent);
-  if (creating) throw new Error(`${agent.name} can't be disposed because ${creating}`);
+  if (creating) throw new Error(`${agent.name} can't be deleted because ${creating}`);
   await assertDeleteReview(projectPath, agentId);
   if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
 
@@ -4335,12 +4335,12 @@ export async function disposeHelper(
   if (options.expectedParentId !== undefined && agent.parentAgentId !== options.expectedParentId) {
     return { ok: false, message: `${agent.name} is no longer a helper of this agent` };
   }
-  if (isDisposedAgent(agent)) return { ok: true, message: 'Already disposed' };
+  if (isDisposedAgent(agent)) return { ok: true, message: 'Already deleted' };
   const checks = await getDisposeChecks(projectPath, agentId);
   if (checks.error || (!options.force && hasWorkAtRisk(checks))) {
     return {
       ok: false,
-      message: checks.error ? `${agent.name} wasn't disposed (${checks.error})` : `${agent.name} has work that disposing would lose`,
+      message: checks.error ? `${agent.name} wasn't deleted (${checks.error})` : `${agent.name} has work that deleting would lose`,
       checks,
     };
   }
@@ -4351,7 +4351,7 @@ export async function disposeHelper(
     const worktreeRemoved = (err as { worktreeRemoved?: unknown } | null)?.worktreeRemoved === true;
     return { ok: false, message: errorText(err), checks, ...(worktreeRemoved ? { worktreeRemoved } : {}) };
   }
-  return { ok: true, message: 'Disposed', checks };
+  return { ok: true, message: 'Deleted', checks };
 }
 
 /** Every live helper below an agent, nearest first. */
@@ -4451,8 +4451,8 @@ export async function resolveHelpersForDelete(
     return {
       ok: false,
       message: unchecked.length === 1
-        ? `${unchecked[0].name} couldn't be checked (${unchecked[0].checks.error}), so it can't be disposed, even with force`
-        : `${unchecked.length} helpers couldn't be checked, so they can't be disposed, even with force`,
+        ? `${unchecked[0].name} couldn't be checked (${unchecked[0].checks.error}), so it can't be deleted, even with force`
+        : `${unchecked.length} helpers couldn't be checked, so they can't be deleted, even with force`,
       blocked: unchecked,
     };
   }
@@ -4460,14 +4460,14 @@ export async function resolveHelpersForDelete(
     return {
       ok: false,
       message: blocked.length === 1
-        ? `${blocked[0].name} has work that disposing would lose, or couldn't be checked`
-        : `${blocked.length} helpers have work that disposing would lose, or couldn't be checked`,
+        ? `${blocked[0].name} has work that deleting would lose, or couldn't be checked`
+        : `${blocked.length} helpers have work that deleting would lose, or couldn't be checked`,
       blocked,
     };
   }
 
   if (options.dryRun) {
-    return { ok: true, message: `Would dispose ${helpers.length} helper(s)`, helperIds: helpers.map(({ config }) => config.id) };
+    return { ok: true, message: `Would delete ${helpers.length} helper(s)`, helperIds: helpers.map(({ config }) => config.id) };
   }
   const disposed: string[] = [];
   const failed: NonNullable<HelperCascadeResult['failed']> = [];
@@ -4486,12 +4486,12 @@ export async function resolveHelpersForDelete(
   if (failed.length > 0) {
     return {
       ok: false,
-      message: `Disposed ${disposed.length} of ${helpers.length} helpers`,
+      message: `Deleted ${disposed.length} of ${helpers.length} helpers`,
       helperIds: disposed,
       failed,
     };
   }
-  return { ok: true, message: `Disposed ${helpers.length} helper(s)`, helperIds: disposed };
+  return { ok: true, message: `Deleted ${helpers.length} helper(s)`, helperIds: disposed };
 }
 
 // --- Agent icon storage ---

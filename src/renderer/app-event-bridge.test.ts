@@ -696,13 +696,13 @@ describe('initAppEventBridge', () => {
 
   it('shows a toast with the reason when an agent falls back from chat', () => {
     const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
-    onRuntimeNotice('agent-unknown', { level: 'warn', code: 'fallback', message: 'Opened in the CLI view: Claude Code (Agent SDK) handshake failed: boom' });
-    expect(mockAddToast).toHaveBeenCalledWith('agent-unknown: Opened in the CLI view: Claude Code (Agent SDK) handshake failed: boom', 'info');
+    onRuntimeNotice('agent-unknown', { level: 'warn', code: 'fallback', message: 'Opened in the Terminal view: Claude Code (Agent SDK) handshake failed: boom' });
+    expect(mockAddToast).toHaveBeenCalledWith('agent-unknown: Opened in the Terminal view: Claude Code (Agent SDK) handshake failed: boom', 'info');
   });
 
   it('keeps the chat fallback reason for the launch error card (#2088)', () => {
     const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
-    onRuntimeNotice('agent-1', { level: 'warn', code: 'fallback', message: 'Opened in the CLI view: Codex (app-server) failed to start: no rollout found for thread id 562a' });
+    onRuntimeNotice('agent-1', { level: 'warn', code: 'fallback', message: 'Opened in the Terminal view: Codex (app-server) failed to start: no rollout found for thread id 562a' });
     expect(mockNoteLaunchFailure).toHaveBeenCalledWith('agent-1', 'Codex (app-server) failed to start: no rollout found for thread id 562a');
 
     mockNoteLaunchFailure.mockClear();
@@ -993,7 +993,7 @@ describe('initAppEventBridge', () => {
     );
   });
 
-  it('puts a dispose the user decides under Needs you with the facts, without opening the delete dialog (#2229)', () => {
+  it('puts a delete the user decides under Needs you with the facts, without opening the delete dialog (#2229)', () => {
     const openDeleteDialog = vi.fn();
     useHelperDisposeRequestStore.setState({ requests: {} });
     vi.mocked(useAgentStore.getState).mockReturnValue({
@@ -1018,13 +1018,13 @@ describe('initAppEventBridge', () => {
     expect(mockCheckAndNotify).toHaveBeenCalledWith(
       'Docs', 'attention', undefined, 'helper', 'proj-1',
       {
-        title: 'Orchestrator asked to dispose Docs',
-        message: 'Orchestrator asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit.',
+        title: 'Orchestrator asked to delete Docs',
+        message: 'Orchestrator asked to delete this helper (forced). 2 uncommitted files, 1 unpushed commit.',
       },
     );
   });
 
-  it('drops a dispose request that was answered from a paired phone (#159)', () => {
+  it('drops a delete request that was answered from a paired phone (#159)', () => {
     useHelperDisposeRequestStore.setState({ requests: {} });
     useHelperDisposeRequestStore.getState().add({
       projectPath: '/p', orchestratorId: 'orch', helperId: 'helper', helperName: 'Docs',
@@ -1035,7 +1035,7 @@ describe('initAppEventBridge', () => {
     expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
   });
 
-  it('ignores a dispose request for a helper this window does not have', () => {
+  it('ignores a delete request for a helper this window does not have', () => {
     useHelperDisposeRequestStore.setState({ requests: {} });
     vi.mocked(useAgentStore.getState).mockReturnValue({ agents: {}, deleteDialogAgent: null, openDeleteDialog: vi.fn() } as any);
     const callback = vi.mocked(window.clubhouse.agent.onHelperDisposeRequest).mock.calls[0][0];
@@ -1050,7 +1050,7 @@ describe('initAppEventBridge', () => {
   it('adds and closes helper start requests from main, and loads the waiting ones (#2234)', async () => {
     const request = {
       requestId: 'hstart_1', projectPath: '/p', orchestratorId: 'orch', orchestratorName: 'Orch',
-      args: { name: 'impl-ipc', task: 'Wire the IPC' }, createdAt: '2026-10-18T10:00:00.000Z', expiresAt: '2026-10-19T10:00:00.000Z',
+      args: { name: 'impl-ipc', task: 'Connection the IPC' }, createdAt: '2026-10-18T10:00:00.000Z', expiresAt: '2026-10-19T10:00:00.000Z',
     };
     const added = vi.mocked(window.clubhouse.agent.onHelperStartRequest).mock.calls[0][0];
     const closed = vi.mocked(window.clubhouse.agent.onHelperStartRequestsClosed).mock.calls[0][0];

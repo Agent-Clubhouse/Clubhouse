@@ -288,7 +288,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     expect(settings().queryByRole('switch', { name: /free agent/i })).not.toBeInTheDocument();
     // Clubhouse Mode was retired (#2901): nothing offers it.
     expect(settings().queryByRole('switch', { name: 'Clubhouse mode for this agent' })).not.toBeInTheDocument();
-    await waitFor(() => expect(settings().getByRole('combobox', { name: 'Runs in' })).toBeInTheDocument());
+    await waitFor(() => expect(settings().getByRole('combobox', { name: 'View' })).toBeInTheDocument());
     expect(settings().getByTestId('details-settings-next-wake')).toHaveTextContent(NEXT_WAKE_NOTE);
     expect(settings().queryByText(LOCKED_HINT)).not.toBeInTheDocument();
     // Read-only summaries stay read-only.
@@ -307,7 +307,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     await waitFor(() => expect((settings().getByRole('combobox', { name: 'Access' }) as HTMLSelectElement).value).toBe('full_access'));
     await waitFor(() => expect(useAgentStore.getState().agents.a1).toMatchObject({ access: 'full_access', freeAgentMode: true }));
 
-    const runsIn = await settings().findByRole('combobox', { name: 'Runs in' });
+    const runsIn = await settings().findByRole('combobox', { name: 'View' });
     fireEvent.change(runsIn, { target: { value: 'terminal' } });
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { runtimeMode: 'terminal' }));
     expect(saved).toMatchObject({ model: 'opus', access: 'full_access', runtimeMode: 'terminal' });
@@ -367,7 +367,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     expect(model.value).toBe('opus');
   });
 
-  it('saves nothing for a model the provider did not list', async () => {
+  it('saves nothing for a model the CLI did not list', async () => {
     saved.model = 'opus';
     render(<AgentDetails agent={sleeping} />);
     const model = await loadedModelSelect('sonnet');
@@ -380,8 +380,8 @@ describe('Agent details for a sleeping agent (#2281)', () => {
   it('shows the terminal and no Runs in control with the Chat flag off', async () => {
     chatFlag = false;
     render(<AgentDetails agent={sleeping} />);
-    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('CLI'));
-    expect(settings().queryByRole('combobox', { name: 'Runs in' })).not.toBeInTheDocument();
+    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('Terminal'));
+    expect(settings().queryByRole('combobox', { name: 'View' })).not.toBeInTheDocument();
     expect(settings().queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument();
   });
 
@@ -408,16 +408,16 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     saved.runtimeMode = 'chat';
     let answer!: (v: unknown) => void;
     render(<AgentDetails agent={sleeping} />);
-    const select = await settings().findByRole('combobox', { name: 'Runs in' }) as HTMLSelectElement;
+    const select = await settings().findByRole('combobox', { name: 'View' }) as HTMLSelectElement;
     window.clubhouse.chat.getAgentRuntime = vi.fn(() => new Promise((r) => { answer = r; })) as never;
     fireEvent.change(select, { target: { value: '' } });
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { runtimeMode: null }));
     // Still asking main which runtime the provider default means: the control stays put.
     await waitFor(() => expect(window.clubhouse.chat.getAgentRuntime).toHaveBeenCalled());
-    expect(settings().getByRole('combobox', { name: 'Runs in' })).toBe(select);
+    expect(settings().getByRole('combobox', { name: 'View' })).toBe(select);
     expect(settings().getByTestId('details-setting-auto-sleep')).toBeInTheDocument();
     answer({ chat: false, live: false, chatAvailable: true });
-    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('CLI'));
+    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('Terminal'));
   });
 
   it('rolls a failed select back to the saved value', async () => {
