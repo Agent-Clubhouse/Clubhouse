@@ -64,19 +64,37 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | Section | Keys |
 | --- | --- |
 | `agent.identity` | `name`, `color`, `emoji`, `has_image` |
-| `agent.cli` | `orchestrator`, `model`, `runtime` |
+| `agent.cli` | `provider`, `model`, `runtime` |
 | `agent.persona` | `persona` (always null), `mission` (always null) |
 | `agent.access` | `access`, `free_agent_mode`, `permission_mode` |
 | `agent.mcp` | `clubhouse_mcp` (always on), `clubhouse_bridge` (always on), `clubhouse_mode` (always null), `mcp_ids` (ids) |
 | `agent.idle` | `idle_sleep` |
-| `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
+| `agent.orchestration` | `orchestrate`, `helper_access`, `helper_approvals`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
-| `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode` (always null: the project free agent default was retired with Access, #2761, #3245), `profile_id` (always null: provider profiles were removed, #2749), `source_control_provider`, `default_mcps` |
+| `project.defaults` | `provider`, `persona` (always null), `mission` (always null), `free_agent_mode` (always null: the project free agent default was retired with Access, #2761, #3245), `profile_id` (always null: provider profiles were removed, #2749), `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode` (always null), `mcp` (always on), `permission_mode` |
-| `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled` (always on), `clubhouse_mode_enabled` (always null), `permission_mode`, `default_access`, `global_helper_cap`, `enabled_orchestrators` |
+| `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled` (always on), `clubhouse_mode_enabled` (always null), `permission_mode`, `default_access`, `global_helper_cap`, `enabled_providers` |
 | `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp` (always null: the legacy ACP driver was removed, #2868), `annex_server_enabled`, `annex_client_enabled`, `annex_network_enabled`, `annex_loopback_only`, `annex_discovery_enabled` |
 
 `app.defaults` is open to every agent because those values feed its own effective settings.
+
+### Older key names
+
+Five keys were renamed in #2775, so the names say provider for the CLI an agent runs on, and say helper for what an agent's helpers get. The older names are kept aliases. They still read, with the same value, under the name you asked for. `list_settings` and a whole-section select show only the new names.
+
+| New key | Kept alias |
+| --- | --- |
+| `agent.cli.provider` | `agent.cli.orchestrator` |
+| `agent.orchestration.helper_access` | `agent.orchestration.access` |
+| `agent.orchestration.helper_approvals` | `agent.orchestration.control` |
+| `project.defaults.provider` | `project.defaults.orchestrator` |
+| `app.defaults.enabled_providers` | `app.defaults.enabled_orchestrators` |
+
+- `agent.orchestration.helper_access` is the access level the agent's helpers get. The agent's own access is `agent.access.access`.
+- `agent.orchestration.helper_approvals` is how much the user is asked about the agent's helpers.
+- Only the read names changed. The saved files keep their own fields (`orchestrator`, `orchestration.access`, `orchestration.control`, `enabled`).
+- A computer running an older Clubhouse knows only the older names. Its `list_settings` shows the names it knows.
+- `agent.orchestration.auto_helpers` keeps its name for now.
 
 ### Deliberately left out
 
