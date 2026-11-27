@@ -25,9 +25,9 @@ describe('Group projects and Handoffs refresh (#3552, #3898)', () => {
 });
 
 describe('Group project words after #3946', () => {
-  it('says the computer that holds a group project, not host, outside the Host field label', () => {
+  it('says the computer that holds a group project, never host', () => {
     for (const id of ['group-projects', 'group-project-glossary']) {
-      const content = GROUP_PROJECT_TOPICS.find((t) => t.id === id)!.content.replace(/\*\*Host\*\*/g, '');
+      const content = GROUP_PROJECT_TOPICS.find((t) => t.id === id)!.content;
       expect(content, id).not.toMatch(/\bhost\b|\bwires?\b/i);
     }
     const actions = HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === 'agents-actions')!.content;
