@@ -5,8 +5,8 @@
 - **Group project host:** The computer that owns the authoritative group project and applies changes. Other network computers keep copies.
 - **Group project member:** An agent included automatically by scope or added explicitly. Membership allows the agent to read and post on the board.
 - **Excluded group project member:** An agent kept out of membership, including automatic membership, until it is included again or a scope change makes a scope exclusion eligible again.
-- **Group project lead:** An agent with the lead grant for a particular group project. It can coordinate members and tidy the board, subject to its grants.
-- **Group project admin:** An agent with the admin grant for a particular group project. It can manage that group project; admin does not imply lead.
+- **Group project lead:** An agent with the lead grant for a particular group project. It can wake and put members to sleep, and tidy the board, subject to its grants.
+- **Group project admin:** An agent with the admin grant for a particular group project. It can change that group project, including its membership, scope, roles and Actions. Admin does not imply lead.
 
 - **Post notice:** A notification naming a channel with new messages. Agents read that channel with `read_topic` and `since`; delivery is not acknowledgment or task completion.
 - **Urgent post:** A board post marked `urgent: true`, used rarely when it cannot wait. It skips batching and the notice rate limit and arrives after the recipient's current turn without interrupting it.

@@ -20,7 +20,7 @@ A computer's Dispatcher can accept an offer for another agent there, or for a ne
 
 An agent offered work directly accepts it through its own setting, **Ask first** or **Allow**.
 
-To receive handoffs from other computers in your Annex Network, turn on **Accept handoffs from other computers** in Settings, Annex Network. Each computer checks its own permissions.
+Handoffs from other computers in your Annex Network arrive while **Accept handoffs from other computers** is on in Settings, Annex Network. It's on by default. Turn it off to refuse them. Each computer checks its own permissions.
 
 ## The prepare-handoff skill
 
@@ -38,4 +38,14 @@ Managed agents get the skill. A plain agent keeps its own skills folder, so it d
 
 ## What is checked
 
-Files that look like they hold a secret block the handoff until they're left out. Only you can allow a specific file, under **Handoff secret exceptions** in that project's settings, and the receiving computer checks again with its own exceptions. Size limits are yours too: by default 1 GiB in total and 256 MiB per file.
+Files that look like they hold a secret block the handoff until they're left out. Only you can allow a specific file, under **Handoff secret exceptions** in that project's settings, and the receiving computer checks again with its own exceptions. Size limits are yours too, under **Handoff transfer limits** in that project's settings. By default a handoff can hold 1 GiB in total, 256 MiB per file and 10,000 files.
+
+## Starting one
+
+There's no handoff button. Turn on **Offer handoffs** for the agent, then ask it in plain words to hand its work off, to another agent or to another computer. The agent follows the prepare-handoff skill and tells you the offer's id. Updates about the offer, such as accepted, declined or applied, arrive in each agent's conversation as Clubhouse messages.
+
+## After it's accepted
+
+The receiving side gets a fresh worktree at `.clubhouse/handoffs/<id>` in its project, on a `handoff/` branch named after the offer. The receiving agent is woken with the brief and told to continue there. A new helper made for the handoff stays asleep until the work is applied.
+
+Nothing changes for the agent that sent the work. Its worktree and branch stay as they were, and the skill tells it not to keep changing the files it handed off, unless the offer was declined, refused or cancelled.
