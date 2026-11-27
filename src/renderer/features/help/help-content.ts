@@ -34,6 +34,7 @@ export const PREPARE_HANDOFF_SKILL_TOPIC_CONTENT = [
 ].join('\n');
 import agentsDispatcherChrome from './content/agents-dispatcher.chrome.md';
 import agentsManagedChrome from './content/agents-managed.chrome.md';
+import agentsAccessChrome from './content/agents-access.chrome.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import agentsAntigravity from './content/agents-antigravity.md';
 import pluginsOverview from './content/plugins-overview.md';
@@ -231,6 +232,7 @@ export const GROUP_PROJECT_TOPICS: HelpTopic[] = [
  * keep them stable.
  */
 export const NEW_LAYOUT_TOPICS: ReadonlyArray<{ after: string; topic: HelpTopic }> = [
+  { after: 'agents-overview', topic: { id: 'agents-access', title: 'Access and Clubhouse permissions', content: agentsAccessChrome } },
   { after: 'agents-overview', topic: { id: 'agents-managed', title: 'Managed agents', content: agentsManagedChrome } },
   { after: 'agents-overview', topic: { id: 'agents-chat', title: 'Chat and media', content: agentsChatChrome } },
 ];
