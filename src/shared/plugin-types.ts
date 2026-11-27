@@ -50,6 +50,7 @@ export type PluginPermission =
   | 'agent-config'
   | 'agent-config.cross-project'
   | 'agent-config.permissions'
+  /** Lets a plugin start agents above Ask first (Access). Name kept for the plugin API (0.7 to 0.9 allows only new aliases). */
   | 'agents.free-agent-mode'
   | 'agent-config.mcp'
   | 'sounds'
@@ -458,6 +459,7 @@ export interface ProjectInfo {
   path: string;
 }
 
+/** A CLI (provider) agents can run on. Name kept for the plugin API (0.7 to 0.9 allows only new aliases). */
 export interface PluginOrchestratorInfo {
   id: string;
   displayName: string;
@@ -665,7 +667,9 @@ export interface AgentsAPI {
   dismissCompleted(projectId: string, agentId: string): void;
   getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null;
   getModelOptions(projectId?: string, orchestrator?: string): Promise<ModelOption[]>;
+  /** Lists the CLIs (providers) agents can run on. Name kept for the plugin API (0.7 to 0.9 allows only new aliases). */
   listOrchestrators(): PluginOrchestratorInfo[];
+  /** Checks whether a CLI (provider) is installed and usable. Name kept for the plugin API (0.7 to 0.9 allows only new aliases). */
   checkOrchestratorAvailability(orchestratorId: string): Promise<{ available: boolean; error?: string }>;
   onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable;
   /** Subscribe to any change in the agents store (status, detailed status, new/removed agents). */
