@@ -5,6 +5,20 @@ Implemented on codex/mobile-control-v1, desktop base eecbe20bf.
 Existing Annex protocolVersion stays 2. Existing routes and WebSocket frames stay unchanged.
 Discovery remains `_clubhouse-annex._tcp` with main TLS port and pairingPort TXT. Manual LAN / Tailscale host entry uses the same HTTPS/WSS protocol. No gateway is deployed.
 
+## Field names
+
+Some contract fields keep names older than the words the 1.0 app uses. These names won't change. A new alias would need its own capability gate, so older phones keep working.
+
+- `orchestrator` (and `orchestrators` in create options and settings): the CLI (provider) an agent runs on, shown as Runs on. In prose about helpers, "the orchestrator" is the agent that started them.
+- `mission`: the first prompt or task an agent was started with, also as a message `source`.
+- `freeAgentMode`: the legacy access flag, kept beside `access`, which holds the saved level. See [Access](#access).
+- `durable` and `quick`: agent kinds.
+- `satellite` and `controller`: peer roles. The app says this computer and other computers.
+- `runtime`: the View row, `chat` (Chat) or `terminal` (Terminal).
+- `detailedStatus.state` `idle`: Idle. `needs_permission` is Needs you.
+- `dispose` (a helper request's `kind`, `canDispose`, `helper_dispose_failed`): Delete.
+- `persona`, `personas` and `clubhouseMode`: retired (#2901). They stay for phones that read them. A value is refused, and they read as null or empty.
+
 ## Trust and pairing
 
 Mobile MUST pin SHA-256 of the server leaf certificate DER (uppercase colon-separated hex) after the user compares it with desktop Settings > Annex Network > This computer > TLS certificate fingerprint. Discovery and unauthenticated identity responses are hints, never trust roots. Never accept arbitrary TLS certificates or send a PIN over HTTP.

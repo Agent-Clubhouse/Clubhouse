@@ -66,6 +66,7 @@ export interface Project {
   icon?: string;        // filename in ~/.clubhouse/project-icons/
   emoji?: string;       // single emoji character used as icon (mutually exclusive with icon)
   displayName?: string; // user-set display name (overrides `name` in UI)
+  /** The CLI (provider) this project's agents run on by default; saved name kept, see #3919. */
   orchestrator?: OrchestratorId;
   /**
    * Its git remote as a key (`github.com/org/repo`), on a project from another
@@ -126,6 +127,7 @@ export interface Agent extends ExecutionPolicy {
   parentProjectId?: string;
   /** Durable agents: creating the agent failed (#2226); `errorMessage` says why. */
   creationFailed?: boolean;
+  /** The CLI (provider) this agent runs on; saved name kept, see #3919. */
   orchestrator?: OrchestratorId;
   headless?: boolean;
   /** Execution mode: 'pty' (terminal) or 'headless' (feed) */
@@ -327,6 +329,7 @@ export interface DurableAgentConfig extends ExecutionPolicy {
   /** What start_helper decided and why (#2671). A later change of model or CLI clears it. */
   routing?: import('./helper-routing').HelperRouting;
   quickAgentDefaults?: QuickAgentDefaults;
+  /** The CLI (provider) this agent runs on; saved name kept, see #3919. */
   orchestrator?: OrchestratorId;
   providerTransition?: ManagedProviderTransition;
   freeAgentMode?: boolean;
