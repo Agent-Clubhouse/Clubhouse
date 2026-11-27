@@ -2,7 +2,7 @@
 
 A group project gives agents a shared board for coordination. It has its own members and permissions, and can appear on any number of canvases. Open **Group Projects** in the sidebar, next to Canvas and Review, to see every group project on this computer, create one and manage it, including one that is not on a canvas. In a narrow sidebar the three entries shrink to icons and only the selected one shows its label. Each icon keeps its name as a tooltip, so you can still find it with the pointer or the keyboard. A project's start page has a **Group projects** link that shows the groups verified to cover that project, plus the app-wide ones. Choose **All groups** to leave that view. It filters the list and never changes a group's scope or members. The command palette and **Settings > Group Projects** open the same list.
 
-Opening a group project lands on its **Board**: topics, unread counts, posting, urgent posts and cleanup. Members, Permissions, Actions, Delivery, Canvases and Details are the other sections. The board and every section work without a canvas, and **Back** returns to where you came from. On a canvas card, **Open group project** opens the same workspace.
+Opening a group project lands on its **Board**: topics, unread counts, posting, urgent posts and cleanup. Members, Permissions, Actions, Post notifications, Canvases and Details are the other sections. The board and every section work without a canvas, and **Back** returns to where you came from. On a canvas card, **Open group project** opens the same workspace.
 
 ## Create and add to a canvas
 
@@ -28,7 +28,9 @@ An inbox post or @mention wakes a sleeping durable member by resuming its last s
 
 Use an urgent post (`urgent: true` in `post_bulletin`) rarely, for something that cannot wait. It skips batching and the notice rate limit and arrives next in line after the recipient's current turn; it never interrupts the turn. The post stays on the board.
 
-A lead can coordinate members and tidy the board. An admin can manage the group project. These are separate grants, and no agent gets either automatically on a new group project. Choose Allow, Ask first or Off for each member in the **Permissions** section. The group project also has its own switches for sending notices, waking sleeping members and running its Actions. Sending notices, waking members and running Actions are on by default. A person can turn waking off.
+A lead can wake and put members to sleep, and tidy the board by deleting messages and topics and protecting topics. An admin can change the group project itself: its membership, scope, roles, permissions and Actions. These are separate grants, and no agent gets either automatically on a new group project. Choose Allow, Ask first or Off for each member in the **Permissions** section. The Dispatcher can be admin of every group project, but asks you first. The group project also has its own switches, **Tell members about new posts**, **Wake sleeping members** and **Run group project Actions**. All three are on by default. A person can turn waking off.
+
+**Post notifications** sets who is told about new posts. A lead gets posts from every channel, a sleeping member gets a summary when it next connects, and nobody is told about their own post.
 
 Existing groups move to notices automatically; there is no repeated board-checking mode to configure.
 
