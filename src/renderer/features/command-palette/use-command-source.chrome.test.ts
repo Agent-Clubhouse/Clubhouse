@@ -57,8 +57,8 @@ describe('palette in the new shell', () => {
 
   it('lists hosts, and a satellite’s projects and agents with their host', () => {
     const list = items();
-    expect(list.find((i) => i.id === 'host:local')?.label).toBe('Switch to Local');
-    expect(list.find((i) => i.id === 'host:s1')).toMatchObject({ label: 'Switch to Studio', category: 'Hosts' });
+    expect(list.find((i) => i.id === 'host:local')?.label).toBe('Switch to this computer');
+    expect(list.find((i) => i.id === 'host:s1')).toMatchObject({ label: 'Switch to Studio', category: 'Computers' });
     expect(list.find((i) => i.id === `project:${rp}`)?.detail).toBe('on Studio');
     expect(list.find((i) => i.id === `agent:${ra}`)?.detail).toBe('Site on Studio · Done');
   });
@@ -125,7 +125,7 @@ describe('palette in the new shell', () => {
   it('adds none of this in the legacy shell', () => {
     useChromeFlagStore.setState({ enabled: false });
     const list = items();
-    expect(list.some((i) => i.category === 'Hosts')).toBe(false);
+    expect(list.some((i) => i.category === 'Computers')).toBe(false);
     expect(list.find((i) => i.id === 'nav:plugin:files')?.shortcut).toBeUndefined();
   });
 });

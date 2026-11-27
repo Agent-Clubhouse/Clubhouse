@@ -46,7 +46,7 @@ describe('SatelliteStartPage', () => {
     useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {} });
     render(<SatelliteStartPage activeHostId="s1" />);
     expect(screen.getByText('Connected · 192.168.1.24 · no projects open')).toBeTruthy();
-    fireEvent.click(screen.getByText('Switch to Local'));
+    fireEvent.click(screen.getByText('Switch to this computer'));
     expect(useUIStore.getState().activeHostId).toBeNull();
   });
 

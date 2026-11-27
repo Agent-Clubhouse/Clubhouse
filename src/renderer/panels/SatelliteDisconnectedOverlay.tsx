@@ -42,7 +42,7 @@ export const SatelliteDisconnectedOverlay = React.memo(function SatelliteDisconn
           Connection to {satelliteAlias} is not live
         </p>
         <p className="text-xs text-ctp-overlay0 mt-1">
-          {isRetrying ? 'Attempting to reconnect\u2026' : 'The remote machine may be offline or unreachable'}
+          {isRetrying ? 'Attempting to reconnect\u2026' : 'That computer may be offline or out of reach'}
         </p>
         {!isRetrying ? (
           <button

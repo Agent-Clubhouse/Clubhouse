@@ -814,7 +814,7 @@ export function ChromeSidebar() {
     reportChromeFeature('project_reorder');
   }, [reorderProjects, network, projects]);
 
-  // Merge with… and Split per machine, in each project's menu (#3065): they change only the sidebar.
+  // Merge with… and Split per computer, in each project's menu (#3065): they change only the sidebar.
   const [merging, setMerging] = useState<{ projectId: string; x: number; y: number } | null>(null);
   const projectLabel = useCallback((projectId: string) => {
     const project = [...projects, ...satellites.flatMap((s) => satelliteProjects[s.id] ?? [])].find((p) => p.id === projectId);
@@ -835,7 +835,7 @@ export function ChromeSidebar() {
         });
       }
       if ((network.members[projectId] ?? []).length > 1) {
-        items.push({ id: 'split', label: 'Split per machine', onSelect: () => { useNetworkSidebarStore.getState().split(projectId); } });
+        items.push({ id: 'split', label: 'Split per computer', onSelect: () => { useNetworkSidebarStore.getState().split(projectId); } });
       }
       return items;
     };

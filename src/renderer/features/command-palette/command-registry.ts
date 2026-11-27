@@ -6,7 +6,7 @@ export const CATEGORY = {
   recent: 'Recent',
   agents: 'Agents',
   projects: 'Projects',
-  hosts: 'Hosts',
+  hosts: 'Computers',
   canvases: 'Canvases',
   groupProjects: 'Group Projects',
   settings: 'Settings',

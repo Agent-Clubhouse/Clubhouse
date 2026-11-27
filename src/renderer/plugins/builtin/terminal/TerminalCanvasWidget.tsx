@@ -301,7 +301,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
             {activeProject?.name || 'Terminal'}
           </button>
         </Tooltip>
-        {remote.isRemote && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Remote</span>}
+        {remote.isRemote && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Other computer</span>}
         <span className="flex-1" />
         <span className="flex items-center gap-1.5 px-1.5 text-xs text-ctp-overlay1 flex-shrink-0" data-testid="canvas-terminal-status">
           <span

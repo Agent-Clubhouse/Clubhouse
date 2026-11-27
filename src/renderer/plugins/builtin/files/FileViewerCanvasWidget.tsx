@@ -214,7 +214,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         <span className={`truncate text-[13px] font-medium text-ctp-text flex-shrink-0 max-w-[40%] ${isAppMode ? '' : 'pl-1.5'}`}>
           {activeProject?.name || 'Project'}
         </span>
-        {remote.isRemote && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Remote</span>}
+        {remote.isRemote && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Other computer</span>}
         {hasMultipleWorktrees && !remote.isRemote && (
           <select
             className="h-7 max-w-[140px] px-1.5 text-xs bg-ctp-base text-ctp-subtext1 border border-surface-1 rounded-md cursor-pointer truncate focus-ring"

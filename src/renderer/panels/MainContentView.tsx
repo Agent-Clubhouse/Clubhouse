@@ -251,8 +251,8 @@ export function MainContentView() {
                   <rect x="14" y="4" width="4" height="16" rx="1" />
                 </svg>
               </div>
-              <p className="text-sm text-ctp-subtext0 font-medium">Session paused by remote</p>
-              <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
+              <p className="text-sm text-ctp-subtext0 font-medium">Remote control paused</p>
+              <p className="text-xs text-ctp-overlay0 mt-1">{activeSatellite?.alias || 'That computer'} has paused remote control.</p>
             </div>
           </div>
         )}

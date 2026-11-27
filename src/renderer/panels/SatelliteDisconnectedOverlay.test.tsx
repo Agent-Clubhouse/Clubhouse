@@ -22,7 +22,7 @@ describe('SatelliteDisconnectedOverlay', () => {
 
     expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
     expect(screen.getByText('Connection to My Laptop is not live')).toBeInTheDocument();
-    expect(screen.getByText('The remote machine may be offline or unreachable')).toBeInTheDocument();
+    expect(screen.getByText('That computer may be offline or out of reach')).toBeInTheDocument();
   });
 
   it('shows retry button when disconnected', () => {

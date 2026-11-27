@@ -27,7 +27,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
     return (
       <AnnexUnsupportedPlaceholder
         widgetType="Browser"
-        reason={url ? `Viewing ${url} on the satellite.` : 'Browser webviews cannot be streamed over Annex.'}
+        reason={url ? `Viewing ${url} on the other computer.` : 'Browser webviews cannot be streamed over Annex.'}
       />
     );
   }

@@ -7,7 +7,7 @@ describe('AnnexDisabledView', () => {
     render(<AnnexDisabledView pluginName="My Plugin" />);
 
     expect(screen.getByTestId('annex-disabled-view')).toBeInTheDocument();
-    expect(screen.getByText('Not Annex Enabled')).toBeInTheDocument();
+    expect(screen.getByText('Not available over Annex Network')).toBeInTheDocument();
     expect(screen.getByText('My Plugin')).toBeInTheDocument();
   });
 });

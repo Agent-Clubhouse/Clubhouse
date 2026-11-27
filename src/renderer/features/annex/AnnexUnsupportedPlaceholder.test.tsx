@@ -14,7 +14,7 @@ describe('AnnexUnsupportedPlaceholder', () => {
   });
 
   it('shows custom reason when provided', () => {
-    render(<AnnexUnsupportedPlaceholder widgetType="Browser" reason="Viewing https://example.com on the satellite." />);
-    expect(screen.getByText('Viewing https://example.com on the satellite.')).toBeTruthy();
+    render(<AnnexUnsupportedPlaceholder widgetType="Browser" reason="Viewing https://example.com on the other computer." />);
+    expect(screen.getByText('Viewing https://example.com on the other computer.')).toBeTruthy();
   });
 });

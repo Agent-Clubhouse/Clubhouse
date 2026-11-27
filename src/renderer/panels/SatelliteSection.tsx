@@ -25,7 +25,7 @@ export function LocalHostRow({ expanded, isActive, onClick }: {
   return (
     <button
       onClick={onClick}
-      title="Local"
+      title="This computer"
       data-testid="host-local"
       className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
         expanded ? 'hover:bg-surface-0' : ''
@@ -51,7 +51,7 @@ export function LocalHostRow({ expanded, isActive, onClick }: {
         </svg>
       </div>
       <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>
-        Local
+        This computer
       </span>
     </button>
   );

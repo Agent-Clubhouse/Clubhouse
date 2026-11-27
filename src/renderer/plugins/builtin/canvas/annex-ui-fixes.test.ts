@@ -48,7 +48,7 @@ describe('annex UI fixes', () => {
     it('overlay renders Session paused message', () => {
       const source = fs.readFileSync(CANVAS_WORKSPACE_PATH, 'utf-8');
       expect(source).toContain('Session paused');
-      expect(source).toContain('satellite has paused remote control');
+      expect(source).toContain('That computer has paused remote control.');
     });
   });
 
