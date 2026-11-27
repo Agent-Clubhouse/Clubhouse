@@ -17,10 +17,10 @@ beforeEach(() => {
   request.mockImplementation(async (_sat, _id, query) => ({ status: 'ok', value: { ...details, helperPageOnly: true, helperPage: page(query.offset) } }));
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-it('renders separate state/work/project/disposed counts and replaces bounded selected pages without writes', async () => {
+it('renders separate state/work/project/deleted counts and replaces bounded selected pages without writes', async () => {
   show(); expect(screen.getByText('First helper')).toBeInTheDocument(); expect(screen.getByText('Needs you')).toBeInTheDocument(); expect(screen.getByText('Host project display')).toBeInTheDocument(); expect(screen.getByText(/Pending count unavailable/)).toBeInTheDocument(); expect(request).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Open', exact: true })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Next helpers' })); await waitFor(() => expect(request).toHaveBeenCalledWith('sat', 'a1', { card: 'orchestrate', source: 'helpers', offset: 8 }));
-  await screen.findByRole('button', { name: 'Disposed (1)' }); fireEvent.click(screen.getByRole('button', { name: 'Disposed (1)' })); expect(await screen.findByText('Last helper')).toBeInTheDocument(); expect(screen.queryByText('First helper')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Next helpers' })).toBeDisabled();
+  await screen.findByRole('button', { name: 'Deleted (1)' }); fireEvent.click(screen.getByRole('button', { name: 'Deleted (1)' })); expect(await screen.findByText('Last helper')).toBeInTheDocument(); expect(screen.queryByText('First helper')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Next helpers' })).toBeDisabled();
 });
 it('withholds mismatched helper offset and private old content after denied or offline reads', async () => {
   request.mockResolvedValue({ status: 'ok', value: { ...details, helperPageOnly: true, helperPage: { ...page(), rows: [{ ...page().rows[0], name: 'PRIVATE_WRONG_PAGE' }] } } });

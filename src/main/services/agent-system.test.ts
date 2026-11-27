@@ -639,12 +639,12 @@ describe('agent-system', () => {
       }
     });
 
-    it('never starts a disposed helper (#2224)', async () => {
+    it('never starts a deleted helper (#2224)', async () => {
       mockGetDurableConfig.mockImplementation((async () => ({
         id: 'agent-1', name: 'gone', color: 'blue', createdAt: 'x', disposedAt: '2026-10-18T00:00:00.000Z',
       })) as never);
       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' }))
-        .rejects.toThrow(/disposed/);
+        .rejects.toThrow(/deleted/);
       expect(mockPtySpawn).not.toHaveBeenCalled();
       expect(getAgentProjectPath('agent-1')).toBeUndefined();
       mockGetDurableConfig.mockReset();

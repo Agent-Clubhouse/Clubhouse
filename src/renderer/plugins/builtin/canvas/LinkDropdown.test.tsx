@@ -83,7 +83,7 @@ describe('LinkDropdown', () => {
       <LinkDropdown agentView={agentView} views={[agentView]} onClose={vi.fn()} />,
     );
 
-    expect(container.textContent).toContain('No widgets on this canvas to link');
+    expect(container.textContent).toContain('No widgets on this canvas to connect');
   });
 
   it('shows connected state for bound targets', () => {
@@ -119,7 +119,7 @@ describe('LinkDropdown', () => {
     }));
   });
 
-  it('a new agent wire starts with clear and compact off and wake on; a browser wire doesn\'t (#2969, #3214)', async () => {
+  it('a new agent connection starts with clear and compact off and wake on; a browser connection doesn\'t (#2969, #3214)', async () => {
     const agentView = makeAgentView('a1', 'agent-1');
     const otherView = makeAgentView('a2', 'agent-2');
     const browserView = makeBrowserView('b1');

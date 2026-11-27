@@ -42,7 +42,7 @@ export function RemoteDispatcherDetails({ machineId }: { machineId: string }) {
         ) : (
           <p className="max-w-md text-sm text-ctp-subtext0">This computer’s list of Dispatchers on other computers doesn’t have that one.</p>
         )}
-        <p className="text-xs text-ctp-overlay1">Published presence and link observed by this computer.</p>
+        <p className="text-xs text-ctp-overlay1">Published presence and connection observed by this computer.</p>
       </div>
       <RemoteDispatcherRoleDetails key={machine} machineId={machine} dispatcherName={remote?.dispatcherName || 'Dispatcher'} publishedLink={remote ? presenceLinkText(remote) : undefined} />
     </div>

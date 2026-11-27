@@ -488,7 +488,7 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath, agentId) => {
       const config = await agentConfig.getDurableConfig(projectPath, agentId);
       if (!config) return { ok: true, message: 'Already removed' };
-      if (!isDisposedAgent(config)) return { ok: false, message: `${config.name} isn't disposed` };
+      if (!isDisposedAgent(config)) return { ok: false, message: `${config.name} isn't deleted` };
       const result = await agentConfig.deleteUnregister(projectPath, agentId);
       // Its own disposed helpers (a helper that orchestrated) have no card left either (#3186).
       if (result.ok) await removeDisposedHelpersOf(projectPath, agentId);
@@ -511,7 +511,7 @@ export function registerAgentHandlers(): void {
       for (const { projectPath, agentId } of entries) {
         const config = await agentConfig.getDurableConfig(projectPath, agentId);
         if (!config) continue;
-        if (!isDisposedAgent(config)) { failed.push({ agentId, message: `${config.name} isn't disposed` }); continue; }
+        if (!isDisposedAgent(config)) { failed.push({ agentId, message: `${config.name} isn't deleted` }); continue; }
         const result = await agentConfig.deleteUnregister(projectPath, agentId);
         if (!result.ok) { failed.push({ agentId, message: result.message }); continue; }
         removed++;

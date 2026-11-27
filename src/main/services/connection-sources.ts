@@ -142,8 +142,8 @@ async function pairState(agentId: string, targetId: string): Promise<{ sources: 
  */
 export async function removeConnectionSource(agentId: string, targetId: string, kind: ConnectionSourceKind): Promise<RemoveConnectionSourceResult> {
   const route = removalRoute(kind);
-  if (route === 'canvas') return { ok: false, error: 'Remove a canvas wire on its canvas.' };
-  if (route === 'helpers') return { ok: false, error: 'A helper stays connected to its orchestrator while it exists. Dispose it from the Helpers card to end it.' };
+  if (route === 'canvas') return { ok: false, error: 'Remove a canvas connection on its canvas.' };
+  if (route === 'helpers') return { ok: false, error: 'A helper stays connected to its orchestrator while it exists. Delete it from the Helpers card to end it.' };
   if (route === 'none') return { ok: false, error: 'This connection’s source can’t be removed here.' };
   const before = await pairState(agentId, targetId);
   if (!before.sources.some((s) => s.kind === kind)) return { ok: false, error: 'That source no longer holds this connection. Reload to see what does.' };
@@ -169,7 +169,7 @@ export async function removeConnectionSource(agentId: string, targetId: string, 
       await removeUserLink(agentId, targetId);
     } else if (kind === 'dispatcher_auto') {
       const other = nonDispatcherEnd(agentId, targetId);
-      if (!other) return { ok: false, error: 'This isn\u2019t a wire to the Dispatcher.' };
+      if (!other) return { ok: false, error: 'This isn\u2019t a connection to the Dispatcher.' };
       if (!(await saveWireRemoval(other))) return { ok: false, error: 'Couldn\u2019t find that agent to turn off Connect to Dispatcher. Nothing changed.' };
     }
     // Every source's view and the bindings caught up, so what's left is what holds it now.

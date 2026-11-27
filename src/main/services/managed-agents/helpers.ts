@@ -15,7 +15,7 @@ export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MC
 
 /** start_helper's refusal while the person hasn't let orchestrators choose helper templates (#2899, D31). */
 export const HELPER_TEMPLATE_CHOICE_OFF =
-  'helpers here always use the helper template the person set (yours, else the app\'s default), so template, addParts and removeParts are refused. Leave them out, or ask the person to turn on "Let orchestrators choose helper templates" in Settings › Managed agents › Helpers.';
+  'helpers here always use the helper template the person set (yours, else the app\'s default), so template, addParts and removeParts are refused. Leave them out, or ask the person to turn on "Let orchestrators choose helper templates" on the Helpers page in Settings.';
 
 /**
  * The template a helper starts from when start_helper names none: the

@@ -147,7 +147,7 @@ export class PtyAgentRuntime implements AgentRuntime {
   }
 
   async answerQuestion(): Promise<void> {
-    throw new Error('Agents in the CLI view answer questions in the CLI');
+    throw new Error('Agents in the Terminal view answer questions in the terminal');
   }
 
   /** The id the CLI printed into the terminal, when the provider can recognise it. */

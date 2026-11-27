@@ -125,9 +125,9 @@ export const DEFAULT_DISPATCHER_BEHAVIOR_STATE: DispatcherBehaviorState = {
 export function behaviorAutoNote(auto: DispatcherBehaviorAuto, providerName: string): string | null {
   if (auto.ready === true) return null;
   if (auto.code === 'auto_not_supported') {
-    return `Auto doesn’t support ${providerName} yet, so it runs on ${providerName}’s default model. Behavior still sets how often it checks in.`;
+    return `Smart routing doesn’t support ${providerName} yet, so it runs on ${providerName}’s default model. Behavior still sets how often it checks in.`;
   }
-  return `Auto has no model for this level on ${providerName} right now, so it keeps the model it has until Auto is set up.`;
+  return `Smart routing has no model for this level on ${providerName} right now, so it keeps the model it has until Smart routing is set up.`;
 }
 
 /** "Set up Auto" is offered only where setting up the mapping can fix it. */

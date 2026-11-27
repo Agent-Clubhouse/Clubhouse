@@ -312,7 +312,7 @@ function errorResult(tool: string, callerId: string, err: unknown, args?: Record
   return text(`${tool} failed: ${message}`, true);
 }
 
-const STAYS_NOTE = 'It stays connected because a canvas wire, zone or helper link also connects it; change that on the canvas.';
+const STAYS_NOTE = 'It stays connected because a canvas connection, zone or helper connection also connects it; change that on the canvas.';
 
 function membershipMessage(agent: DurableAgentConfig, project: GroupProject, outcome: JoinOutcome): string {
   if (outcome === 'out_of_scope') return groupProjectHost.outOfScopeMessage(project, agent.name);
@@ -777,7 +777,7 @@ export function registerConnectionTools(): void {
   registerGlobalTool('disconnect_agents', {
     description:
       'Remove a connection made with connect_agents. Set twoWay to remove both directions. ' +
-      'Connections drawn on the canvas, and the link between you and your helpers, stay.',
+      'Connections drawn on the canvas, and the connection between you and your helpers, stay.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -791,7 +791,7 @@ export function registerConnectionTools(): void {
   }, handleDisconnectAgents, { ...connectionOptions, grant: { actions: ['connection.manage'], target: 'agent_arg', allowRemote: true, from: { args: ['from', 'to'], names: 'registered' } } });
 
   registerGlobalTool('set_connection_tools', {
-    description: 'Set one direction of a connection you made. Other sources and directions stay unchanged. Returns saved switches. Reset tools require your agent.reset grant on the receiver. Dispatcher-owned links keep their existing ownership rules.',
+    description: 'Set one direction of a connection you made. Other sources and directions stay unchanged. Returns saved switches. Reset tools require your agent.reset grant on the receiver. Dispatcher-owned connections keep their existing ownership rules.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -799,7 +799,7 @@ export function registerConnectionTools(): void {
         to: { type: 'string', description: CONNECTION_AGENT_REF },
         allow: { type: 'array', items: { type: 'string', enum: CONNECTION_SWITCHES.map((s) => s.tool) } },
         twoWay: { type: 'boolean', description: 'Also set the reverse direction. Default false.' },
-        two_way: { type: 'boolean', description: 'Compatibility spelling of twoWay for Dispatcher links.' },
+        two_way: { type: 'boolean', description: 'Compatibility spelling of twoWay for Dispatcher connections.' },
         allow_back: { type: 'array', items: { type: 'string', enum: CONNECTION_SWITCHES.map((s) => s.tool) } },
       },
       required: ['from', 'to', 'allow'],

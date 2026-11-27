@@ -73,7 +73,7 @@ beforeEach(() => {
   });
   vi.mocked(settleHelpers).mockImplementation(async (_p, _id, choice) => {
     calls.push(`settle:${choice}`);
-    return { ok: true, message: choice === 'dispose' ? 'Disposed 2 helper(s)' : 'Kept 2 helper(s)', helperIds: ['h1', 'h2'] };
+    return { ok: true, message: choice === 'dispose' ? 'Deleted 2 helper(s)' : 'Kept 2 helper(s)', helperIds: ['h1', 'h2'] };
   });
 });
 
@@ -89,18 +89,18 @@ describe('deleteAgent (#3182)', () => {
     vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
     const result = await deleteAgent(PROJECT, 'orch', { mode: 'force' });
     expect(result.ok).toBe(false);
-    expect(result.message).toBe('Lead has 2 helpers. Choose whether to dispose or keep them.');
+    expect(result.message).toBe('Lead has 2 helpers. Choose whether to delete or keep them.');
     expect(result.needsHelperChoice).toEqual({ helpers: [{ id: 'h1', name: 'scout' }, { id: 'h2', name: 'fixer' }] });
     expect(calls).toEqual(['lock:orch']);
   });
 
-  it('dispose: disposes the helpers in every project, then stops and deletes the orchestrator', async () => {
+  it('delete: deletes the helpers in every project, then stops and deletes the orchestrator', async () => {
     vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
     vi.mocked(isAgentRunning).mockReturnValue(true);
     const result = await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
     expect(result).toEqual({
       ok: true, message: 'Force deleted', deleted: true,
-      helpers: { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['h1', 'h2'] },
+      helpers: { ok: true, message: 'Deleted 2 helper(s)', helperIds: ['h1', 'h2'] },
     });
     expect(listHelpersEverywhere).toHaveBeenCalledWith(PROJECT, 'orch', { recursive: true });
     expect(settleHelpers).toHaveBeenCalledWith(PROJECT, 'orch', 'dispose', undefined);
@@ -133,12 +133,12 @@ describe('deleteAgent (#3182)', () => {
     expect(agentConfig.deleteForce).not.toHaveBeenCalled();
   });
 
-  it('dispose: helpers with work at risk stop it before the orchestrator is touched', async () => {
+  it('delete: helpers with work at risk stop it before the orchestrator is touched', async () => {
     vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
     vi.mocked(isAgentRunning).mockReturnValue(true);
     const blocked: HelperCascadeResult = {
       ok: false,
-      message: 'scout has work that disposing would lose, or couldn\'t be checked',
+      message: 'scout has work that deleting would lose, or couldn\'t be checked',
       blocked: [{ agentId: 'h1', name: 'scout', checks: { dirty: 3, unpushed: 0, unmerged: 0 } }],
     };
     vi.mocked(settleHelpers).mockResolvedValueOnce(blocked);
@@ -148,19 +148,19 @@ describe('deleteAgent (#3182)', () => {
     expect(agentConfig.deleteForce).not.toHaveBeenCalled();
   });
 
-  it('dispose: a helper that failed part way keeps the orchestrator', async () => {
+  it('delete: a helper that failed part way keeps the orchestrator', async () => {
     vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
     const partial: HelperCascadeResult = {
-      ok: false, message: 'Disposed 1 of 2 helpers', helperIds: ['h2'],
+      ok: false, message: 'Deleted 1 of 2 helpers', helperIds: ['h2'],
       failed: [{ agentId: 'h1', name: 'scout', reason: 'EBUSY' }],
     };
     vi.mocked(settleHelpers).mockResolvedValueOnce(partial);
     const result = await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
-    expect(result).toEqual({ ok: false, message: 'Disposed 1 of 2 helpers', helpers: partial });
+    expect(result).toEqual({ ok: false, message: 'Deleted 1 of 2 helpers', helpers: partial });
     expect(agentConfig.deleteForce).not.toHaveBeenCalled();
   });
 
-  it('passes forceHelpers through to the dispose', async () => {
+  it('passes forceHelpers through to the delete', async () => {
     vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
     await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose', forceHelpers: true });
     expect(settleHelpers).toHaveBeenCalledWith(PROJECT, 'orch', 'dispose', true);
@@ -283,7 +283,7 @@ describe('deleteAgent (#3182)', () => {
       let openDuringSettle: boolean | undefined;
       vi.mocked(settleHelpers).mockImplementationOnce(async () => {
         openDuringSettle = gate.open.has('orch');
-        return { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['h1', 'h2'] };
+        return { ok: true, message: 'Deleted 2 helper(s)', helperIds: ['h1', 'h2'] };
       });
       const result = await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
       expect(result.ok).toBe(true);
@@ -314,8 +314,8 @@ describe('deleteAgent (#3182)', () => {
         .mockResolvedValueOnce([{ projectPath: PROJECT, config: { id: 'h3', name: 'late', color: 'teal', createdAt: 'x', parentAgentId: 'orch' } }] as never)
         .mockResolvedValue([]);
       vi.mocked(settleHelpers)
-        .mockResolvedValueOnce({ ok: true, message: 'Disposed 2 helper(s)', helperIds: ['h1', 'h2'] })
-        .mockResolvedValueOnce({ ok: true, message: 'Disposed 1 helper(s)', helperIds: ['h3'] });
+        .mockResolvedValueOnce({ ok: true, message: 'Deleted 2 helper(s)', helperIds: ['h1', 'h2'] })
+        .mockResolvedValueOnce({ ok: true, message: 'Deleted 1 helper(s)', helperIds: ['h3'] });
       const result = await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
       expect(settleHelpers).toHaveBeenCalledTimes(2);
       expect(result.helpers?.helperIds).toEqual(['h1', 'h2', 'h3']);
@@ -392,7 +392,7 @@ describe('deleteAgent (#3182)', () => {
       await deleteAgent(PROJECT, 'orch', { mode: 'force', checkWorktree: true });
       // A helper that failed part way.
       vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
-      vi.mocked(settleHelpers).mockResolvedValueOnce({ ok: false, message: 'Disposed 1 of 2 helpers', helperIds: ['h2'], failed: [{ agentId: 'h1', name: 'scout', reason: 'EBUSY' }] });
+      vi.mocked(settleHelpers).mockResolvedValueOnce({ ok: false, message: 'Deleted 1 of 2 helpers', helperIds: ['h2'], failed: [{ agentId: 'h1', name: 'scout', reason: 'EBUSY' }] });
       await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
       // The delete itself failed.
       vi.mocked(agentConfig.deleteForce).mockResolvedValueOnce({ ok: false, message: 'locked' });

@@ -201,7 +201,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
     spawnDurableAgent: async (projectId, projectPath, config, resume, mission?) => {
       const agentId = config.id;
       // A disposed helper (#2224) keeps its row but has no worktree to run in.
-      if (config.disposedAt) throw new Error(`${config.name} was disposed and can't be started`);
+      if (config.disposedAt) throw new Error(`${config.name} was deleted and can't be started`);
 
       const agent: Agent = {
         id: agentId,
@@ -437,11 +437,11 @@ export function describeHelperBlock(result: HelperCascadeResult): string {
   if (result.failed && result.failed.length > 0) {
     const done = result.helperIds?.length ?? 0;
     const failed = joinNames(result.failed.map((f) => `${f.name} (${f.reason})`));
-    return `Disposed ${plural(done, 'helper', 'helpers')}, but couldn't dispose ${failed}, so the orchestrator was not deleted.`;
+    return `Deleted ${plural(done, 'helper', 'helpers')}, but couldn't delete ${failed}, so the orchestrator was not deleted.`;
   }
   if (!result.blocked || result.blocked.length === 0) return result.message;
   const list = joinNames(result.blocked.map(describeBlock));
-  return `Nothing was deleted. Disposing would lose work in ${list}. Keep the helpers, or commit and push their work first.`;
+  return `Nothing was deleted. Deleting would lose work in ${list}. Keep the helpers, or commit and push their work first.`;
 }
 
 /**

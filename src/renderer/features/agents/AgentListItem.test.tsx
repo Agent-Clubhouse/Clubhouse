@@ -503,7 +503,7 @@ describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
     expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'agent-1', card: 'helpers' });
   });
 
-  it('shows a helper’s dispose request and opens the dispose dialog for it', () => {
+  it('shows a helper’s delete request and opens the delete dialog for it', () => {
     const onSelect = vi.fn();
     resetStores();
     useHelperDisposeRequestStore.getState().add({
@@ -512,7 +512,7 @@ describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
     } as never, 'orch');
     render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={onSelect} />);
     const line = screen.getByTestId('agent-helper-request');
-    expect(line).toHaveTextContent('orch asked to dispose this helper');
+    expect(line).toHaveTextContent('orch asked to delete this helper');
     fireEvent.click(line);
     expect(onSelect).toHaveBeenCalledWith('agent-1');
     expect(useHelperDisposeRequestStore.getState().reviewing).toBe('agent-1');

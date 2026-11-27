@@ -186,8 +186,8 @@ export function LevelPill({ level, capabilities, levelNames, onChange, compact }
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={compact ? `Permissions: ${LEVEL_LABELS[current]}` : canChange ? 'Permission level' : "This agent can't change permission level mid-session"}
-        aria-label={compact ? `Permissions: ${LEVEL_LABELS[current]}` : undefined}
+        title={compact ? `Access: ${LEVEL_LABELS[current]}` : canChange ? 'Access' : "This agent can't change its access mid-session"}
+        aria-label={compact ? `Access: ${LEVEL_LABELS[current]}` : undefined}
         className={`h-[26px] flex items-center gap-1.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-60 ${compact ? 'px-2' : 'px-2.5'}`}
         data-testid="chat-level-pill"
       >
@@ -201,7 +201,7 @@ export function LevelPill({ level, capabilities, levelNames, onChange, compact }
           className="absolute left-0 bottom-9 w-[300px] bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Permissions</div>
+          <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Access</div>
           {levels.map((l) => {
             return (
               <button
@@ -915,8 +915,8 @@ export function Composer(props: ComposerProps) {
                 type="button"
                 onClick={() => setMoreOpen((o) => !o)}
                 aria-expanded={moreOpen}
-                aria-label={props.behaviorChip ? 'Attach and Behavior' : 'Attach, permissions and model'}
-                title={props.behaviorChip ? 'Attach and Behavior' : 'Attach, permissions and model'}
+                aria-label={props.behaviorChip ? 'Attach and Behavior' : 'Attach, access and model'}
+                title={props.behaviorChip ? 'Attach and Behavior' : 'Attach, access and model'}
                 className="w-7 h-7 flex-shrink-0 rounded-md grid place-items-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0"
                 data-testid="chat-composer-plus"
               >

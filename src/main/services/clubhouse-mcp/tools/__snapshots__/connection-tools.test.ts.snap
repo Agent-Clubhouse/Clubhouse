@@ -16,11 +16,11 @@ exports[`ordinary agents with connection.manage (#3336) > describes the availabl
   ],
   [
     "disconnect_agents",
-    "Remove a connection made with connect_agents. Set twoWay to remove both directions. Connections drawn on the canvas, and the link between you and your helpers, stay.",
+    "Remove a connection made with connect_agents. Set twoWay to remove both directions. Connections drawn on the canvas, and the connection between you and your helpers, stay.",
   ],
   [
     "set_connection_tools",
-    "Set one direction of a connection you made. Other sources and directions stay unchanged. Returns saved switches. Reset tools require your agent.reset grant on the receiver. Dispatcher-owned links keep their existing ownership rules.",
+    "Set one direction of a connection you made. Other sources and directions stay unchanged. Returns saved switches. Reset tools require your agent.reset grant on the receiver. Dispatcher-owned connections keep their existing ownership rules.",
   ],
   [
     "list_connections",

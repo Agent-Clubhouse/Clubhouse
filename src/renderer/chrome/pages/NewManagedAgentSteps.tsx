@@ -536,7 +536,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
             </SettingRow>
             {orchestrating && (
               <SettingRow
-                label="Helper limit"
+                label="Helpers at once"
                 htmlFor="new-agent-builder-helper-limit"
                 help={limitProblem
                   ? <span id="new-agent-builder-helper-limit-error" className="text-ctp-error">{limitProblem}</span>

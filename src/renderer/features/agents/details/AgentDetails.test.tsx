@@ -69,7 +69,7 @@ describe('AgentDetails in the terminal', () => {
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('2 configured');
     fireEvent.click(screen.getByTestId('details-card-session-toggle'));
     const session = screen.getByTestId('details-card-session');
-    expect(session).toHaveTextContent('Claude Code · CLI');
+    expect(session).toHaveTextContent('Claude Code · Terminal');
     expect(session).toHaveTextContent('.clubhouse/agents/faithful-urchin');
     expect(session).toHaveTextContent('faithful-urchin/rows');
     // The terminal has no turns: Changes offers only the branch.
@@ -145,7 +145,7 @@ describe('AgentDetails in the terminal', () => {
     expect(screen.getByTestId(`details-card-${card === 'subagents' ? 'session' : card === 'helpers' ? 'orchestrate' : card}`)).toHaveAttribute('data-open', 'true');
   });
 
-  it('offers an empty Connections card for a local durable agent before it has wires', () => {
+  it('offers an empty Connections card for a local durable agent before it has connections', () => {
     render(<AgentDetails agent={agent} />);
     fireEvent.click(screen.getByTestId('details-card-connections-toggle'));
     expect(screen.getByRole('button', { name: 'Add connection' })).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe('AgentDetails in the terminal', () => {
     render(<AgentDetails agent={agent} />);
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'connections' }); });
     expect(await screen.findByTestId('details-card-connections')).toHaveAttribute('data-open', 'true');
-    expect(screen.getByText(/No Clubhouse MCP wires/)).toBeInTheDocument();
+    expect(screen.getByText(/No Clubhouse MCP connections/)).toBeInTheDocument();
   });
 
   it('lets a quick agent edit its existing disabled tools through the canvas Connections route (#3213)', async () => {

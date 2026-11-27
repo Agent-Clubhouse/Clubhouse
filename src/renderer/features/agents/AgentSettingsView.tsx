@@ -934,7 +934,7 @@ export function AgentSettingsView({ agent }: Props) {
     : worktreePath;
   const permissionsSupported = capabilities?.permissions ?? false;
   const orchestratorName = orchestratorInfo?.displayName || 'this CLI';
-  const stopFirst = isRunning ? 'Stop the agent to change this' : undefined;
+  const stopFirst = isRunning ? 'Put the agent to sleep to change this' : undefined;
 
   const reloadButton = (
     <Button
@@ -958,14 +958,14 @@ export function AgentSettingsView({ agent }: Props) {
     <div data-testid="agent-settings-running" className="h-10 mb-2 flex items-center gap-2 border-b border-surface-0 text-[13px]">
       <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-success" aria-hidden="true" />
       <span className="text-ctp-text">Working</span>
-      <span className="text-xs text-ctp-overlay1 truncate">{isManagedAgent ? 'Stop the agent to change its name or CLI. Other changes apply when it restarts.' : 'Stop the agent to change these settings.'}</span>
+      <span className="text-xs text-ctp-overlay1 truncate">{isManagedAgent ? 'Put the agent to sleep to change its name or CLI. Other changes apply when it restarts.' : 'Put the agent to sleep to change these settings.'}</span>
       <Button
         kind="ghost"
         onClick={handleStop}
         className="ml-auto"
         icon={<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>}
       >
-        Stop
+        Sleep
       </Button>
     </div>
   );
@@ -1121,7 +1121,7 @@ export function AgentSettingsView({ agent }: Props) {
           onBlur={handleRenameConfirm}
           onKeyDown={handleRenameKeyDown}
           disabled={isRunning}
-          title={isRunning ? 'Stop the agent to rename it' : undefined}
+          title={isRunning ? 'Put the agent to sleep to rename it' : undefined}
           spellCheck={false}
           className={`${inputClass} w-60`}
         />

@@ -39,7 +39,7 @@ vi.mock('../services/agent-config', () => ({
   deleteForce: vi.fn(() => ({ ok: true })),
   deleteUnregister: vi.fn(() => ({ ok: true })),
   getDisposeChecks: vi.fn(async () => ({ dirty: 0, unpushed: 0, unmerged: 0 })),
-  disposeHelper: vi.fn(async () => ({ ok: true, message: 'Disposed' })),
+  disposeHelper: vi.fn(async () => ({ ok: true, message: 'Deleted' })),
 }));
 
 vi.mock('../services/agent-creation', async (importOriginal) => ({
@@ -371,7 +371,7 @@ describe('agent-handlers', () => {
     });
   });
 
-  describe('disposing helpers from the UI (#2232)', () => {
+  describe('deleting helpers from the UI (#2232)', () => {
     const helper = { id: 'h1', name: 'impl-ipc', parentAgentId: 'agent-1' };
     const clean = { dirty: 0, unpushed: 0, unmerged: 0 };
     let order: string[];
@@ -381,19 +381,19 @@ describe('agent-handlers', () => {
       vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(helper as never);
       vi.mocked(agentConfig.getDisposeChecks).mockImplementation(async () => { order.push('check'); return clean; });
       vi.mocked(agentSystem.killAgent).mockImplementation(async () => { order.push('kill'); });
-      vi.mocked(agentConfig.disposeHelper).mockImplementation(async () => { order.push('dispose'); return { ok: true, message: 'Disposed', checks: clean }; });
+      vi.mocked(agentConfig.disposeHelper).mockImplementation(async () => { order.push('dispose'); return { ok: true, message: 'Deleted', checks: clean }; });
       vi.mocked(agentSystem.isAgentRunning).mockReturnValue(false);
     });
 
     const dispose = (...args: unknown[]) => handlers.get(IPC.AGENT.DISPOSE_HELPER)!({}, '/project', 'h1', ...args);
 
-    it('returns the dispose checks', async () => {
+    it('returns the delete checks', async () => {
       const result = await handlers.get(IPC.AGENT.GET_DISPOSE_CHECKS)!({}, '/project', 'h1');
       expect(agentConfig.getDisposeChecks).toHaveBeenCalledWith('/project', 'h1');
       expect(result).toEqual(clean);
     });
 
-    it('checks, then disposes a helper main has asleep, under the orchestrator\'s lock', async () => {
+    it('checks, then deletes a helper main has asleep, under the orchestrator\'s lock', async () => {
       const result = await dispose();
       expect(order).toEqual(['check', 'dispose']);
       expect(orchestrationPolicy.withAgentLock).toHaveBeenCalledWith('/project', 'agent-1', expect.any(Function));
@@ -403,7 +403,7 @@ describe('agent-handlers', () => {
       expect(broadcastSnapshotRefresh).toHaveBeenCalled();
     });
 
-    it('stops a helper main has running and waits for the exit, then checks again before disposing', async () => {
+    it('stops a helper main has running and waits for the exit, then checks again before deleting', async () => {
       vi.mocked(agentSystem.isAgentRunning).mockReturnValue(true);
       const result = await dispose();
       expect(order).toEqual(['check', 'kill', 'check', 'dispose']);
@@ -470,7 +470,7 @@ describe('agent-handlers', () => {
       expect(agentConfig.getDisposeChecks).not.toHaveBeenCalled();
     });
 
-    it('removes a disposed row and refuses a live one', async () => {
+    it('removes a deleted row and refuses a live one', async () => {
       vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...helper, disposedAt: '2026-10-18T10:00:00Z' } as never);
       const removed = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
       expect(agentConfig.deleteUnregister).toHaveBeenCalledWith('/project', 'h1');
@@ -478,18 +478,18 @@ describe('agent-handlers', () => {
 
       vi.mocked(agentConfig.deleteUnregister).mockClear();
       const refused = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
-      expect(refused).toEqual({ ok: false, message: 'impl-ipc isn\'t disposed' });
+      expect(refused).toEqual({ ok: false, message: 'impl-ipc isn\'t deleted' });
       expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
     });
 
-    it('removes a disposed row\'s own disposed helpers too (#3186)', async () => {
+    it('removes a deleted row\'s own deleted helpers too (#3186)', async () => {
       vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...helper, disposedAt: '2026-10-18T10:00:00Z' } as never);
       vi.mocked(removeDisposedHelpersOf).mockClear();
       await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
       expect(removeDisposedHelpersOf).toHaveBeenCalledWith('/project', 'h1');
     });
 
-    it('clears many disposed rows, skipping gone ones and refusing live ones (#3186)', async () => {
+    it('clears many deleted rows, skipping gone ones and refusing live ones (#3186)', async () => {
       const disposed = { ...helper, disposedAt: '2026-10-18T10:00:00Z' };
       vi.mocked(agentConfig.getDurableConfig).mockImplementation(async (_p: string, id: string) => (
         id === 'live' ? helper : id === 'gone' ? undefined : { ...disposed, id }
@@ -499,7 +499,7 @@ describe('agent-handlers', () => {
       const result = await handlers.get(IPC.AGENT.REMOVE_DISPOSED_MANY)!({}, [
         { projectPath: '/a', agentId: 'd1' }, { projectPath: '/b', agentId: 'gone' }, { projectPath: '/b', agentId: 'live' }, { projectPath: '/b', agentId: 'd2' },
       ]);
-      expect(result).toEqual({ removed: 2, failed: [{ agentId: 'live', message: 'impl-ipc isn\'t disposed' }] });
+      expect(result).toEqual({ removed: 2, failed: [{ agentId: 'live', message: 'impl-ipc isn\'t deleted' }] });
       expect(vi.mocked(agentConfig.deleteUnregister).mock.calls).toEqual([['/a', 'd1'], ['/b', 'd2']]);
       expect(vi.mocked(removeDisposedHelpersOf).mock.calls).toEqual([['/a', 'd1'], ['/b', 'd2']]);
       await expect(Promise.resolve().then(() => handlers.get(IPC.AGENT.REMOVE_DISPOSED_MANY)!({}, [{ projectPath: '/a' }]))).rejects.toThrow('needs a projectPath and an agentId');
@@ -546,7 +546,7 @@ describe('agent-handlers', () => {
       });
     });
 
-    describe('reporting the user\'s dispose decision', () => {
+    describe('reporting the user\'s delete decision', () => {
       const report = (...args: unknown[]) => handlers.get(IPC.AGENT.REPORT_DISPOSE_DECISION)!({}, ...args);
       let sendMessage: ReturnType<typeof vi.fn>;
 
@@ -702,9 +702,9 @@ describe('agent-handlers', () => {
     expect(agentDelete.deleteAgent).not.toHaveBeenCalled();
   });
 
-  it('DELETE_AGENT refreshes windows when helpers were disposed though the agent stayed', async () => {
+  it('DELETE_AGENT refreshes windows when helpers were deleted though the agent stayed', async () => {
     vi.mocked(agentDelete.deleteAgent).mockResolvedValueOnce({
-      ok: false, message: 'locked', helpers: { ok: true, message: 'Disposed 1 helper(s)', helperIds: ['h1'] },
+      ok: false, message: 'locked', helpers: { ok: true, message: 'Deleted 1 helper(s)', helperIds: ['h1'] },
     });
     await handlers.get(IPC.AGENT.DELETE_AGENT)!({}, '/project', 'agent-1', 'force', 'dispose');
     expect(broadcastSnapshotRefresh).toHaveBeenCalled();

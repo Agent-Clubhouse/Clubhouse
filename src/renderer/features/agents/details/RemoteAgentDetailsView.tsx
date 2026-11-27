@@ -120,7 +120,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     details?.providerLabel ? { id: details.providerId, label: details.providerLabel } : agent.kind === 'quick' && quickProvider ? { id: details?.providerId, label: quickProvider } : undefined,
     details?.settings ? { id: details.settings.providerId, label: details.settings.provider } : undefined);
   const lastProvider = card('session')?.rows.find((r) => r.label === 'Last CLI')?.value ?? (agent.kind === 'quick' ? quickProvider : undefined) ?? 'Not recorded for the last session';
-  const provider = asleep ? lastProvider : runtimeUnconfirmed ? 'Current provider not confirmed' : details?.sessionId && !session && !asleep ? 'Current provider evidence unavailable' : reportedProvider ?? details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? 'Not reported by host';
+  const provider = asleep ? lastProvider : runtimeUnconfirmed ? 'Current CLI not confirmed' : details?.sessionId && !session && !asleep ? 'Current CLI evidence unavailable' : reportedProvider ?? details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? 'Not reported by host';
   const map = useMemo(() => {
     if (!session) return null;
     const value = buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state });
@@ -201,11 +201,11 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     <div className="px-1 text-xs text-ctp-overlay1" role="status" data-testid="remote-details-freshness">
       {!address ? 'The remote agent identity is unavailable. Select it again after the host refreshes.' : details ? <>Read from {host} at {new Date(details.readAt).toLocaleTimeString()}. Read-only.</> : resultMessage(result.status)}
       {snapshotUnavailable && ' The host snapshot is unavailable; retained data may be stale.'}
-      {details?.providerEvidenceState === 'unavailable' && <p>The host has no current runtime display report. Earlier session values are withheld. <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh provider reports</Button></p>}
-      {details?.providerEvidenceState === 'unsupported' && details.sessionId && <p>This host runtime does not share current provider display reports.</p>}
-      {hydrated.waiting && <p>{hydrated.loading ? 'Refreshing provider evidence from the host…' : 'Current provider evidence has not been refreshed. Retained session data is withheld.'}</p>}
-      {hydrated.partial && <p>{hydrated.evidence ? 'Only part of the host transcript is loaded. Display reports from this runtime open are read separately; earlier stream activity may be missing.' : 'Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.'}</p>}
-      {hydrated.evidence && <p>Provider facts observed on the host since this runtime opened, read at {new Date(hydrated.evidence.readAt).toLocaleTimeString()}. {hydrated.evidence.completeFromStart ? 'This runtime open was observed from its start; resumed conversation history is separate.' : 'A native session changed; earlier facts were cleared.'}</p>}
+      {details?.providerEvidenceState === 'unavailable' && <p>The host has no current runtime display report. Earlier session values are withheld. <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh CLI reports</Button></p>}
+      {details?.providerEvidenceState === 'unsupported' && details.sessionId && <p>This host runtime does not share current CLI display reports.</p>}
+      {hydrated.waiting && <p>{hydrated.loading ? 'Refreshing CLI evidence from the host…' : 'Current CLI evidence has not been refreshed. Retained session data is withheld.'}</p>}
+      {hydrated.partial && <p>{hydrated.evidence ? 'Only part of the host transcript is loaded. Display reports from this runtime open are read separately; earlier stream activity may be missing.' : 'Only part of the host transcript is loaded. Earlier CLI reports and subagent activity may be missing.'}</p>}
+      {hydrated.evidence && <p>CLI facts observed on the host since this runtime opened, read at {new Date(hydrated.evidence.readAt).toLocaleTimeString()}. {hydrated.evidence.completeFromStart ? 'This runtime open was observed from its start; resumed conversation history is separate.' : 'A native session changed; earlier facts were cleared.'}</p>}
       {hydrated.evidence && <ProviderEvidenceNotes evidence={hydrated.evidence} />}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
@@ -217,12 +217,12 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     {showSubagents && session && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
       {(!connected || asleep || snapshotUnavailable) && <CardNote>Last loaded session snapshot. Current subagent status is not confirmed.</CardNote>}
       {hydrated.evidence && !hydrated.evidence.values.subagents && <CardNote>No subagent report has arrived in this runtime open. Earlier conversation activity is separate.</CardNote>}
-      {hydrated.evidence && hydrated.partial && <CardNote>Provider-reported subagents include this runtime’s earlier reports. Tool activity and timings still depend on the loaded transcript and may be incomplete.</CardNote>}
+      {hydrated.evidence && hydrated.partial && <CardNote>CLI-reported subagents include this runtime’s earlier reports. Tool activity and timings still depend on the loaded transcript and may be incomplete.</CardNote>}
       <SubagentList agent={agent} state={session} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
     </DetailsCard>}
     <RemoteConnectionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} dispatcher={dispatcher} open={open('connections')} onToggle={() => toggleCard('connections')} />
-    {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
-      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host}’s Other machines list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.</CardNote>}
+    {dispatcher && <DetailsCard id="other-machines" title="Other computers" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host}’s Other computers list is unavailable until its current snapshot and Details access are confirmed. Earlier private peers are withheld.</CardNote>}
     </DetailsCard>}
     <RemoteActionsCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('actions')} readable={!snapshotUnavailable && !runtimeUnconfirmed}
       message={resultMessage(result.status)} onToggle={() => toggleCard('actions')} onRefused={() => setRetry((n) => n + 1)} />
@@ -234,8 +234,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       <SelectedManagedPartsPage agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('skills-mcp')} readable={!snapshotUnavailable && !runtimeUnconfirmed} onRefused={() => setRetry((n) => n + 1)} />
     </DetailsCard>}
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
-      <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>
-      {!asleep && <CardRow label="Usage">{cost !== null || tokens !== undefined ? [cost, tokens !== undefined ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the CLI view' : 'Current usage is not available from the host'}</CardRow>}
+      <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · Terminal' : ''}</CardRow>
+      {!asleep && <CardRow label="Usage">{cost !== null || tokens !== undefined ? [cost, tokens !== undefined ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the Terminal view' : 'Current usage is not available from the host'}</CardRow>}
       {hydrated.evidence?.values.turnTotal && !hydrated.evidence.values.sessionUsage?.tokens && <CardNote>Token sums cover completed turns observed since this runtime opened. Earlier resumed conversation usage is separate.</CardNote>}
       {runningFor !== null && <CardRow label="Running">{runningFor}</CardRow>}
       {ctx && ctxPct !== null && <section aria-label="Context window" data-testid="details-session-context"><CardRow label="Context window" labelWidth="wide">{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</CardRow><div className="pr-3.5 pl-[33px] py-1 text-xs"><UsageBar pct={ctxPct} /><p>{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</p>{ctx.window === 'input' && <p>{provider} reports the room left for input after its output reserve, so its own total can be larger.</p>}<p>{provider} compacts the conversation on its own near the limit.</p></div></section>}

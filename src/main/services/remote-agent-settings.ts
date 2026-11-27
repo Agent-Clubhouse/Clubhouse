@@ -68,10 +68,10 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     if (!complete) {
       shown.state = 'error'; shown.summary = 'Some host settings are unavailable';
       row(shown, 'Next start CLI', provider?.displayName || (providerRead.selection.state === 'ok' ? `${providerRead.selection.value} (unavailable on host)` : 'Unavailable from host metadata')); row(shown, 'Next start model', agent.model && agent.model !== 'default' ? agent.model : 'Default model');
-      row(shown, 'Next wake', runtime === null ? 'Unavailable from host settings' : runtime === 'chat' ? 'Chat' : 'CLI');
+      row(shown, 'Next wake', runtime === null ? 'Unavailable from host settings' : runtime === 'chat' ? 'Chat' : 'Terminal');
       row(shown, 'Next start access', accessText ?? 'Unavailable from host settings');
       if (runtime === null && access?.state === 'ok') row(shown, 'Saved access', accessLabel(access.value));
-      row(shown, 'Chat auto-sleep', runtime === 'terminal' ? 'Not applicable to CLI' : sleepText ?? 'Unavailable from host settings');
+      row(shown, 'Chat auto-sleep', runtime === 'terminal' ? 'Not applicable to the Terminal view' : sleepText ?? 'Unavailable from host settings');
       row(shown, 'Sandbox and approvals', [agent.approvalPolicy, agent.sandbox].filter(Boolean).join(' · ') || 'Existing level defaults');
       row(shown, 'Next start context', agent.contextWindow);
       shown.notes.push('Unavailable settings are not inferred from this machine or from a previous run. Other host fields are shown independently.');

@@ -256,7 +256,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
   async function admit(r: FederatedRequest) {
     let pressure: FederationBackpressure | undefined;
     await d.store.update((file) => {
-      if (file.paused[r.machineId] && (!file.pauseEpochs?.[r.machineId] || deliveryHash(file.pauseEpochs[r.machineId]) === deliveryHash(r.epoch))) throw new Error(`Controller link is paused: ${file.paused[r.machineId]}`);
+      if (file.paused[r.machineId] && (!file.pauseEpochs?.[r.machineId] || deliveryHash(file.pauseEpochs[r.machineId]) === deliveryHash(r.epoch))) throw new Error(`Controller connection is paused: ${file.paused[r.machineId]}`);
       if (file.requests.some((q) => q.id === r.id || (r.direction === 'outgoing' && q.direction === 'outgoing' && q.callerId === r.callerId && q.machineId === r.machineId && q.targetId === r.targetId && q.originRequestId === r.originRequestId))) throw new Error('This request was already admitted. Retry with the same request id.');
       const now = d.now();
       const recent = (file.crossings[r.machineId] ?? []).filter((at) => now - at < 60_000);
@@ -358,7 +358,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     },
     async crossing(machine: string, cause: AnnexCallContext | undefined, args: Record<string, unknown>, tool = 'hand_off_request') {
       if (cause) assertFederationDepth(cause.depth);
-      if (!this.allowed(machine, args, tool)) throw new Error('The controller link is paused after a fixed limit was reached.');
+      if (!this.allowed(machine, args, tool)) throw new Error('The controller connection is paused after a fixed limit was reached.');
       const envelope = tool === 'hand_off_request' ? parseFederationEnvelope(args.envelope) : undefined;
       if (envelope?.kind === 'pause' || envelope?.kind === 'request' || envelope?.kind === 'reply') return; // Requests and replies reserve rate at durable admission.
       let pressure: FederationBackpressure | undefined;
@@ -416,7 +416,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
           admitted = saved; duplicate = true; return;
         }
         if (file.paused[origin.machineId] && (!file.pauseEpochs?.[origin.machineId]
-          || deliveryHash(file.pauseEpochs[origin.machineId]) === deliveryHash(sample.epoch))) throw new Error('The controller link is paused.');
+          || deliveryHash(file.pauseEpochs[origin.machineId]) === deliveryHash(sample.epoch))) throw new Error('The controller connection is paused.');
         const recent = (file.crossings[origin.machineId] ?? []).filter((at) => d.now() - at < 60_000);
         if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) {
           pressure = new FederationBackpressure('rate_limited', LEGACY_RATE_PAUSE, Math.max(1, Math.min(...recent) + 60_000 - d.now()));
@@ -483,7 +483,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const envelope = parseFederationEnvelope(raw);
       if (!envelope) throw new Error('Malformed federated request envelope.');
       const epoch = d.epoch(origin.machineId);
-      if (!d.authorized(origin.machineId, origin.agentId, epoch)) throw new Error('Controller link is no longer authorized.');
+      if (!d.authorized(origin.machineId, origin.agentId, epoch)) throw new Error('Controller connection is no longer authorized.');
       if (envelope.kind === 'pause') {
         // An offline older peer may still deliver a retired automatic limit notice.
         if (retiredLimitPause(envelope.reason)) return;
@@ -583,7 +583,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         const authorizedNow = current(request);
         const waiting = !authorizedNow && !!d.awaitingController?.(request.machineId, request.epoch);
         if (!authorizedNow && !waiting && request.direction === 'incoming' && !request.revocationNotified) {
-          const revoked = await replace(request.id, (r) => { r.revocationNotified = true; r.noticePending = 'failure'; r.reason = 'The origin computer or controller link was removed. Queued replies have been dropped.'; });
+          const revoked = await replace(request.id, (r) => { r.revocationNotified = true; r.noticePending = 'failure'; r.reason = 'The origin computer or controller connection was removed. Queued replies have been dropped.'; });
           await showNotice({ ...revoked, delivery: 'refused' });
         }
         const status = request.deliveryId && d.delivery(request.callerId, request.deliveryId);
@@ -597,7 +597,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
           : status && ['refused', 'expired', 'indeterminate'].includes(status.state) ? status.state === 'expired' ? 'expired' : 'refused'
           : request.delivery;
         if (state === request.delivery) continue;
-        const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !authorizedNow && !waiting ? 'The network member or controller link was removed.' : status && (!waiting || finalStatus) ? status.reason : 'The request expired while waiting for the other machine.'; });
+        const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !authorizedNow && !waiting ? 'The network member or controller connection was removed.' : status && (!waiting || finalStatus) ? status.reason : 'The request expired while waiting for the other machine.'; });
         d.record(updated, 'crossing');
         if (state === 'refused' || state === 'expired') await showNotice(updated);
       }

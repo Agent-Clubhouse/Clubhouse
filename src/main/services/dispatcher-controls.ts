@@ -133,11 +133,11 @@ function optionalFlag(args: Record<string, unknown>, key: string): boolean | und
  */
 function requireLinkEnd(census: AgentCensus, id: string): OrchestratorEntry {
   if (isDispatcherAgentId(id)) {
-    throw new DispatcherControlError('dispatcher_wire', 'That is you. These tools can\'t change your own settings or wires.');
+    throw new DispatcherControlError('dispatcher_wire', 'That is you. These tools can\'t change your own settings or connections.');
   }
   const entry = census.agents.get(id);
   if (!entry || isDisposedAgent(entry.agent)) {
-    throw new DispatcherControlError('unknown_agent', `No agent on this computer has the id "${auditString(id)}", or it was removed. Links can only join agents on this computer. Call list_agents for the ids.`);
+    throw new DispatcherControlError('unknown_agent', `No agent on this computer has the id "${auditString(id)}", or it was removed. Connections can only join agents on this computer. Call list_agents for the ids.`);
   }
   if (entry.agent.parentAgentId) {
     throw new DispatcherControlError('helper', `${entry.agent.name} is a helper. Helpers belong to their parent, so these tools can't target one.`);
@@ -232,7 +232,7 @@ export async function setOrchestratorHelpers(actorId: string, args: Record<strin
 const LINK_FIELDS = ['from', 'to', 'two_way'] as const;
 /** connect_orchestrators and set_connection_tools also take the tools to allow on each direction (#3215). */
 const TOOL_LINK_FIELDS = ['from', 'to', 'two_way', 'allow', 'allow_back'] as const;
-const LINK_NOTE = 'Links the user made and your own wires can\'t be changed here.';
+const LINK_NOTE = 'Connections the user made and connections to you can\'t be changed here.';
 
 /** The tool names a direction's `allow` takes: the connection tools and wake (#3215). */
 export const CONNECTION_SWITCH_NAMES: readonly string[] = CONNECTION_SWITCHES.map((t) => t.tool);
@@ -268,7 +268,7 @@ function readLinkRequest(args: Record<string, unknown>, fields: readonly string[
   if (from === to) throw new DispatcherControlError('invalid_args', 'from and to must be different agents.');
   const twoWay = optionalFlag(args, 'two_way') ?? false;
   if (isDispatcherAgentId(from) || isDispatcherAgentId(to)) {
-    throw new DispatcherControlError('dispatcher_wire', 'That is one of your own wires. Those follow the agent\'s Connect to Dispatcher setting, which is the user\'s.');
+    throw new DispatcherControlError('dispatcher_wire', 'That is one of your own connections. Those follow the agent\'s Connect to Dispatcher setting, which is the user\'s.');
   }
   const allow = readAllow(args, 'allow');
   const allowBack = readAllow(args, 'allow_back');
@@ -435,7 +435,7 @@ export async function disconnectOrchestrators(actorId: string, args: Record<stri
     const stored = await readDispatcherConnections();
     const notOurs = pairs.find((p) => !stored.some((c) => c.agentId === p.agentId && c.targetId === p.targetId));
     if (notOurs) {
-      throw new DispatcherControlError('not_dispatcher_owned', `You didn't make the link from "${auditString(notOurs.agentId)}" to "${auditString(notOurs.targetId)}", so it can't be removed here. Nothing changed.`);
+      throw new DispatcherControlError('not_dispatcher_owned', `You didn't make the connection from "${auditString(notOurs.agentId)}" to "${auditString(notOurs.targetId)}", so it can't be removed here. Nothing changed.`);
     }
     await removeDispatcherConnections(pairs);
     // Only unbinds what this source owns: a wire the user also drew stays.
@@ -459,7 +459,7 @@ export async function disconnectOrchestrators(actorId: string, args: Record<stri
 export async function setConnectionToolsForLink(actorId: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   return audited(linkRow('set_connection_tools', actorId, args), async () => {
     const { pairs, allow } = readLinkRequest(args, TOOL_LINK_FIELDS);
-    if (allow.some((a) => !a)) throw new DispatcherControlError('invalid_args', 'Set allow: the tools the link may use. An empty list turns them all off.');
+    if (allow.some((a) => !a)) throw new DispatcherControlError('invalid_args', 'Set allow: the tools the connection may use. An empty list turns them all off.');
     const stored = await readDispatcherConnections();
     const census = await readAgentCensus();
     const nameOf = (id: string) => census.agents.get(id)?.agent.name ?? auditString(id);
@@ -467,7 +467,7 @@ export async function setConnectionToolsForLink(actorId: string, args: Record<st
     for (const pair of pairs) {
       const isOurs = stored.some((c) => c.agentId === pair.agentId && c.targetId === pair.targetId);
       if (!isOurs) {
-        throw new DispatcherControlError('not_dispatcher_owned', `You didn't make the link from "${auditString(pair.agentId)}" to "${auditString(pair.targetId)}", so its tools can't be changed here. Nothing changed.`);
+        throw new DispatcherControlError('not_dispatcher_owned', `You didn't make the connection from "${auditString(pair.agentId)}" to "${auditString(pair.targetId)}", so its tools can't be changed here. Nothing changed.`);
       }
       if (!toolsAreOurs(pair)) throw userToolsRefusal(`${nameOf(pair.agentId)} → ${nameOf(pair.targetId)}`);
     }
@@ -506,7 +506,7 @@ export async function migrateDispatcherLinkTools(): Promise<'done' | 'already' |
   if (failed.length > 0) {
     if (!deferralLogged) {
       deferralLogged = true;
-      appLog('core:mcp', 'info', 'Dispatcher link defaults wait: a connection source could not be read', { meta: { failed } });
+      appLog('core:mcp', 'info', 'Dispatcher connection defaults wait: a connection source could not be read', { meta: { failed } });
     }
     return 'deferred';
   }
@@ -520,7 +520,7 @@ export async function migrateDispatcherLinkTools(): Promise<'done' | 'already' |
     }));
   const written = await runConnectionMigration(DISPATCHER_LINK_DEFAULTS_MIGRATION, directions);
   if (written === null) return 'already';
-  appLog('core:mcp', 'info', 'Dispatcher links made before #3215 now start like new links: clear and compact off, wake on', {
+  appLog('core:mcp', 'info', 'Dispatcher connections made before #3215 now start like new connections: clear and compact off, wake on', {
     meta: { links: written.length, pairs: written.map((d) => `${d.from.agentId}>${d.to.agentId}`) },
   });
   return 'done';

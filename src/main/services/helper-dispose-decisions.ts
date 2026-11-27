@@ -42,10 +42,10 @@ export async function disposeHelperForUser(
   return orchestrationPolicy.withAgentLock(projectPath, parentId, async () => {
     const checks = await agentConfig.getDisposeChecks(projectPath, helperId);
     if (checks.error) {
-      return { ok: false, message: `${config.name} wasn't disposed (${checks.error})`, checks };
+      return { ok: false, message: `${config.name} wasn't deleted (${checks.error})`, checks };
     }
     if (workAtRisk(checks) && !options.force) {
-      return { ok: false, message: `${config.name} has work that disposing would lose`, checks };
+      return { ok: false, message: `${config.name} has work that deleting would lose`, checks };
     }
     const seen = options.seen ?? checks;
     if (worseThan(checks, seen)) {

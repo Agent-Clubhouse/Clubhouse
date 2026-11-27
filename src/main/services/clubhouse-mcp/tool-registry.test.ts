@@ -396,9 +396,9 @@ describe('ToolRegistry', () => {
       const tools = getScopedToolList('agent-1');
       expect(tools).toHaveLength(2);
       expect(tools[0].description).toContain('Do not share secrets');
-      expect(tools[0].description).toContain('[WIRE INSTRUCTIONS');
+      expect(tools[0].description).toContain('[CONNECTION INSTRUCTIONS');
       expect(tools[1].description).toContain('Do not share secrets');
-      expect(tools[1].description).toContain('[WIRE INSTRUCTIONS');
+      expect(tools[1].description).toContain('[CONNECTION INSTRUCTIONS');
     });
 
     it('injects per-tool instructions that override global', () => {
@@ -443,7 +443,7 @@ describe('ToolRegistry', () => {
 
       const tools = getScopedToolList('agent-1');
       expect(tools[0].description).toBe('Send a message\n\nTarget: {"name":"Agent 2","project":"","id":"agent-2"}');
-      expect(tools[0].description).not.toContain('WIRE INSTRUCTIONS');
+      expect(tools[0].description).not.toContain('CONNECTION INSTRUCTIONS');
     });
 
     it('wraps injected instructions in structured delimiters to isolate user content', () => {
@@ -457,8 +457,8 @@ describe('ToolRegistry', () => {
       bindingManager.setInstructions('agent-1', 'agent-2', { '*': 'Always be helpful' });
 
       const tools = getScopedToolList('agent-1');
-      expect(tools[0].description).toContain('[WIRE INSTRUCTIONS — user-supplied]');
-      expect(tools[0].description).toContain('[END WIRE INSTRUCTIONS]');
+      expect(tools[0].description).toContain('[CONNECTION INSTRUCTIONS FROM THE USER]');
+      expect(tools[0].description).toContain('[END CONNECTION INSTRUCTIONS]');
     });
   });
 
@@ -574,7 +574,7 @@ describe('ToolRegistry', () => {
       agentRegistry.untrack('agent-2');
     });
 
-    it('sends a wire call to an agent on another machine there instead of running it here (#3064)', async () => {
+    it('sends a connection call to an agent on another machine there instead of running it here (#3064)', async () => {
       const handler = vi.fn();
       registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, handler);
       const far = `agent-9@${Array(16).fill('bb').join(':')}`;
@@ -668,7 +668,7 @@ describe('ToolRegistry', () => {
         expect(forwarded.calls).toHaveLength(2);
       });
 
-      it('checks current wire switches, caller access and grants after hydration', async () => {
+      it('checks current connection switches, caller access and grants after hydration', async () => {
         const [name] = listed();
         expect((await callTool('agent-1', name, args)).isError).toBeFalsy();
         bindingManager.updateBinding('agent-1', far, { label: 'reverse-B', targetName: 'reverse-B' });
@@ -736,7 +736,7 @@ describe('ToolRegistry', () => {
       // No binding for agent-1 → agent-2
       const result = await callTool('agent-1', 'clubhouse__project_Agent_2_xxxx__send_message', {});
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No binding');
+      expect(result.content[0].text).toContain('No connection');
       expect(refusalReasonOf(result)).toBe('no_binding');
     });
 
@@ -805,7 +805,7 @@ describe('ToolRegistry', () => {
 
       const result = await callTool('agent-3', toolName, {});
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No binding');
+      expect(result.content[0].text).toContain('No connection');
     });
 
     it('works with group-project tool names', async () => {
@@ -920,7 +920,7 @@ describe('ToolRegistry', () => {
       expect(suffixes).toContain('get_status');
     });
 
-    it('remote Dispatcher wires list only news tools and stale status reads local presence (#3656)', async () => {
+    it('remote Dispatcher connections list only news tools and stale status reads local presence (#3656)', async () => {
       const machine = Array(16).fill('ab').join(':');
       const target = `controller@${machine}`;
       remoteController.id = 'controller';
@@ -952,7 +952,7 @@ describe('ToolRegistry', () => {
       expect(getScopedToolList('agent-1').map((t) => t.name.split('__').pop())).toContain('read_output');
     });
 
-    it('preserves exactly main’s controller-link template while ordinary/news wires stay restricted (#3656)', () => {
+    it('preserves exactly main’s controller-connection template while ordinary/news connections stay restricted (#3656)', () => {
       const machine = Array(16).fill('ab').join(':');
       const target = `controller@${machine}`;
       const templates = [...FEDERATION_TOOLS, ...FEDERATION_DISABLED_TOOLS];
@@ -1003,7 +1003,7 @@ describe('ToolRegistry', () => {
   describe('connection tool catalog', () => {
     const definition = { description: 'Original tool description', inputSchema: { type: 'object' as const } };
 
-    it('uses base descriptions and stays stable without a client or awake target, ignoring wire toggles', () => {
+    it('uses base descriptions and stays stable without a client or awake target, ignoring connection toggles', () => {
       const handler = vi.fn();
       registerToolTemplate('agent', 'send_message', definition, handler, { grant: { actions: ['agent.message'], target: 'bound' } });
       bindingManager.bind('agent-1', {
@@ -1104,7 +1104,7 @@ describe('ToolRegistry', () => {
       await updateAgentGrantChanges('agent-1', () => undefined);
     });
 
-    it('reports a plugin wire as having no tools (plugin MCP tools were removed)', () => {
+    it('reports a plugin connection as having no tools (plugin MCP tools were removed)', () => {
       expect(getConnectionToolCatalog('agent-1', 'acme', 'plugin')).toEqual({
         state: 'unavailable', reason: 'tools_not_registered', tools: [],
       });
@@ -1167,7 +1167,7 @@ describe('ToolRegistry', () => {
       expect(bindingManager.getVersion()).toBe(version);
     });
 
-    it('agentsWiredTo returns only the agents wired to that agent target', () => {
+    it('agentsWiredTo returns only the agents connected to that agent target', () => {
       bindingManager.bind('agent-3', { targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' });
       bindingManager.bind('agent-4', { targetId: 'widget-2', targetKind: 'browser', label: 'Browser' });
       expect(agentsWiredTo('agent-2')).toEqual(['agent-1']);
@@ -1184,7 +1184,7 @@ describe('ToolRegistry', () => {
     });
   });
 
-  describe('a tool turned off on a wire, called by name (#2609)', () => {
+  describe('a tool turned off on a connection, called by name (#2609)', () => {
     const def = { description: 'Tool', inputSchema: { type: 'object' as const, properties: { text: { type: 'string' } }, required: ['text'] } };
     const result = { content: [{ type: 'text' as const, text: 'ran' }] };
 
@@ -1192,7 +1192,7 @@ describe('ToolRegistry', () => {
       ['agent', 'agent-2', 'send_message'],
       ['browser', 'widget-1', 'navigate'],
       ['group-project', 'gp_off_1', 'list_members'],
-    ] as const)('refuses it on a %s wire, and leaves its other tools callable', async (targetKind, targetId, suffix) => {
+    ] as const)('refuses it on a %s connection, and leaves its other tools callable', async (targetKind, targetId, suffix) => {
       const handler = vi.fn().mockResolvedValue(result);
       registerToolTemplate(targetKind, suffix, def, handler);
       registerToolTemplate(targetKind, 'other_tool', def, handler);
@@ -1204,7 +1204,7 @@ describe('ToolRegistry', () => {
       // Refused before the arguments are checked: the reason is the wire, not the call.
       const refused = await callTool('agent-1', name(suffix), {});
       expect(refused.isError).toBe(true);
-      expect(refused.content[0].text).toBe(`${suffix} is turned off on this wire.`);
+      expect(refused.content[0].text).toBe(`${suffix} is turned off on this connection.`);
       expect(refusalReasonOf(refused)).toBe('tool_denied');
       expect(handler).not.toHaveBeenCalled();
 
@@ -1225,7 +1225,7 @@ describe('ToolRegistry', () => {
       expect((await callTool('agent-1', name, { text: 'x' })).isError).toBeUndefined();
     });
 
-    it('only applies to the wire it was turned off on', async () => {
+    it('only applies to the connection it was turned off on', async () => {
       const handler = vi.fn().mockResolvedValue(result);
       registerToolTemplate('agent', 'send_message', def, handler);
       const first = { targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
@@ -1278,7 +1278,7 @@ describe('ToolRegistry', () => {
     });
   });
 
-  describe('group-project tool gating (admin role + wire-level)', () => {
+  describe('group-project tool gating (admin role + connection-level)', () => {
     beforeEach(() => {
       groupProjectRegistry._resetForTesting();
       // Lead tools declare the lead grant on the bound group project (#3360), as the real ones do.
@@ -1294,7 +1294,7 @@ describe('ToolRegistry', () => {
       changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: groupProjectId }, mode: 'allow' }],
     }));
 
-    it('exposes all group-project tools to a lead with no wire-level disabledTools', async () => {
+    it('exposes all group-project tools to a lead with no connection-level disabledTools', async () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_1', name: 'TestProj', description: '', instructions: '',
         createdAt: '2020-01-01T00:00:00Z', metadata: {},
@@ -1312,7 +1312,7 @@ describe('ToolRegistry', () => {
       expect(suffixes).toContain('compact_agent');
     });
 
-    it('hides tools listed in wire-level disabledTools', () => {
+    it('hides tools listed in connection-level disabledTools', () => {
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_2', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
@@ -1338,7 +1338,7 @@ describe('ToolRegistry', () => {
       expect(refusalReasonOf(result)).toBe('no_grant');
     });
 
-    it('a lead calling a privileged tool switched off on its own wire is refused at call time, by name (#3176)', async () => {
+    it('a lead calling a privileged tool switched off on its own connection is refused at call time, by name (#3176)', async () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_5', name: 'TestProj', description: '', instructions: '',
         createdAt: '2020-01-01T00:00:00Z', metadata: {},
@@ -1349,15 +1349,15 @@ describe('ToolRegistry', () => {
       const name = (tool: string) => buildToolName(boundBinding(makeBinding({ agentId: 'agent-1', targetId: 'gp_test_5', targetKind: 'group-project', targetName: 'TestProj' })), tool);
       for (const tool of ['wake_agent', 'clear_agent']) {
         const result = await callTool('agent-1', name(tool), { target_agent_id: 'agent-2' });
-        expect(result.content[0].text).toBe(`${tool} is turned off on this wire.`);
+        expect(result.content[0].text).toBe(`${tool} is turned off on this connection.`);
         expect(refusalReasonOf(result)).toBe('tool_denied');
       }
       // The same admin's other privileged tools still run past the wire check.
       const other = await callTool('agent-1', name('compact_agent'), { target_agent_id: 'agent-2' });
-      expect(other?.content?.[0]?.text).not.toBe('compact_agent is turned off on this wire.');
+      expect(other?.content?.[0]?.text).not.toBe('compact_agent is turned off on this connection.');
     });
 
-    it('a lead\'s wire can disable individual tools without affecting others', async () => {
+    it('a lead\'s connection can disable individual tools without affecting others', async () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_3', name: 'TestProj', description: '', instructions: '',
         createdAt: '2020-01-01T00:00:00Z', metadata: {},
@@ -1712,8 +1712,8 @@ describe('ToolRegistry', () => {
       expect((await callTool('dispatcher', 'test_list_agents', {})).isError).toBe(true);
     });
 
-    describe('wake_agent and sleep_agent wire templates (#2577)', () => {
-      const def = { description: 'Wire tool', inputSchema: { type: 'object' as const } };
+    describe('wake_agent and sleep_agent connection templates (#2577)', () => {
+      const def = { description: 'Connection tool', inputSchema: { type: 'object' as const } };
       const handler = vi.fn().mockResolvedValue(ok);
       const wire = (agentId: string) => bindingManager.bind(agentId, {
         targetId: 'target', targetKind: 'agent', label: 'Boss', targetName: 'boss', projectName: 'app',
@@ -1749,7 +1749,7 @@ describe('ToolRegistry', () => {
         beforeEach(() => registerBuiltinProviders());
         afterEach(() => agentRegistry.untrack('dispatcher'));
 
-        it('lists every wire tool on Codex whatever the target is doing', () => {
+        it('lists every connection tool on Codex whatever the target is doing', () => {
           registerCaller('codex-cli');
           expect(suffixes('dispatcher')).toEqual(all);
           agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
@@ -1773,7 +1773,7 @@ describe('ToolRegistry', () => {
           expect(suffixes('dispatcher')).toEqual(all);
         });
 
-        it('still applies the tool group and per-wire disables', () => {
+        it('still applies the tool group and per-connection disables', () => {
           agentRegistry.register('agent-1', { runtime: 'chat', projectPath: '/test', orchestrator: 'codex-cli' });
           expect(suffixes('agent-1')).toEqual(['get_status', 'send_message']);
           bindingManager.setDisabledTools('agent-1', 'target', ['send_message']);
@@ -1811,7 +1811,7 @@ describe('ToolRegistry', () => {
         expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message']);
       });
 
-      it('only reaches agents wired to the Dispatcher', async () => {
+      it('only reaches agents connected to the Dispatcher', async () => {
         const result = await callTool('dispatcher', 'clubhouse__app_stranger_abcd__wake_agent', {});
         expect(result.isError).toBe(true);
         expect(handler).not.toHaveBeenCalled();

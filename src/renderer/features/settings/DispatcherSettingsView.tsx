@@ -368,7 +368,7 @@ export function BehaviorField({ behavior, modelsByHand = false }: { behavior: Di
           </span>
           {note && <span data-testid="dispatcher-behavior-auto-note">{note}</span>}
           {!modelsByHand && canSetUpAuto(behavior.auto) && (
-            <span><Button onClick={openAutoSettings} data-testid="dispatcher-behavior-setup-auto">Set up Auto</Button></span>
+            <span><Button onClick={openAutoSettings} data-testid="dispatcher-behavior-setup-auto">Set up Smart routing</Button></span>
           )}
           {error && <span className={settingsError} role="alert" data-testid="dispatcher-behavior-error">{error}</span>}
         </span>

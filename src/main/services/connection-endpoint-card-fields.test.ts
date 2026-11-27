@@ -31,7 +31,7 @@ it.each(['not-loaded', 'not-in-loaded-index', 'namespace-unconfirmed', 'invalid'
 });
 it('keeps malformed independent fields unknown and known explicit false visible', () => {
   const result = endpointCardFields(row({ parentAgentId: 7, disposedAt: 7 }, { orchestration: { connectToDispatcher: false } }));
-  expect.soft(result.saved).toContain('helper role unavailable'); expect.soft(result.saved).toContain('disposal status unavailable'); expect.soft(result.saved).toContain('Connect to Dispatcher unavailable'); expect.soft(result.memory).toContain('Connect to Dispatcher Off');
+  expect.soft(result.saved).toContain('helper role unavailable'); expect.soft(result.saved).toContain('deletion status unavailable'); expect.soft(result.saved).toContain('Connect to Dispatcher unavailable'); expect.soft(result.memory).toContain('Connect to Dispatcher Off');
 });
 it('uses shared helper-policy semantics rather than inferring tool or connection authority', () => {
   const result = endpointCardFields(row({ parentAgentId: 'parent', orchestration: { connectToDispatcher: true } }));

@@ -670,7 +670,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     let launch = legacyLaunchFor(access, legacyRecord ? legacyMode : 'auto');
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
-      throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
+      throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was deleted and can't be started`), 'preflight_failed');
     }
     // A helper never starts above its orchestrator's ceiling, whoever wakes it.
     if (params.kind === 'durable' && durableConfig?.parentAgentId) {

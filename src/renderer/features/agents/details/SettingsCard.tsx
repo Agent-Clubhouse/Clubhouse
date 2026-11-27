@@ -60,7 +60,7 @@ export function isRowLocked(editable: RowEditable, awake: boolean): boolean {
 export const LOCKED_HINT = 'Sleep the agent to change these';
 
 export interface SettingsValues {
-  runsIn: 'Chat' | 'CLI' | null;
+  runsIn: 'Chat' | 'Terminal' | null;
   model: string | null;
   access: string | null;
   autoSleep: string | null;
@@ -276,7 +276,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider, autoSleep }: Se
   const liveLevel = asleep ? null : chat?.level ?? null;
   const access = accessText(startLevel, liveLevel, permissionsSupported);
   // Asleep, the picker offers the levels of the runtime the next wake starts in, when known.
-  const accessRuntime: AccessRuntime | undefined = runsIn === 'Chat' ? 'chat' : runsIn === 'CLI' ? 'terminal' : undefined;
+  const accessRuntime: AccessRuntime | undefined = runsIn === 'Chat' ? 'chat' : runsIn === 'Terminal' ? 'terminal' : undefined;
   const summary = settingsSummary({
     runsIn,
     model,
@@ -361,14 +361,14 @@ function AgentSettingsCard({ agent, chat, projectPath, provider, autoSleep }: Se
       ) : undefined,
     },
     ...(runsIn ? [{
-      id: 'runs-in', label: 'Runs in', editable: 'sleeping' as const, value: runsIn,
+      id: 'runs-in', label: 'View', editable: 'sleeping' as const, value: runsIn,
       control: editing && chatFlag === true && nextRuntime?.chatAvailable ? (
         <SelectControl
-          label="Runs in"
+          label="View"
           value={saved?.runtimeMode ?? ''}
           disabled={busy('runs-in')}
           onChange={(v) => void save('runs-in', { runtimeMode: v === '' ? null : v as 'chat' | 'terminal' })}
-          options={[{ id: '', label: 'Provider default' }, { id: 'chat', label: 'Chat' }, { id: 'terminal', label: 'CLI' }]}
+          options={[{ id: '', label: 'CLI default' }, { id: 'chat', label: 'Chat' }, { id: 'terminal', label: 'Terminal' }]}
         />
       ) : undefined,
     }] : []),

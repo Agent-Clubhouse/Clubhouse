@@ -230,7 +230,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
       await switchAgentRuntime(agent, mode);
     } catch (err) {
       // telemetry-exempt: shown to the user; chat stays independent of telemetry (research §7.3), which maps chat events itself.
-      useToastStore.getState().addToast(`Couldn't switch to ${mode === 'chat' ? 'Chat' : 'CLI'}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      useToastStore.getState().addToast(`Couldn't switch to ${mode === 'chat' ? 'Chat' : 'Terminal'}: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSwitching(false);
     }
@@ -263,7 +263,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     <ConfirmDestructiveAction
       open={confirm !== null}
       title="Interrupt and switch?"
-      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the CLI view'} stops the current turn, then resumes the same session there.`}
+      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the Terminal view'} stops the current turn, then resumes the same session there.`}
       confirmLabel="Interrupt and switch"
       onConfirm={() => { if (confirm) void doSwitch(confirm); }}
       onCancel={() => setConfirm(null)}

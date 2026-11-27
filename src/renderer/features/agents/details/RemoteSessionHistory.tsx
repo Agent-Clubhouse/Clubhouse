@@ -53,7 +53,7 @@ function Report({ event, binding, childTools }: { event: ChatEvent; binding: Rem
       || inventory.provider === 'copilot' && inventory.driver === 'copilot_sdk' && inventory.source === 'session.skills_loaded');
   return <>
     {d.cliVersion !== undefined && <p>CLI version: {text(d.cliVersion) ? d.cliVersion : 'unavailable'}.</p>}
-    {d.model !== undefined && <p>Model: {d.model === null ? 'provider default; exact model unknown' : text(d.model) ? d.model : 'unavailable'}.</p>}
+    {d.model !== undefined && <p>Model: {d.model === null ? 'CLI default; exact model unknown' : text(d.model) ? d.model : 'unavailable'}.</p>}
     {d.providerSkills !== undefined && <Names label="Archived skill names" names={skillBound ? skills.names : null} />}
     {inventory !== undefined && <><Names label="Archived inventory skills" names={!inventoryBound ? null : inventory.skills === undefined ? undefined : reportedSkillNames(inventory.skills)} /><Names label="Archived model-visible MCP tools" names={!inventoryBound ? null : inventory.mcpTools === undefined ? undefined : reportedMcpToolNames(inventory.mcpTools)} /></>}
     {d.mcpServers !== undefined && <Names label="Archived MCP connection names" names={Array.isArray(d.mcpServers) && d.mcpServers.length <= 2048 && d.mcpServers.every((m) => m && text(m.name)) ? d.mcpServers.map((m) => m.name) : null} />}
@@ -68,10 +68,10 @@ function Reports({ page, binding }: { page: RemoteHistoryPage; binding: RemoteSe
       || e.type === 'tool_call_update' && childTools.has(e.data.toolCallId)
       || (e.type === 'agent_message' || e.type === 'agent_thought') && text(e.data.subagentId)));
   return <div className="pr-3.5 pl-[33px] text-xs break-words" data-testid="remote-history-reports">
-    <p>{reports.length} provider or child report events shown from this page. No facts from other pages are inferred.</p>
+    <p>{reports.length} CLI or child report events shown from this page. No facts from other pages are inferred.</p>
     {page.events.some((event) => 'truncated' in event.data || event.type === 'notice' && event.data.code === 'event_omitted') && <p>The host shortened or omitted some recorded events. Reading to the page end does not recover those fields.</p>}
-    {binding.subagents === 'none' && <p>The provider does not expose child details with its current capability.</p>}
-    {!reports.length && <p>No provider or child reports can be shown from this event page; other pages and unrecorded facts remain unknown.</p>}
+    {binding.subagents === 'none' && <p>The CLI does not expose child details with its current capability.</p>}
+    {!reports.length && <p>No CLI or child reports can be shown from this event page; other pages and unrecorded facts remain unknown.</p>}
     {reports.slice(offset, offset + 50).map((event) => <section key={event.seq} aria-label={`Archived report ${event.seq}`}><p>Recorded {new Date(event.ts).toLocaleString()} · event {event.seq}</p><Report event={event} binding={binding} childTools={childTools} /></section>)}
     {reports.length > 50 && <><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous reports</button>{' '}<button type="button" disabled={offset + 50 >= reports.length} onClick={() => setOffset(offset + 50)}>Next reports</button></>}
   </div>;
@@ -116,14 +116,14 @@ export function RemoteSessionHistory({ agent, details, ready, generation }: { ag
     } finally { if (pending.current === selection) pending.current = null; }
   };
   return <section aria-label="Older session history" data-testid="remote-session-history">
-    <CardNote>Older reports are separate from current provider facts. Only recorded events from this runtime open can be read; earlier resumed history and provider display omissions are not declared complete.</CardNote>
+    <CardNote>Older reports are separate from current CLI facts. Only recorded events from this runtime open can be read; earlier resumed history and CLI display omissions are not declared complete.</CardNote>
     {!eligible ? <CardNote>This host cannot confirm older history belongs to the selected project and current session. Earlier facts remain unavailable.</CardNote>
       : initialCursor === undefined ? <CardNote>This host has not supplied a history cursor. Earlier reports remain partial.</CardNote>
         : <>
           {current?.status === 'loading' && <CardNote>Reading one older event page…</CardNote>}
           {current?.status === 'error' && <CardNote>Older history was refused, changed or unavailable. Previous archived evidence is withheld; refresh Details before trying again.</CardNote>}
           {current?.page && <Reports key={`${key}:${current.cursor}`} page={current.page} binding={expected!} />}
-          {(current?.page?.atRunStart || initialCursor === null || typeof initialCursor === 'number' && initialCursor <= expected!.startSeq) && <CardNote>No earlier events were reported within this runtime open. This does not confirm complete resumed history or recover unrecorded provider facts.</CardNote>}
+          {(current?.page?.atRunStart || initialCursor === null || typeof initialCursor === 'number' && initialCursor <= expected!.startSeq) && <CardNote>No earlier events were reported within this runtime open. This does not confirm complete resumed history or recover unrecorded CLI facts.</CardNote>}
           {canRead && current?.status !== 'error' && <button type="button" disabled={current?.status === 'loading'} className="pl-[33px] text-xs" onClick={() => void load(cursor!, current?.page ? [...current.newer, current.cursor].slice(-32) : [])}>{current?.page ? 'Read older page' : 'Read older session history'}</button>}
           {!!current?.newer.length && current.status !== 'loading' && current.status !== 'error' && <button type="button" className="pl-[33px] text-xs" onClick={() => void load(current.newer[current.newer.length - 1], current.newer.slice(0, -1))}>Read newer page</button>}
         </>}

@@ -393,9 +393,9 @@ function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onRe
       )}
 
       {showOtherMachines && (
-        <DetailsCard id="other-machines" title="Other machines" summary={remoteDispatcher && !satellite?.snapshot?.dispatcherPresence ? 'not shared here' : otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+        <DetailsCard id="other-machines" title="Other computers" summary={remoteDispatcher && !satellite?.snapshot?.dispatcherPresence ? 'not shared here' : otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
           {remoteDispatcher && !satellite?.snapshot?.dispatcherPresence
-            ? <CardNote>{remoteHost} hasn’t shared its other machines here.</CardNote>
+            ? <CardNote>{remoteHost} hasn’t shared its other computers here.</CardNote>
             : <OtherMachinesList compact remotes={otherMachines} />}
           {remoteDispatcher && <CardNote>Change on {remoteHost}.</CardNote>}
         </DetailsCard>
@@ -410,7 +410,7 @@ function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onRe
         : <AgentActionsCard key={agent.id} agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
       {showEvidence && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
-        <CardNote>Configured skills and MCP servers are in Settings. These are connection status and provider-reported session evidence.</CardNote>
+        <CardNote>Configured skills and MCP servers are in Settings. These are connection status and CLI-reported session evidence.</CardNote>
         {!asleep && <McpCard
           agent={agent}
           projectPath={projectPath}
@@ -441,11 +441,11 @@ function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onRe
       {!asleep && !dispatcher && <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
         <CardRow label="Runs on">
           {provider}
-          {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · CLI</span> : null}
+          {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · Terminal</span> : null}
         </CardRow>
         <CardRow label="Usage">
           {cost || tokens ? <>{cost}{cost && tokens ? <span className="text-ctp-overlay1"> · </span> : null}{tokens ? <span className={cost ? 'text-ctp-overlay1' : ''}>{formatTokens(tokens)} tokens</span> : null}</>
-            : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the CLI view'}</span>}
+            : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the Terminal view'}</span>}
         </CardRow>
         {ctx && ctxPct !== null && (
           <section aria-label="Context window" data-testid="details-session-context">

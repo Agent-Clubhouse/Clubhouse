@@ -13,6 +13,9 @@ import { useDismissibleLayer } from './useDismissibleLayer';
 import { CANVAS_Z } from './canvas-chrome';
 import { newWireDisabledTools } from '../../../../shared/wire-defaults';
 
+/** The header's words for what a connection reaches. */
+const TARGET_KIND_WORDS: Record<string, string> = { agent: 'an agent', browser: 'a browser', terminal: 'a terminal', 'group-project': 'a group project', plugin: 'a plugin widget' };
+
 interface WireConfigPopoverProps {
   binding: McpBindingEntry;
   /** Screen-space position where the popover appears. */
@@ -124,7 +127,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
         {/* Header */}
         <div className="px-3 py-2 border-b border-surface-0">
           <div className="text-[13px] text-ctp-text font-medium truncate">{binding.label}</div>
-          <div className="text-xs text-ctp-overlay1">Wire to {binding.targetKind === 'agent' ? 'an agent' : binding.targetKind}</div>
+          <div className="text-xs text-ctp-overlay1">Connection to {TARGET_KIND_WORDS[binding.targetKind] ?? binding.targetKind}</div>
         </div>
 
         {/* Actions */}

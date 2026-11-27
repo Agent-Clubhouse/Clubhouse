@@ -193,14 +193,14 @@ describe('AgentSettingsView', () => {
       renderSettings({ status: 'running' });
       const line = screen.getByTestId('agent-settings-running');
       expect(line).toHaveTextContent('Working');
-      expect(line).toHaveTextContent('Stop the agent to change these settings.');
+      expect(line).toHaveTextContent('Put the agent to sleep to change these settings.');
     });
 
     it('stops the agent from the running line', () => {
       const killAgent = vi.fn().mockResolvedValue(undefined);
       useAgentStore.setState({ killAgent });
       renderSettings({ status: 'running' });
-      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Sleep' }));
       expect(killAgent).toHaveBeenCalledWith('agent-1');
     });
 
@@ -606,7 +606,7 @@ describe('AgentSettingsView', () => {
       renderSettings({ status: 'running' });
       const select = await screen.findByLabelText('View');
       expect(select).toBeDisabled();
-      expect(select).toHaveAttribute('title', 'Stop the agent to change this');
+      expect(select).toHaveAttribute('title', 'Put the agent to sleep to change this');
     });
   });
 

@@ -252,7 +252,7 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
                         </button>
                       )}
                       {state !== 'awaiting-approval' && (
-                        <button type="button" className={LINK} onClick={() => setDisposing(target(entry))} data-testid="helper-dispose">Dispose</button>
+                        <button type="button" className={LINK} onClick={() => setDisposing(target(entry))} data-testid="helper-dispose">Delete</button>
                       )}
                     </span>
                   </div>
@@ -264,7 +264,7 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
         {handedOff.length > 0 && (
           <div className="mt-1 mx-1 px-2.5 pl-[22px] pt-1.5 border-t border-surface-0 flex items-center gap-2 text-xs text-ctp-overlay1" data-testid="helpers-ready">
             <span className="min-w-0 truncate">
-              {handedOff.length === 1 ? `${handedOff[0].config.name} is handed off and ready to dispose` : `${handedOff.length} helpers are handed off and ready to dispose`}
+              {handedOff.length === 1 ? `${handedOff[0].config.name} is handed off and ready to delete` : `${handedOff.length} helpers are handed off and ready to delete`}
             </span>
             <button type="button" className="ml-auto text-ctp-accent hover:underline cursor-pointer" onClick={() => setDisposing(target(handedOff[0]))}>Review</button>
           </div>
@@ -281,7 +281,7 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0 text-ctp-overlay0">
                 <path d={showDisposed ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6'} />
               </svg>
-              Disposed <span className="text-ctp-overlay0">{disposed.length}</span>
+              Deleted <span className="text-ctp-overlay0">{disposed.length}</span>
             </button>
             {showDisposed && (
               <ul className="flex flex-col" data-testid="helpers-disposed">

@@ -240,7 +240,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         </p>
       )}
       {connections.length === 0 && remoteCount > 0 ? null : connections.length === 0 ? (
-        <CardNote>No Clubhouse MCP wires. Wires drawn on a canvas, and the ones between an orchestrator and its helpers, show here.</CardNote>
+        <CardNote>No Clubhouse MCP connections. Connections drawn on a canvas, and the ones between an orchestrator and its helpers, show here.</CardNote>
       ) : (
         <ul className="flex flex-col" data-testid="connections-list">
           {connections.map((c) => {

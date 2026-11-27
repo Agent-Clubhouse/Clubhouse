@@ -239,7 +239,7 @@ function linkMemoryReceipt(selected: string, projectPath: string, pairs: Pair[],
  * A false pending value means no process-known record, NOT verified disk absence.
  */
 export function readDispatcherLinkMemoryForDisplay(selected: string, projectPath: string, pairs: readonly Pair[], options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<DispatcherLinkMemoryDisplay> {
-  const inputs = [{ field: 'Process-known selected Dispatcher link state', source: 'host-cache' as const, observedAt: Date.now() }];
+  const inputs = [{ field: 'Process-known selected Dispatcher connection state', source: 'host-cache' as const, observedAt: Date.now() }];
   if (!linkDisplayId(selected) || !linkDisplayProject(projectPath) || !Array.isArray(pairs)) return { state: 'unavailable', reason: 'invalid', inputs };
   if (pairs.length > 100) return { state: 'unavailable', reason: 'limit', inputs };
   const admitted: Pair[] = [], seen = new Set<string>();
@@ -398,11 +398,11 @@ export function addDispatcherConnections(entries: DispatcherConnection[]): Promi
     const added = entries.filter((e) => !state.connections.some((c) => samePair(c, e)));
     const next = [...state.connections, ...added];
     if (added.length > 0 && next.length > MAX_DISPATCHER_LINKS) {
-      throw new DispatcherLinkRefused('link_limit', `You can have at most ${MAX_DISPATCHER_LINKS} links. Disconnect one first.`);
+      throw new DispatcherLinkRefused('link_limit', `You can have at most ${MAX_DISPATCHER_LINKS} connections. Disconnect one first.`);
     }
     for (const { agentId } of added) {
       if (next.filter((c) => c.agentId === agentId).length > MAX_DISPATCHER_LINKS_PER_AGENT) {
-        throw new DispatcherLinkRefused('link_limit', `An agent can have at most ${MAX_DISPATCHER_LINKS_PER_AGENT} outgoing links. Disconnect one first.`);
+        throw new DispatcherLinkRefused('link_limit', `An agent can have at most ${MAX_DISPATCHER_LINKS_PER_AGENT} outgoing connections. Disconnect one first.`);
       }
     }
     if (added.length > 0) await saveStore({ ...state, connections: next });
@@ -533,7 +533,7 @@ function probeStoreWrites(): Promise<boolean> {
     } catch (err) {
       // telemetry-exempt: logged; readback and the Connections card show the links as suspended
       writesBlocked = true;
-      appLog('core:mcp', 'warn', 'Dispatcher connections folder takes no writes; leaving saved links down', {
+      appLog('core:mcp', 'warn', 'Dispatcher connections folder takes no writes; leaving saved connections down', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
     }
@@ -794,7 +794,7 @@ export async function listDispatcherLinksForUser(options: { strict?: boolean } =
       if (ends.includes('gone')) continue;
       if (ends.includes('unverified') || census.agents.get(c.agentId)?.projectPath !== c.agentProjectPath
         || census.agents.get(c.targetId)?.projectPath !== c.targetProjectPath) {
-        throw new Error('Saved Dispatcher link sources could not be checked without recovery.');
+        throw new Error('Saved Dispatcher connection sources could not be checked without recovery.');
       }
     }
     const bound = bindingManager.getBindingsForAgent(c.agentId).some((b) => b.targetId === c.targetId);

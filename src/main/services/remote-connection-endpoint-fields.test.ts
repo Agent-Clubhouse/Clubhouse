@@ -150,9 +150,9 @@ it.each(['cross-project-outgoing', 'cross-project-two-way', 'matching-role-folde
   expect.soft(combined).toHaveLength(mode === 'convergent-admitted-role-folder' ? 1 : 0);
   if (mode !== 'convergent-admitted-role-folder' && mode !== 'distinct-native-ids') {
     expect.soft(c.notes.join(' ')).toContain('endpoint projects are not verified equal');
-    expect.soft(automaticSources.every((r) => r.label.includes('(automatic Dispatcher)'))).toBe(true); expect.soft(manualSources.every((r) => r.label.includes('(saved Dispatcher link)'))).toBe(true);
+    expect.soft(automaticSources.every((r) => r.label.includes('(automatic Dispatcher)'))).toBe(true); expect.soft(manualSources.every((r) => r.label.includes('(saved Dispatcher connection)'))).toBe(true);
     const defaults = c.rows.filter((r) => r.label.endsWith('automatic starting switches')); expect.soft(defaults).toHaveLength(2); expect.soft(defaults.every((r) => r.label.includes('(automatic Dispatcher)') && r.value.split('; Off:')[0].includes('Read output'))).toBe(true);
-    const primary = c.rows.filter((r) => r.label.endsWith(' saved target')); expect.soft(primary).toHaveLength(links.length); expect.soft(primary.every((r) => r.label.includes('(saved Dispatcher link)') && r.value.includes(same ? 'Connect to Dispatcher On' : 'Connect to Dispatcher Off'))).toBe(true);
+    const primary = c.rows.filter((r) => r.label.endsWith(' saved target')); expect.soft(primary).toHaveLength(links.length); expect.soft(primary.every((r) => r.label.includes('(saved Dispatcher connection)') && r.value.includes(same ? 'Connect to Dispatcher On' : 'Connect to Dispatcher Off'))).toBe(true);
   }
   const automaticDefaults = c.rows.filter((r) => r.label.endsWith('automatic starting switches')), manualDefaults = c.rows.filter((r) => r.label.endsWith('manual starting switches'));
   expect.soft(automaticDefaults).toHaveLength(2); expect.soft(manualDefaults).toHaveLength(mode === 'distinct-native-ids' ? 0 : links.length);

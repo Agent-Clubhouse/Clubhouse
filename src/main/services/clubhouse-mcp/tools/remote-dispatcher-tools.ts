@@ -22,7 +22,7 @@ export function registerRemoteDispatcherTools(): void {
     ['send_file_to_remote_dispatcher', 'content', 'send_file'],
   ] as const) {
     registerGlobalTool(name, {
-      description: `Send ${field === 'message' ? 'news' : 'file contents'} directly to another computer's Dispatcher, under your permission here and its controller link there. Name the computer from list_other_dispatchers. This is news, not a work request or Handoff agreement. Offline delivery waits durably.`,
+      description: `Send ${field === 'message' ? 'news' : 'file contents'} directly to another computer's Dispatcher, under your permission here and its controller connection there. Name the computer from list_other_dispatchers. This is news, not a work request or Handoff agreement. Offline delivery waits durably.`,
       inputSchema: { type: 'object', properties: {
         caused_by: { type: 'string', description: 'Select remote input delivered into this controller turn. Omission still inherits its causation.' }, machine: { type: 'string' }, [field]: { type: 'string' }, task_id: { type: 'string' }, idempotency_key: { type: 'string' },
         ...(field === 'content' && { filename: { type: 'string' } }),

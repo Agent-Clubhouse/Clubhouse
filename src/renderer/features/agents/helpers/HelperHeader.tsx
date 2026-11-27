@@ -46,7 +46,7 @@ export function HelperHeader({ agent }: { agent: Agent }) {
       )}
       {link.disposable && parent && (
         <span className="min-w-0 truncate" data-testid="helper-header-disposable">
-          · {parent.name} may dispose of it when the work is done
+          · {parent.name} may delete it when the work is done
         </span>
       )}
       {link.routing && (

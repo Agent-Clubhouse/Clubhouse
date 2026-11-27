@@ -35,11 +35,11 @@ export function removeGroupProjectCanvasReferences(
     return result;
   });
   const nextWires = wires.filter((wire) => {
-    if (!record(wire)) throw new Error('Canvas wires are unreadable. Repair the canvas before deleting.');
+    if (!record(wire)) throw new Error('Canvas connections are unreadable. Repair the canvas before deleting.');
     return wire.targetKind !== 'group-project' || wire.targetId !== groupProjectId;
   });
   const nextZoneWires = zoneWires.filter((wire) => {
-    if (!record(wire)) throw new Error('Canvas zone wires are unreadable. Repair the canvas before deleting.');
+    if (!record(wire)) throw new Error('Canvas zone connections are unreadable. Repair the canvas before deleting.');
     return wire.targetType !== 'group-project' || wire.targetId !== groupProjectId;
   });
   return { instances: nextInstances, wires: nextWires, zoneWires: nextZoneWires };

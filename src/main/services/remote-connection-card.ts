@@ -286,7 +286,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         const note = 'A saved target name is unavailable or ambiguous in retained host metadata; its saved address is shown.';
         if (!c.notes.includes(note)) c.notes.push(note);
       }
-      const name = display(label, 240) + (pair.labelScope === 'automatic' ? ' (automatic Dispatcher)' : pair.labelScope === 'manual' ? ' (saved Dispatcher link)' : pair.labelScope === 'native' ? ' (native-ID records)' : '');
+      const name = display(label, 240) + (pair.labelScope === 'automatic' ? ' (automatic Dispatcher)' : pair.labelScope === 'manual' ? ' (saved Dispatcher connection)' : pair.labelScope === 'native' ? ' (native-ID records)' : '');
       const bound = !!pair.binding;
       const complete = outgoingPair ? outComplete : inComplete;
       const status = bound ? 'binding recorded in host memory' : complete && pair.kind !== 'unknown' ? 'saved or retained, not bound now' : 'binding presence unavailable';
@@ -317,7 +317,7 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
       }
       if (pair.manual) {
         const queued = value(pair.manualMemory?.pendingRemoval), persisted = value(pair.manualMemory?.removalSaved), removed = value(pair.manual.removalRecorded);
-        row(c, `${name} saved Dispatcher link`, removed === true ? 'Removal record found in saved settings' : removed === false ? 'No removal record in saved settings' : 'Saved removal status unavailable');
+        row(c, `${name} saved Dispatcher connection`, removed === true ? 'Removal record found in saved settings' : removed === false ? 'No removal record in saved settings' : 'Saved removal status unavailable');
         const processRemoval = queued === true ? persisted === false ? 'Removal queued; last save failed' : persisted === true ? 'Removal queued; save was reported successful' : 'Removal queued; save status unavailable'
           : queued === false ? 'No queued removal reported in this host session' : 'Queued removal status unavailable';
         const policy = value(options.connectToDispatcher), enabled = value(localDispatcher?.enabled);
@@ -357,16 +357,16 @@ export async function readPassiveConnectionCard(c: RemoteDetailsCard, selected: 
         }
       }
     }
-    for (const [label, read] of [['outgoing bindings', outgoing], ['incoming bindings', incoming], ['saved directions', directions]] as const) {
+    for (const [label, read] of [['outgoing connections', outgoing], ['incoming connections', incoming], ['saved directions', directions]] as const) {
       if (read.state !== 'ok') c.notes.push(`${label[0].toUpperCase()}${label.slice(1)} are unavailable; no empty list is inferred.`);
       else if (read.value.omitted) c.notes.push(`${read.value.omitted} additional ${label} are outside this bounded page.`);
     }
     if (manual) {
-      if (manual.state !== 'ok') c.notes.push('Saved manual Dispatcher link metadata is unavailable; no empty list or current link eligibility is inferred.');
+      if (manual.state !== 'ok') c.notes.push('Saved manual Dispatcher connection metadata is unavailable; no empty list or current connection eligibility is inferred.');
       else {
-        if (manual.value.omitted) c.notes.push(`${manual.value.omitted} additional saved Dispatcher link${manual.value.omitted === 1 ? ' is' : 's are'} outside this bounded page.`);
-        if (manual.value.excludedProjectRecords) c.notes.push(`${manual.value.excludedProjectRecords} saved Dispatcher link records belong to another project association and were excluded.`);
-        c.notes.push('Saved Dispatcher links show saved settings and removal reports from this host session. The saved target’s current project, availability and tool access are not confirmed by those records.');
+        if (manual.value.omitted) c.notes.push(`${manual.value.omitted} additional saved Dispatcher connection${manual.value.omitted === 1 ? ' is' : 's are'} outside this bounded page.`);
+        if (manual.value.excludedProjectRecords) c.notes.push(`${manual.value.excludedProjectRecords} saved Dispatcher connection records belong to another project association and were excluded.`);
+        c.notes.push('Saved Dispatcher connections show saved settings and removal reports from this host session. The saved target’s current project, availability and tool access are not confirmed by those records.');
       }
     }
     if (options.automatic?.state === 'unavailable') c.notes.push('Automatic Dispatcher source details are unavailable; no empty source list is inferred.');
@@ -401,7 +401,7 @@ function renderRegisteredConnections(c: RemoteDetailsCard, read: DisplayValue<Co
     const name = fields.displayName || endpoint.agentId, projectName = endpoint.projectName.state === 'ok' ? endpoint.projectName.value : 'Project name unavailable';
     // Include both stable project identity and display label when names collide.
     const label = `${name} · ${projectName}`;
-    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : entry.source === 'helper-parent' ? 'Selected helper’s parent' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'disposed; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
+    row(c, label, `${entry.source === 'helper' ? 'Direct helper' : entry.source === 'helper-parent' ? 'Selected helper’s parent' : 'Automatic Dispatcher source'} · ${entry.applicability === 'configured' ? 'two configured directions' : entry.applicability === 'disposed' ? 'marked deleted; no configured directions' : 'configured applicability unknown'} · project ${endpoint.projectId}`);
     if (endpoint.identityAmbiguous) row(c, `${label} identity`, 'This project record reuses the controller’s native ID. The endpoint association is ambiguous; configured directions are unavailable.');
     row(c, `${label} saved settings`, fields.saved);
     if (fields.memory) row(c, `${label} host memory`, fields.memory);

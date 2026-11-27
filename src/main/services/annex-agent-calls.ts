@@ -570,7 +570,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
         continue;
       }
       if (federationDirection({ agentId: item.body.from.agentId }, { agentId: item.body.to, machineId: machine }) && federationRequestRouter()?.allowed(machine, item.body.args, item.body.tool) === false) {
-        await finishDelivery(item, 'refused', text('The controller link is paused after a fixed limit was reached.', true), 'controller_link_paused');
+        await finishDelivery(item, 'refused', text('The controller connection is paused after a fixed limit was reached.', true), 'controller_link_paused');
         continue;
       }
       const authorization = authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };

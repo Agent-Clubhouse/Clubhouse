@@ -17,7 +17,7 @@ export function describeHelperDisposeRequest(orchestratorName: string, request: 
   if (checks.unmerged) facts.push(plural(checks.unmerged, 'unmerged commit', 'unmerged commits'));
   if (checks.error) facts.push(checks.error);
   const what = facts.length > 0 ? facts.join(', ') : 'nothing would be lost';
-  return `${orchestratorName} asked to dispose this helper${forceRequested ? ' (forced)' : ''}. ${what[0].toUpperCase()}${what.slice(1)}.`;
+  return `${orchestratorName} asked to delete this helper${forceRequested ? ' (forced)' : ''}. ${what[0].toUpperCase()}${what.slice(1)}.`;
 }
 
 /** The Needs you line for one waiting start; `projectName` when it is in another project (#2515). */

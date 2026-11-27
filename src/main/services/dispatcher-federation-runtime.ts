@@ -103,7 +103,7 @@ export function startFederatedRequests(): () => void {
       }
       const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === r.machineId)?.alias ?? r.machineId;
       const text = kind === 'needs_user' ? `${origin} asks: ${r.text}\n${r.reason ?? ''}`
-        : kind === 'pause' ? `Controller link with ${peer} is paused. ${r.reason ?? 'A fixed cross-machine limit was reached.'}`
+        : kind === 'pause' ? `Controller connection with ${peer} is paused. ${r.reason ?? 'A fixed cross-machine limit was reached.'}`
         : kind === 'failure' ? `Request ${r.originRequestId} to ${peer}: ${r.delivery}. ${r.reason ?? ''}`
         : `${peer}'s Dispatcher reports ${r.outcome} for request ${r.originRequestId}: ${r.reason ?? ''}`;
       const shown = await deliverToChat(controller, { message: text, from: kind === 'needs_user' ? origin : `${peer}'s Dispatcher`,
@@ -126,7 +126,7 @@ export function startFederatedRequests(): () => void {
     offer: async (callerId, targetId, args) => {
       if (callerId !== getDispatcherAgentId()) return result('Only this controller may hand off a remote request.', true);
       const target = parseAgentAddress(targetId);
-      if (!target.machine || typeof args.request !== 'string' || typeof args.request_id !== 'string') return result('Give request and the local request_id on a remote controller link.', true);
+      if (!target.machine || typeof args.request !== 'string' || typeof args.request_id !== 'string') return result('Give request and the local request_id on a remote controller connection.', true);
       const local = getRequest(args.request_id);
       if (!local) return result('request_id must identify your own existing Dispatcher request.', true);
       const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === target.machine)?.alias ?? 'the other computer';

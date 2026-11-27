@@ -159,7 +159,7 @@ export function whereText(target: GrantCallTarget): string {
   if (rel.includes('parent')) return 'your orchestrator';
   if (rel.includes('my_helper')) return 'your helpers';
   if (rel.includes('created_by_me')) return 'the agent created by this call';
-  if (rel.includes('connected')) return target.kind === 'browser' ? 'a canvas browser you are wired to' : 'an agent you are connected to';
+  if (rel.includes('connected')) return target.kind === 'browser' ? 'a canvas browser you are connected to' : 'an agent you are connected to';
   if (rel.includes('group_member')) return 'members of this group project';
   if (target.notGroupMember) return 'an agent that is not a member of this group project';
   if (target.kind === 'action') return rel.includes('self') ? 'your own Action' : 'an Action you don\'t own';

@@ -133,7 +133,7 @@ describe('DispatcherSetup: Behavior and Runs on', () => {
     d.checkBehavior = vi.fn(async () => ({ ready: false as const, code: 'auto_not_supported' as const }));
     renderSetup();
     next();
-    expect(await screen.findByText(/Auto doesn’t support Claude Code yet/)).toBeTruthy();
+    expect(await screen.findByText(/Smart routing doesn’t support Claude Code yet/)).toBeTruthy();
     expect(screen.queryByTestId('dispatcher-setup-auto-button')).toBeNull();
   });
 });

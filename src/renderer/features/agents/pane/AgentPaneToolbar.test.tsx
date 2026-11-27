@@ -58,7 +58,7 @@ describe('AgentPaneToolbar', () => {
     );
     ro.resize(400);
     expect(screen.getByTestId('agent-pane-toolbar')).toHaveAttribute('data-narrow', 'true');
-    expect(screen.getByRole('radio', { name: 'CLI' })).toHaveTextContent('');
+    expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveTextContent('');
     expect(screen.queryByTestId('pane-model')).not.toBeInTheDocument();
     expect(screen.getByTestId('pane-orchestrator').getAttribute('aria-label')).toContain('Model opus');
     ro.resize(800);
@@ -87,8 +87,8 @@ describe('AgentPaneToolbar', () => {
     const onClose = vi.fn();
     const onChange = vi.fn();
     const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'chat', onChange }} review={{ active: false, count: 6, onOpen, onClose }} />);
-    const group = screen.getByRole('radiogroup', { name: 'Chat or CLI' });
-    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Chat', 'CLI']);
+    const group = screen.getByRole('radiogroup', { name: 'View' });
+    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Chat', 'Terminal']);
     expect(group).not.toContainElement(screen.getByTestId('view-changes'));
     const changes = screen.getByRole('button', { name: /Changes/ });
     expect(changes).toBe(screen.getByTestId('view-changes'));
@@ -107,7 +107,7 @@ describe('AgentPaneToolbar', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Chat' }));
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('radio', { name: 'CLI' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
     expect(onChange).toHaveBeenCalledWith('terminal');
   });
 
@@ -122,7 +122,7 @@ describe('AgentPaneToolbar', () => {
 
   it('shows CLI and Changes for an agent that can\'t switch runtimes', () => {
     render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'terminal' }} review={{ active: false, onOpen: vi.fn(), onClose: vi.fn() }} />);
-    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal']);
     expect(screen.getByTestId('view-changes')).toHaveTextContent('Changes');
   });
 

@@ -106,7 +106,7 @@ it('shows fixed network namespace records instead of treating an ordinary saved 
 it('keeps cold source coverage unknown instead of presenting a verified empty Connections list', async () => { const { c } = await read(); expect(c.state).toBe('error'); expect(c.summary).toBe('Connection information incomplete'); expect(c.notes.join(' ')).toContain('Saved source coverage is unavailable'); expect(c.notes.join(' ')).not.toContain('No binding or active saved direction was reported'); });
 it('preserves row and reader omissions without querying omitted target names or hosts', async () => {
   for (let i = 0; i < 70; i++) bindingManager.bind(selected, { targetId: `target-${i}`, targetKind: 'agent', label: `Target ${i}` });
-  const { c } = await read(); expect(c.rows.length).toBe(100); expect(c.omitted).toBeGreaterThan(0); expect(c.notes.join(' ')).toContain('20 additional outgoing bindings are outside this bounded page'); expect(c.summary).toBe('50 known directions');
+  const { c } = await read(); expect(c.rows.length).toBe(100); expect(c.omitted).toBeGreaterThan(0); expect(c.notes.join(' ')).toContain('20 additional outgoing connections are outside this bounded page'); expect(c.summary).toBe('50 known directions');
 });
 
 it('uses shared local source identities and keeps unknown prototype-shaped source IDs unclassified', () => { expect(connectionSourceKind('connections-card')).toBe('card_link'); expect(connectionSourceKind('dispatcher-federation')).toBe('dispatcher_federation'); expect(connectionSourceKind('constructor')).toBe('other'); expect(connectionSourceKind('__proto__')).toBe('other'); expect(mergeConnectionDirection(mergeConnectionDirection('to', 'from'), 'from')).toBe('two-way'); });
@@ -166,11 +166,11 @@ it.each(['saved', 'unqualified-cached-name', 'pending-not-saved', 'owner-saved-c
   m.side.mockClear(); m.legacy.mockClear(); const before = await disk(), { c, receipts } = await read(false, { projectPath, connectToDispatcher: { state: 'ok', value: false, inputs: [] } });
   expect.soft(c.state).toBe('ok'); expect.soft(JSON.stringify(c)).not.toMatch(/PRIVATE_|agentProjectPath|targetProjectPath|createdBy|"current"\s*:|receipts/);
   if (mode === 'primary-unavailable') {
-    expect.soft(c.rows.some((row) => row.label === 'Target name')).toBe(true); expect.soft(c.notes.join(' ')).toContain('Saved manual Dispatcher link metadata is unavailable');
+    expect.soft(c.rows.some((row) => row.label === 'Target name')).toBe(true); expect.soft(c.notes.join(' ')).toContain('Saved manual Dispatcher connection metadata is unavailable');
   } else {
     expect.soft(c.rows.some((row) => row.label === 'manual-target')).toBe(true);
     expect.soft(c.rows.find((row) => row.label === 'manual-target sources')?.value).toContain('Made by the Dispatcher (saved record');
-    const removal = c.rows.find((row) => row.label === 'manual-target saved Dispatcher link')?.value;
+    const removal = c.rows.find((row) => row.label === 'manual-target saved Dispatcher connection')?.value;
     expect.soft(removal).toBe('No removal record in saved settings');
     const eligibility = c.rows.find((row) => row.label === 'manual-target manual source eligibility')?.value;
     expect.soft(eligibility).toContain('Restriction evidence: Host Dispatcher off; Selected Connect to Dispatcher off');
@@ -211,7 +211,7 @@ it('keeps an unavailable cold manual source distinct from a complete retained em
 });
 it('keeps cold manual source page and row omissions visible', async () => {
   const projectPath = path.join(root, 'selected-project'); await put('dispatcher-connections.json', { version: 1, connections: Array.from({ length: 51 }, (_, i) => ({ agentId: selected, targetId: `manual-${i}`, agentProjectPath: projectPath, targetProjectPath: '/other-project', createdAt: at, createdBy: 'controller' })), removedByUser: [] });
-  const { c, receipts } = await read(false, { projectPath }); expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBeGreaterThan(0); expect.soft(c.notes.join(' ')).toContain('1 additional saved Dispatcher link is outside this bounded page'); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
+  const { c, receipts } = await read(false, { projectPath }); expect.soft(c.rows).toHaveLength(100); expect.soft(c.omitted).toBeGreaterThan(0); expect.soft(c.notes.join(' ')).toContain('1 additional saved Dispatcher connection is outside this bounded page'); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true);
 });
 
 it.each(['on', 'off', 'unknown-controller', 'unknown-name', 'saved-override', 'unreadable-override', 'mixed-source'] as const)('shows selected configured automatic Dispatcher directions without collecting sources: %s', async (mode) => {
@@ -253,7 +253,7 @@ it('charges automatic source fields even when known binding rows fill the displa
   expect.soft(c.rows.some((r) => r.label.endsWith('automatic starting switches'))).toBe(false); expect.soft(m.legacy).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
 });
 
-it('continues actual outgoing binding records without dropping late fields behind the Details row cap', async () => {
+it('continues actual outgoing connection records without dropping late fields behind the Details row cap', async () => {
   for (let i = 0; i < 41; i++) bindingManager.bind(selected, { targetId: 'terminal-' + i, targetKind: 'terminal', label: 'Bound terminal ' + i });
   const first = await read(false, { page: { card: 'connections', source: 'outgoing', offset: 0 } });
   expect(first.c.connectionPage).toMatchObject({ source: 'outgoing', offset: 0, known: 41, next: { offset: 2, projectOffset: 0 } });

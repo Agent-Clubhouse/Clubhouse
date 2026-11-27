@@ -184,7 +184,7 @@ function assertAgentBoundToWidget(agentId: string, widgetId: string): void {
     appLog('core:mcp', 'warn', 'Browser tool rejected — agent not bound to widget', {
       meta: { agentId, widgetId },
     });
-    throw new Error(`Agent ${agentId} is not bound to widget ${widgetId}`);
+    throw new Error(`Agent ${agentId} is not connected to widget ${widgetId}`);
   }
 }
 

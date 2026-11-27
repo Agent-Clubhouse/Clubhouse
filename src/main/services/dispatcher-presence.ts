@@ -35,10 +35,10 @@ function presenceFor(peer: ReturnType<typeof listPeers>[number]): RemoteDispatch
         : controller.state ?? 'online';
   const localId = getDispatcherAgentId();
   let link: RemoteDispatcherPresence['link'];
-  if (!localId || !isDispatcherEnabled()) link = { state: 'unavailable', reason: 'This Dispatcher is off. Controller links are unavailable.' };
+  if (!localId || !isDispatcherEnabled()) link = { state: 'unavailable', reason: 'This Dispatcher is off. Controller connections are unavailable.' };
   else if (!controller?.agentId) link = isConnected
     ? { state: 'unavailable', reason: 'That computer hasn\'t shared its Dispatcher yet.' }
-    : { state: 'paused', reason: 'The other computer is offline. Controller links are paused until it reconnects.' };
+    : { state: 'paused', reason: 'The other computer is offline. Controller connections are paused until it reconnects.' };
   else {
     const status = federationStatus({ agentId: localId }, { agentId: controller.agentId, machineId });
     link = status ? { state: status.state, reason: status.reason } : { state: 'active' };

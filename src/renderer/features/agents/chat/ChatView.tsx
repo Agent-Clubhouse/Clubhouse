@@ -86,7 +86,7 @@ function ProtocolDriftNote({ state, compact }: { state: ChatViewState; compact: 
   const messages = total === 1 ? 'message' : 'messages';
   const drift = names.length === 0 ? ''
     : compact ? `${total} unrecognized CLI ${messages}. `
-    : `This CLI sent ${total} ${messages} Clubhouse doesn't recognize yet. The CLI view shows everything. `;
+    : `This CLI sent ${total} ${messages} Clubhouse doesn't recognize yet. The Terminal view shows everything. `;
   const text = `${drift}${versionNote ?? ''}`.trim();
   return (
     <div className="flex items-center gap-1.5 min-w-0 text-[12px] text-ctp-overlay0 px-1" data-testid="chat-protocol-unknown">

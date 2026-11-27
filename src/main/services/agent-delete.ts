@@ -146,7 +146,7 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
   if (helpers.length > 0 && !request.helpers) {
     return {
       ok: false,
-      message: `${agent.name} has ${helpers.length === 1 ? '1 helper' : `${helpers.length} helpers`}. Choose whether to dispose or keep ${helpers.length === 1 ? 'it' : 'them'}.`,
+      message: `${agent.name} has ${helpers.length === 1 ? '1 helper' : `${helpers.length} helpers`}. Choose whether to delete or keep ${helpers.length === 1 ? 'it' : 'them'}.`,
       needsHelperChoice: { helpers: helpers.map(({ config }) => ({ id: config.id, name: config.name })) },
     };
   }

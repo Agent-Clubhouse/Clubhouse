@@ -540,17 +540,17 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const wireDefinitions: McpBindingEntry[] = snapshot.wires.map((wire) => {
         const kind = wire.targetKind;
         if (kind !== 'agent' && kind !== 'browser' && kind !== 'terminal' && kind !== 'group-project') {
-          throw new Error('Canvas wires contain an unsupported target kind. Repair the saved Canvas and retry Open.');
+          throw new Error('Canvas connections contain an unsupported target kind. Repair the saved Canvas and retry Open.');
         }
         return { ...wire, targetKind: kind };
       });
       const zoneWireDefinitions: ZoneWireDefinition[] = snapshot.zoneWires.map((raw) => {
-        if (!raw || typeof raw !== 'object') throw new Error('Canvas zone wires are incomplete. Repair them and retry Open.');
+        if (!raw || typeof raw !== 'object') throw new Error('Canvas zone connections are incomplete. Repair them and retry Open.');
         const wire = raw as Partial<ZoneWireDefinition>;
         if (typeof wire.id !== 'string' || typeof wire.sourceZoneId !== 'string'
           || typeof wire.targetId !== 'string' || (wire.targetType !== 'agent' && wire.targetType !== 'zone'
             && wire.targetType !== 'group-project' && wire.targetType !== 'browser')) {
-          throw new Error('Canvas zone wires are incomplete. Repair them and retry Open.');
+          throw new Error('Canvas zone connections are incomplete. Repair them and retry Open.');
         }
         return { id: wire.id, sourceZoneId: wire.sourceZoneId, targetId: wire.targetId, targetType: wire.targetType };
       });
@@ -758,7 +758,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }
       if (_canvasPersist !== 'ok') return;
       if (_zoneWiresPersistBlocked === 'local-unreadable' && JSON.stringify(get().zoneWireDefinitions) !== _unreadableZoneWiresBaseline) {
-        throw new Error('Canvas zone wire changes not saved: persisted zone wires could not be read');
+        throw new Error('Canvas zone connection changes not saved: persisted zone connections could not be read');
       }
 
       assertCurrent();
@@ -897,13 +897,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       if (_wiresPersistBlocked === 'remote') return;
       if (_wiresPersistBlocked === 'local-unreadable') {
         if (JSON.stringify(get().wireDefinitions) !== _unreadableWiresBaseline) {
-          throw new Error('Canvas wire changes not saved: persisted wires could not be read');
+          throw new Error('Canvas connection changes not saved: persisted connections could not be read');
         }
         rendererLog('canvas', 'warn', 'saveWires skipped — persisted wires could not be read');
         return;
       }
       const assertCurrent = () => {
-        if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save');
+        if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local connection save');
       };
       assertCurrent();
       // Persist wire definitions — the canvas-owned source of truth.
@@ -922,7 +922,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
       await writeInOrder(storage, STORAGE_KEY_WIRES, data, assertCurrent);
       diskBaseline.set(STORAGE_KEY_WIRES, diskFingerprint(data));
-      if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save completed');
+      if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local connection save completed');
       if (get().dataOrigin === 'local') _failedLocalState = undefined;
     },
 

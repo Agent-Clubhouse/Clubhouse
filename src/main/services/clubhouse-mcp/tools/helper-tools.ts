@@ -564,7 +564,7 @@ async function noteContextOutcome(helperPath: string, helperId: string, provider
 // ── start_helper ─────────────────────────────────────────────────────────
 
 /** How start_helper's template arguments are described. */
-const NEEDS_MANAGED = 'Refused unless the person lets orchestrators choose helper templates (Settings › Managed agents › Helpers).';
+const NEEDS_MANAGED = 'Refused unless the person lets orchestrators choose helper templates, on the Helpers page in Settings.';
 
 /** Check start_helper's arguments. Throws McpArgError. */
 function validateStartArgs(args: HelperStartArgs): void {
@@ -1422,8 +1422,8 @@ export function registerHelperTools(): void {
         'Start a helper agent of your own, in its own worktree, and give it a task. Returns at once ' +
         'with the helper id in the "starting" state: making the worktree can take up to a minute. ' +
         'You get a message when the helper has started its task, or why it failed. The helper can ' +
-        'reply with message_parent, and you can message it over the wire Clubhouse adds between you. ' +
-        'If you have call_wire_tool, your tool list is fixed at session start, so reach that wire with it, using the helper id. ' +
+        'reply with message_parent, and you can message it over the connection Clubhouse adds between you. ' +
+        'If you have call_wire_tool, your tool list is fixed at session start, so reach that connection with it, using the helper id. ' +
         'With difficulty, Clubhouse picks a model and effort for the helper\'s CLI from the user\'s helper presets. Anything you name wins, and "routing" in the result says what was used and why. ' +
         'provider "auto" with difficulty also picks the CLI, once, for the helper\'s whole task. ' +
         'Its access is never more than yours. If you are set to ask the user before starting helpers, ' +

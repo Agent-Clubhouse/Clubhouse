@@ -62,7 +62,7 @@ const DIRTY_OPTIONS: OptionCard[] = [
 const HELPER_OPTIONS: Array<{ choice: HelperDeleteChoice; label: string; description: string }> = [
   {
     choice: 'dispose',
-    label: 'Dispose helpers',
+    label: 'Delete helpers',
     description: 'Remove their worktrees and branches, and those of their own helpers. Stops if any has uncommitted or unpushed work.',
   },
   {

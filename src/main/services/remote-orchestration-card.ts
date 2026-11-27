@@ -13,20 +13,20 @@ export function projectOrchestrationFields(c: RemoteDetailsCard, model: Orchestr
   const f = model.fields;
   const enabled = f.orchestrate.state === 'ok' ? f.orchestrate.value : undefined;
   const limit = f.maxHelpers.state === 'ok' ? f.maxHelpers.value : undefined;
-  c.summary = enabled === false ? 'off' : enabled === true ? `${f.control.state === 'ok' ? CONTROL_LABELS[f.control.value] : 'Control unavailable'} · ${limit === undefined ? 'helper limit unavailable' : `up to ${limit}`}` : unknown;
+  c.summary = enabled === false ? 'off' : enabled === true ? `${f.control.state === 'ok' ? CONTROL_LABELS[f.control.value] : 'Approvals unavailable'} · ${limit === undefined ? 'helper limit unavailable' : `up to ${limit}`}` : unknown;
   if (!helper) {
     const field = <T>(label: string, value: DisplayValue<T>, text: (value: T) => string = String) => {
       if (value.state !== 'ok') c.state = 'error';
       row(c, label, value.state === 'ok' ? text(value.value) : unknown);
     };
-    field('Orchestration', f.orchestrate, yes); field('Helpers get', f.access, (value) => accessLabel(value, name)); field('Control', f.control, (value) => CONTROL_LABELS[value]);
-    field('At once', f.maxHelpers); field('App-wide limit', model.globalCap); field('Cross-project helpers', f.crossProjectHelpers, yes);
+    field('Orchestration', f.orchestrate, yes); field('Helper access', f.access, (value) => accessLabel(value, name)); field('Approvals', f.control, (value) => CONTROL_LABELS[value]);
+    field('Helpers at once', f.maxHelpers); field('App-wide limit', model.globalCap); field('Cross-project helpers', f.crossProjectHelpers, yes);
     if (model.autoEffective.state === 'ok') {
       const value = model.autoEffective.value, locked = value.reason && AUTO_LOCKED_NOTES[value.reason];
       row(c, 'Smart routing', `${yes(value.effective)} · ${locked || (model.sources.autoHelpers === 'agent' ? 'Set on this agent' : 'Following the app setting')}`);
     } else { c.state = 'error'; row(c, 'Smart routing', unknown); }
     for (const input of model.globalCap.inputs) c.notes.push(`${input.field}: ${input.source === 'host-cache' ? 'established host policy' : 'host primary metadata'} observed ${new Date(input.observedAt).toISOString()}.`);
-    c.notes.push('Configured helper policy. Tool availability and the actual helper provider are established when a run starts.');
+    c.notes.push('Configured helper policy. Tool availability and the actual helper CLI are established when a run starts.');
   }
   return { enabled, limit };
 }

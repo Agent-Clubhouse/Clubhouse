@@ -27,7 +27,7 @@ export function DeleteAgentsReview({ review }: { review: Review }) {
         {item.reason && <p className="text-xs text-ctp-subtext1">{item.reason}</p>}
         {item.status === 'ready' && <>
           {item.target && <Target target={item.target} remove={item.worktree === 'delete'} />}
-          <p className="text-xs text-ctp-subtext1">{item.force ? 'Force is explicitly enabled for this target and its disposed helpers.' : 'Git-reported uncommitted or unpushed work prevents removing files.'} {item.helpers === 'dispose' ? 'Dispose its helpers and their helpers.' : 'Keep helpers and release its direct helpers as ordinary agents.'}</p>
+          <p className="text-xs text-ctp-subtext1">{item.force ? 'Force is explicitly enabled for this target and its deleted helpers.' : 'Git-reported uncommitted or unpushed work prevents removing files.'} {item.helpers === 'dispose' ? 'Delete its helpers and their helpers.' : 'Keep helpers and release its direct helpers as ordinary agents.'}</p>
           {item.helperTargets.length > 0 && <ul className="mt-1 pl-4 list-disc">
             {item.helperTargets.map((helper) => <li key={`${helper.project}/${helper.agentId}`}><Target target={helper} remove={item.helpers === 'dispose'} /></li>)}
           </ul>}

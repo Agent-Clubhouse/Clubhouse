@@ -401,7 +401,7 @@ describe('DispatcherSettingsView', () => {
       unmount();
 
       await renderOn({ ...ON, behavior: { level: 'standard', provider: 'future-cli', auto: { ready: false, code: 'auto_not_supported' } } });
-      expect(screen.getByTestId('dispatcher-behavior-auto-note').textContent).toContain('Auto doesn’t support Future CLI yet');
+      expect(screen.getByTestId('dispatcher-behavior-auto-note').textContent).toContain('Smart routing doesn’t support Future CLI yet');
       expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();
       expect((screen.getByLabelText('Behavior') as HTMLSelectElement).disabled).toBe(false);
     });

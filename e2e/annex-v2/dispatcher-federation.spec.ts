@@ -326,6 +326,6 @@ test('related autonomous work continues beyond eight causal hops', async () => {
     [from, to] = [to, from];
   }
   for (const [desktop, controller] of [[here, a], [there, b]] as const) {
-    expect(JSON.stringify(await desktop.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), controller.ids.chat))).not.toContain('Controller link with');
+    expect(JSON.stringify(await desktop.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), controller.ids.chat))).not.toContain('Controller connection with');
   }
 });

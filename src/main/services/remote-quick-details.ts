@@ -56,8 +56,8 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       if (running && registeredProvider) row(c, 'CLI', providerName(registeredProvider));
       else if (observed) row(c, 'Last CLI', providerName(observed.provider));
       if (!running || selected?.orchestrator !== registeredProvider) row(c, 'Requested CLI', selected ? selected.orchestrator ? providerName(selected.orchestrator) : 'Host default requested' : 'Launch selection was not retained by this host');
-      const runtimeLabel = (kind: string) => kind === 'chat' ? 'Chat' : kind === 'headless' ? 'CLI (headless)' : 'CLI';
-      row(c, !running && observed ? 'Last runtime' : 'Runs in', running && registration ? runtimeLabel(registeredRuntime!) : observed ? runtimeLabel(observed.runtime) : 'Current runtime not confirmed');
+      const runtimeLabel = (kind: string) => kind === 'chat' ? 'Chat' : kind === 'headless' ? 'Headless' : 'Terminal';
+      row(c, !running && observed ? 'Last view' : 'View', running && registration ? runtimeLabel(registeredRuntime!) : observed ? runtimeLabel(observed.runtime) : 'Current runtime not confirmed');
       row(c, 'Requested model', selected?.model && selected.model !== 'default' ? selected.model : selected ? 'Default model' : 'Launch selection was not retained by this host');
       row(c, 'Requested effort', selected?.effort);
       const actualAccess = running ? registration?.launchAccess : undefined;
@@ -66,7 +66,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       const requestedAccess = selected?.access ?? (selected?.freeAgentMode !== undefined ? accessFromLegacy(selected.freeAgentMode, selected.permissionMode) : null);
       row(c, permissionsUnsupported || currentAccess ? 'Access' : 'Requested access', permissionsUnsupported ? 'Set by the CLI' : currentAccess ? accessLabel(currentAccess) : requestedAccess ? accessLabel(requestedAccess) : 'Not reported by host');
       row(c, 'Sandbox and approvals', [actualAccess?.approvalPolicy ?? selected?.approvalPolicy, actualAccess?.sandbox ?? selected?.sandbox].filter(Boolean).join(' · ') || 'Existing level defaults requested');
-      c.notes.push('Launch choices do not confirm the provider’s model, effort or loaded setup. Current provider reports are shown separately. Quick runs have no saved next-wake settings.');
+      c.notes.push('Launch choices do not confirm the CLI’s model, effort or loaded setup. Current CLI reports are shown separately. Quick runs have no saved next-wake settings.');
       if (rawRunning && !bound) c.notes.push('A runtime exists for this ID, but it is not confirmed as this quick launch. Only retained launch metadata is shown.');
       if (selected?.template) {
         const service = managedAgents();

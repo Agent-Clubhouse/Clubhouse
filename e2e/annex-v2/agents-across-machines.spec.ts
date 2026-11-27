@@ -409,7 +409,7 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   const requestsBeforeRetiredCall = await fs.promises.readFile(requestsPath, 'utf8');
   const retired = await mcp.call(send, firstArgs);
   expect(retired.isError, retired.text).toBe(true);
-  expect(retired.text).toContain('No binding found for target:');
+  expect(retired.text).toContain('No connection found for target:');
   expect(await fs.promises.readFile(requestsPath, 'utf8')).toBe(requestsBeforeRetiredCall);
   expect(await receiverInputs()).toEqual(inputsBeforeRetiredCall);
   const afterRetiredCall: DeliveryFile = JSON.parse(await fs.promises.readFile(receiverStore, 'utf8'));

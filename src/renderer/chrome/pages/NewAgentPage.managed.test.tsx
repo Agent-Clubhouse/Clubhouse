@@ -174,7 +174,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(screen.getByText("Instructions don't grant access. These settings do.")).toBeTruthy();
     expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe('opus');
     expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe('true');
-    fireEvent.change(screen.getByLabelText('Helper limit'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Helpers at once'), { target: { value: '4' } });
     fireEvent.change(screen.getByTestId('new-agent-builder-agent-access'), { target: { value: 'auto' } });
     expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeTruthy();
 
@@ -461,7 +461,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(config).toHaveBeenCalledWith('/tmp/gb', 'a1');
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe('true');
-    expect((screen.getByLabelText('Helper limit') as HTMLInputElement).value).toBe('2');
+    expect((screen.getByLabelText('Helpers at once') as HTMLInputElement).value).toBe('2');
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
       settings: expect.objectContaining({ access: 'auto_edit', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' }),
@@ -499,7 +499,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Can start helpers' }));
-    fireEvent.keyDown(screen.getByLabelText('Helper limit'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByLabelText('Helpers at once'), { key: 'Escape' });
     fireEvent.keyDown(screen.getByLabelText('Model'), { key: 'Escape' });
     expect(screen.getByTestId('new-agent-builder')).toBeTruthy();
     fireEvent.keyDown(screen.getByRole('heading', { name: /^Build / }), { key: 'Escape' });

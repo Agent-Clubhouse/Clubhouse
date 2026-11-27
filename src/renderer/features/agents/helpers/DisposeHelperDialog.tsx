@@ -96,14 +96,14 @@ export function DisposeHelperDialog({ helper, projectPath, requestedBy, onClose,
       const stopped = result.stopped ? ` ${helper.name} is stopped and nothing was deleted.` : ' Nothing was deleted.';
       // A failed check's git output is in the check line's tooltip, not the sentence.
       const message = result.checks?.error
-        ? `${helper.name} wasn’t disposed because it couldn’t be checked`
-        : plainFailure(result.message, `${helper.name} wasn’t disposed`).text.replace(/\.$/, '');
+        ? `${helper.name} wasn’t deleted because it couldn’t be checked`
+        : plainFailure(result.message, `${helper.name} wasn’t deleted`).text.replace(/\.$/, '');
       setError(result.changed
         ? `${message}. Review what would be lost and confirm again.${result.stopped ? ` ${helper.name} is stopped.` : ''}`
         : `${message}.${stopped}`);
     } catch (err) {
       // telemetry-exempt: shown in the dialog.
-      setError(plainFailure(err instanceof Error ? err.message : String(err), `Couldn’t dispose of ${helper.name}. Nothing was deleted.`).text);
+      setError(plainFailure(err instanceof Error ? err.message : String(err), `Couldn’t delete ${helper.name}. Nothing was deleted.`).text);
     }
     setPhase('ready');
   };
@@ -123,8 +123,8 @@ export function DisposeHelperDialog({ helper, projectPath, requestedBy, onClose,
 
   const intro = requestedBy
     ? atRisk
-      ? `${requestedBy} asked to dispose of ${helper.name}, but it has work that would be lost.`
-      : `${requestedBy} asked to dispose of ${helper.name}.`
+      ? `${requestedBy} asked to delete ${helper.name}, but it has work that would be lost.`
+      : `${requestedBy} asked to delete ${helper.name}.`
     : `This stops ${helper.name}, deletes its folder and its local branch. Anything already pushed stays on the remote.`;
 
   const footer = (
@@ -139,14 +139,14 @@ export function DisposeHelperDialog({ helper, projectPath, requestedBy, onClose,
         <Button kind="ghost" onClick={() => void runChecks()} disabled={phase === 'checking'} data-testid="dispose-recheck">Check again</Button>
       ) : (
         <Button kind="danger-solid" onClick={() => void dispose()} disabled={busy || phase === 'checking' || !checks} data-testid="dispose-confirm">
-          {phase === 'disposing' ? 'Disposing…' : atRisk ? 'Dispose anyway' : 'Dispose'}
+          {phase === 'disposing' ? 'Deleting…' : atRisk ? 'Delete anyway' : 'Delete'}
         </Button>
       )}
     </>
   );
 
   return (
-    <Modal open onClose={close} title={`Dispose of ${helper.name}?`} width="w-[520px]" testId="dispose-helper-dialog" footer={footer}>
+    <Modal open onClose={close} title={`Delete ${helper.name}?`} width="w-[520px]" testId="dispose-helper-dialog" footer={footer}>
       <div className="flex flex-col gap-2 text-[13px] text-ctp-subtext1 leading-normal">
         <p>{intro}</p>
         {phase === 'checking' || !checks ? (
@@ -156,17 +156,17 @@ export function DisposeHelperDialog({ helper, projectPath, requestedBy, onClose,
         )}
         {failed && (
           <p className="text-xs text-ctp-overlay1" data-testid="dispose-blocked-note">
-            Clubhouse can’t dispose of a helper it couldn’t check, even if you’re sure nothing would be lost.
+            Clubhouse can’t delete a helper it couldn’t check, even if you’re sure nothing would be lost.
           </p>
         )}
         {atRisk && (
           <p className="text-xs text-ctp-overlay1" data-testid="dispose-risk-note">
-            Dispose anyway deletes this work. To keep it, commit and push from {helper.name} first.
+            Delete anyway deletes this work. To keep it, commit and push from {helper.name} first.
           </p>
         )}
         <p className="text-xs text-ctp-overlay1">
           {folder ? <>Deletes <span className="font-mono break-all">{folder}</span> from disk. </> : null}
-          {helper.name} stays in the Helpers card as disposed until you remove it.
+          {helper.name} stays in the Helpers card as deleted until you remove it.
         </p>
         {error && <p className="text-xs text-ctp-error" role="alert" data-testid="dispose-error">{error}</p>}
       </div>

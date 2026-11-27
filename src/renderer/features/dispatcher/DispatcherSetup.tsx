@@ -325,7 +325,7 @@ function BehaviorStep({ draft, update, currentProvider, modelsByHand }: StepProp
         <div className="flex flex-col gap-1.5" data-testid="dispatcher-setup-auto">
           <p className="text-xs text-ctp-subtext0">{note}</p>
           {canSetUpAuto(auto) && (
-            <span><Button onClick={openAutoSettings} data-testid="dispatcher-setup-auto-button">Set up Auto</Button></span>
+            <span><Button onClick={openAutoSettings} data-testid="dispatcher-setup-auto-button">Set up Smart routing</Button></span>
           )}
         </div>
       )}

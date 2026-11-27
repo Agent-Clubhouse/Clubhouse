@@ -103,11 +103,11 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
       data-testid="link-dropdown"
     >
       <div className="h-7 flex items-center px-3 text-xs text-ctp-overlay1">
-        Link to widget
+        Connect to widget
       </div>
       {targets.length === 0 ? (
         <div className="px-3 py-1.5 text-xs text-ctp-overlay1">
-          No widgets on this canvas to link
+          No widgets on this canvas to connect
         </div>
       ) : (
         <div className="max-h-48 overflow-y-auto">

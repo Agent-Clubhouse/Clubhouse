@@ -16,7 +16,7 @@ function describe(fields: ConnectionEndpointFields): string {
     : fields.connectSource === 'default' ? helper === true ? ' · helper policy' : ' · follows Orchestrate' : ' · origin unavailable';
   return [name(fields) ?? (fields.name.state === 'ok' && fields.name.value === '' ? 'Blank name' : fields.name.state === 'unavailable' && fields.name.reason === 'limit' ? 'Name exceeds this read’s limit' : 'Name unavailable'),
     helper === undefined ? 'helper role unavailable' : helper ? 'configured helper' : 'not marked as a helper',
-    disposed === undefined ? 'disposal status unavailable' : disposed ? 'marked disposed' : 'not marked disposed',
+    disposed === undefined ? 'deletion status unavailable' : disposed ? 'marked deleted' : 'not marked deleted',
     connect === undefined ? 'Connect to Dispatcher unavailable' : `Connect to Dispatcher ${connect ? 'On' : 'Off'}${origin}`].join(' · ');
 }
 

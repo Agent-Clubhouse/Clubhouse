@@ -110,7 +110,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
           <div className="flex flex-col gap-3">
             {!view.managed && (
               <p className={settingsHelp}>
-                {view.deferred ?? 'Members still come from Canvas wires. They move to this list the next time Clubhouse starts.'}
+                {view.deferred ?? 'Members still come from Canvas connections. They move to this list the next time Clubhouse starts.'}
               </p>
             )}
             {view.managed && (

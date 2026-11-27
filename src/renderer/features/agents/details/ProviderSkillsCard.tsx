@@ -72,7 +72,7 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
       summary={`${names.length} reported`} open={open} onToggle={onToggle} embedded={embedded}>
       <CardNote>
         {historical ? 'Last session snapshot. ' : 'Session snapshot. '}
-        Provider-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.
+        CLI-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.
       </CardNote>
       {report && <>
         <CardRow label="Source">Claude · system/init</CardRow>
@@ -81,11 +81,11 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
         <CardRow label="Reported"><time dateTime={new Date(report.reportedAt).toISOString()}>{new Date(report.reportedAt).toLocaleString()}</time></CardRow>
       </>}
       {names.length === 0 ? <CardNote>Claude explicitly reported no skills in this snapshot.</CardNote>
-        : <ul className="pr-3.5 pl-[33px] py-1 text-xs text-ctp-text break-words" aria-label="Provider-reported skill names">
+        : <ul className="pr-3.5 pl-[33px] py-1 text-xs text-ctp-text break-words" aria-label="CLI-reported skill names">
           {names.map((name) => <li key={name}>{name}</li>)}
         </ul>}
       {installedList}
-      <CardNote>This snapshot can change on a later turn. Opening this card sends nothing to the provider.</CardNote>
+      <CardNote>This snapshot can change on a later turn. Opening this card sends nothing to the CLI.</CardNote>
     </DetailsCard>
   );
 }

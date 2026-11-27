@@ -60,9 +60,9 @@ export function RuntimeSwitch({ value, onChange, disabled, compact, review }: {
   const views: RuntimeView[] = onChange ? ['chat', 'terminal'] : [value];
   return (
     <span className="inline-flex items-center gap-1">
-      <span className="inline-flex gap-0.5 p-0.5 rounded-[7px] bg-ctp-crust" role="radiogroup" aria-label="Chat or CLI" data-testid="runtime-switch">
+      <span className="inline-flex gap-0.5 p-0.5 rounded-[7px] bg-ctp-crust" role="radiogroup" aria-label="View" data-testid="runtime-switch">
         {views.map((v) => {
-          const label = v === 'chat' ? 'Chat' : 'CLI';
+          const label = v === 'chat' ? 'Chat' : 'Terminal';
           const checked = !review?.active && v === value;
           return (
             <Tooltip key={v} content={label} disabled={!compact}>

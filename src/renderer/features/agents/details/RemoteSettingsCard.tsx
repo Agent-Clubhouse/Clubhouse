@@ -68,8 +68,8 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
   const model = value ? liveModel && session?.model !== value.model ? `${liveModel} now, next start: ${value.model}` : liveModel ?? value.model : liveModel;
   const liveAccess = session?.level ? accessLabel(session.level) : null;
   const access = liveAccess && value && liveAccess !== value.access ? `${liveAccess} now, starts at ${value.access}` : liveAccess ?? value?.access;
-  const liveRuntime = session || agent.executionMode === 'chat' ? 'Chat' : agent.executionMode ? 'CLI' : null;
-  const nextRuntime = value?.runtime === 'chat' ? 'Chat' : value ? 'CLI' : null;
+  const liveRuntime = session || agent.executionMode === 'chat' ? 'Chat' : agent.executionMode ? 'Terminal' : null;
+  const nextRuntime = value?.runtime === 'chat' ? 'Chat' : value ? 'Terminal' : null;
   const runtime = asleep ? nextRuntime : runtimeUnconfirmed ? `${nextRuntime ?? 'Host setting'} on next wake; current run not confirmed` : liveRuntime ?? (nextRuntime ? `${nextRuntime} on next wake` : null);
   const summary = [value?.setup.managed ? 'Managed' : null, runtime, model, access].filter(Boolean).join(' · ') || message(result);
   const row = (id: string, label: string, text: string | null | undefined) => text == null ? null
@@ -80,7 +80,7 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
     <DetailsCard id="settings" title="Settings" summary={summary} open={open} onToggle={() => setOpen(!open)}>
       {row('cli', providerDiffers && !session ? 'Next start CLI' : 'CLI', [liveCli ?? value?.provider, liveCli ? session?.cliVersion : null].filter(Boolean).join(' ') || null)}
       {separateNextCli && row('next-cli', 'Next start CLI', value?.provider)}
-      {row('runs-in', asleep ? 'Next wake' : 'Runs in', runtime)}
+      {row('runs-in', asleep ? 'Next wake' : 'View', runtime)}
       {!asleep && liveRuntime && nextRuntime && liveRuntime !== nextRuntime && row('next-runtime', 'Next wake', nextRuntime)}
       {row('model', 'Model', model)}
       {row('effort', 'Effort', session?.effortReported && session.effort ? session.effort[0].toUpperCase() + session.effort.slice(1) + (session.effortIsDefault ? ' (default)' : '') : null)}
@@ -97,7 +97,7 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
           {row('mcp', 'MCP servers', names(setup.mcps))}
           {setup.updatedAt && <CardNote>{changedLine(setup.updatedAt, setup.updatedBy)}</CardNote>}
           {setup.waiting && <CardNote>Setup changed. Applies when it restarts or next wakes.</CardNote>}
-          <CardNote>{setup.managed ? 'Desired setup on the host. ' : 'Configured on the host. '}This does not confirm provider loading or use. Live skills and MCP status are shown separately when reported.</CardNote>
+          <CardNote>{setup.managed ? 'Desired setup on the host. ' : 'Configured on the host. '}This does not confirm CLI loading or use. Live skills and MCP status are shown separately when reported.</CardNote>
         </> : <CardNote>Couldn’t read the host’s configured instructions, skills and MCP summary.</CardNote>}
       </>}
       {message(result) && <CardNote><span role="status">{message(result)}</span></CardNote>}

@@ -79,8 +79,8 @@ it.each(['full', 'ids_only', 'none'] as const)('preserves the %s child capabilit
   if (mode === 'ids_only') expect(screen.getByText(/Child thread: child-id/)).toHaveTextContent('Name and status are not reported');
   if (mode === 'none') {
     expect(screen.getByText(/does not expose child details/)).toBeInTheDocument();
-    expect(screen.getByText(/0 provider or child report events shown/)).toBeInTheDocument();
-    expect(screen.getByText(/No provider or child reports can be shown/)).toBeInTheDocument();
+    expect(screen.getByText(/0 CLI or child report events shown/)).toBeInTheDocument();
+    expect(screen.getByText(/No CLI or child reports can be shown/)).toBeInTheDocument();
   }
 });
 it('withholds the last archived page after denial without exposing raw host errors', async () => {

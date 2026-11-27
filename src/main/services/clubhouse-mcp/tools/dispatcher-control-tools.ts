@@ -80,12 +80,12 @@ export function registerDispatcherControlTools(): void {
     'connect_orchestrators',
     {
       description:
-        'Link two agents directly, so `from` gets tools to message and check on `to`. Each end must be a durable agent ' +
-        'connected to you, not a helper; it doesn\'t need to orchestrate. The link is ' +
-        'saved as yours. It is refused if they are already connected some other way, or if the user removed the link. ' +
-        'A new link can read status and output, send messages and files, and wake; clear_agent and compact_agent stay off ' +
+        'Connect two agents directly, so `from` gets tools to message and check on `to`. Each end must be a durable agent ' +
+        'connected to you, not a helper; it doesn\'t need to orchestrate. The connection is ' +
+        'saved as yours. It is refused if they are already connected some other way, or if the user removed the connection. ' +
+        'A new connection can read status and output, send messages and files, and wake; clear_agent and compact_agent stay off ' +
         'unless you name them in allow. Tools the user already set on a direction are kept, and naming tools for it is refused. ' +
-        'Each link in the result reads back its tools: allowed, disabled, and tools_yours (whether set_connection_tools can change them).',
+        'Each connection in the result reads back its tools: allowed, disabled, and tools_yours (whether set_connection_tools can change them).',
       inputSchema: { type: 'object', properties: { ...LINK_PROPERTIES, ...ALLOW_PROPERTIES }, required: ['from', 'to'] },
     },
     guarded('connect_orchestrators', connectOrchestrators),
@@ -96,7 +96,7 @@ export function registerDispatcherControlTools(): void {
     'disconnect_orchestrators',
     {
       description:
-        'Remove a link you made with connect_orchestrators. Links the user made and your own wires can\'t be removed here.',
+        'Remove a connection you made with connect_orchestrators. Connections the user made and connections to you can\'t be removed here.',
       inputSchema: { type: 'object', properties: LINK_PROPERTIES, required: ['from', 'to'] },
     },
     guarded('disconnect_orchestrators', disconnectOrchestrators),
@@ -107,12 +107,12 @@ export function registerDispatcherControlTools(): void {
     'list_orchestrator_controls',
     {
       description:
-        'Read connected orchestrators\' helper settings, the links you made with their status and tools, and optionally your recent ' +
-        'audit rows. A suspended link has an end that is no longer connected to you, and returns when it is connected again.',
+        'Read connected orchestrators\' helper settings, the connections you made with their status and tools, and optionally your recent ' +
+        'audit rows. A suspended connection has an end that is no longer connected to you, and returns when it is connected again.',
       inputSchema: {
         type: 'object',
         properties: {
-          agent_id: { type: 'string', description: 'Just this agent and its links. Any agent connected to you; its helper settings show only if it orchestrates.' },
+          agent_id: { type: 'string', description: 'Just this agent and its connections. Any agent connected to you; its helper settings show only if it orchestrates.' },
           limit: { type: 'number', description: `Orchestrators per page: up to ${MAX_CONTROLS_PAGE}, default ${DEFAULT_CONTROLS_PAGE}.` },
           cursor: { type: 'string', description: 'next_cursor from the last page.' },
           audit: { type: 'number', description: 'Newest audit rows to add: 0 to 50, default 0.' },

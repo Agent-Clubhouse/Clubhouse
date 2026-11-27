@@ -385,7 +385,7 @@ describe('helper handoff (#2229)', () => {
     await expect(setHelperHandoff(PROJECT_PATH, 'durable_2_help', 'durable_3_other', { how: 'pushed', note: '' }))
       .rejects.toThrow(/Not a helper/);
     await expect(setHelperHandoff(PROJECT_PATH, 'durable_4_gone', 'durable_1_orch', { how: 'pushed', note: '' }))
-      .rejects.toThrow(/already disposed/);
+      .rejects.toThrow(/already deleted/);
     await expect(setHelperHandoff(PROJECT_PATH, 'durable_2_help', 'durable_1_orch', { how: 'emailed' as 'pushed', note: '' }))
       .rejects.toThrow(/Unknown handoff/);
     expect(onDisk('durable_2_help')?.handoff).toBeUndefined();
@@ -530,7 +530,7 @@ describe('setParentAgent', () => {
     expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_1_a')).not.toHaveProperty('parentAgentId');
   });
 
-  it('rejects unknown and disposed agents', async () => {
+  it('rejects unknown and deleted agents', async () => {
     await expect(setParentAgent(PROJECT_PATH, 'durable_1_a', 'durable_9_missing')).rejects.toThrow(/not found/);
     await expect(setParentAgent(PROJECT_PATH, 'durable_9_missing', 'durable_1_a')).rejects.toThrow(/not found/);
     await expect(setParentAgent(PROJECT_PATH, 'durable_1_a', 'durable_4_d')).rejects.toThrow(/disposed/);
@@ -665,7 +665,7 @@ describe('delete cascade', () => {
     expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 2, unpushed: 1, unmerged: 3 });
   });
 
-  it('dispose: blocks on a dirty helper and changes nothing', async () => {
+  it('delete: blocks on a dirty helper and changes nothing', async () => {
     seedFamily({ durable_2_dirty: { dirty: 1 }, durable_3_clean: {} });
 
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
@@ -681,7 +681,7 @@ describe('delete cascade', () => {
     expect(helpers.every((a) => !a.disposedAt && a.worktreePath)).toBe(true);
   });
 
-  it('dispose: blocks on an unpushed helper', async () => {
+  it('delete: blocks on an unpushed helper', async () => {
     seedFamily({ durable_2_unpushed: { unpushed: 2, unmerged: 2 } });
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
     expect(result.ok).toBe(false);
@@ -689,7 +689,7 @@ describe('delete cascade', () => {
     expect(worktreeRemovals()).toEqual([]);
   });
 
-  it('dispose: allows a pushed helper whose work is not merged, and reports the unmerged count', async () => {
+  it('delete: allows a pushed helper whose work is not merged, and reports the unmerged count', async () => {
     seedFamily({ durable_2_pushed: { unpushed: 0, unmerged: 3 } });
     expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_pushed')).toEqual({ dirty: 0, unpushed: 0, unmerged: 3 });
 
@@ -771,7 +771,7 @@ describe('delete cascade', () => {
     expect(branchDeletions()).toEqual([]);
   });
 
-  it('B2: with no remote, work saved on another branch can be disposed', async () => {
+  it('B2: with no remote, work saved on another branch can be deleted', async () => {
     remoteConfigured = false;
     baseBranch = null;
     seedFamily({ durable_2_h: { unpushed: 5, localOnly: 0, unmerged: 0 } });
@@ -824,7 +824,7 @@ describe('delete cascade', () => {
     expect(checks.error).toMatch(/couldn't check, fatal: not a git repository/);
   });
 
-  it('B4: a helper another Clubhouse instance is still creating is never disposed, even forced', async () => {
+  it('B4: a helper another Clubhouse instance is still creating is never deleted, even forced', async () => {
     seed([
       withWorktree('durable_1_orch'),
       withWorktree('durable_2_new', {}, {
@@ -848,7 +848,7 @@ describe('delete cascade', () => {
     expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_new')?.disposedAt).toBeUndefined();
   });
 
-  it('disposes an owned helper branch only while it is unmoved (#2226)', async () => {
+  it('deletes an owned helper branch only while it is unmoved (#2226)', async () => {
     seed([
       withWorktree('durable_1_orch'),
       withWorktree('durable_2_owned', {}, { parentAgentId: 'durable_1_orch', branchOwned: true, branchStartSha: START_SHA }),
@@ -866,7 +866,7 @@ describe('delete cascade', () => {
     expect(worktreeRemovals()).toHaveLength(3);
   });
 
-  it('reports exactly which helpers were disposed when one fails part way', async () => {
+  it('reports exactly which helpers were deleted when one fails part way', async () => {
     seedFamily({ durable_2_ok: {}, durable_3_busy: {}, durable_4_ok: {} });
     rmFailures.add(worktree('durable_3_busy'));
 
@@ -886,7 +886,7 @@ describe('delete cascade', () => {
     expect(branchDeletions()).not.toContain('durable_3_busy/standby');
   });
 
-  it('dispose: a dry run reports without changing anything', async () => {
+  it('delete: a dry run reports without changing anything', async () => {
     seedFamily({ durable_2_clean: {} });
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { dryRun: true });
     expect(result).toMatchObject({ ok: true, helperIds: ['durable_2_clean'] });
@@ -894,7 +894,7 @@ describe('delete cascade', () => {
     expect((await listHelpers(PROJECT_PATH, 'durable_1_orch')).map((a) => a.id)).toEqual(['durable_2_clean']);
   });
 
-  it('dispose: removes clean helpers worktrees, helpers of helpers too, and keeps their rows', async () => {
+  it('delete: removes clean helpers worktrees, helpers of helpers too, and keeps their rows', async () => {
     seed([
       withWorktree('durable_1_orch'),
       withWorktree('durable_2_h', {}, {
@@ -1009,7 +1009,7 @@ describe('delete cascade', () => {
       expect(delivered.has('durable_2_h')).toBe(false);
     });
 
-    it('a cascade disposal releases each helper it disposed', async () => {
+    it('a cascade disposal releases each helper it deleted', async () => {
       seedFamily({ durable_2_a: {}, durable_3_b: {} });
       hold('durable_2_a');
       hold('durable_3_b', false);
@@ -1096,7 +1096,7 @@ describe('delete cascade', () => {
     expect(worktreeRemovals()).toEqual([]);
   });
 
-  it('a helper released while git ran is not marked disposed, and its worktreePath is cleared (#2229)', async () => {
+  it('a helper released while git ran is not marked deleted, and its worktreePath is cleared (#2229)', async () => {
     seedFamily({ durable_2_h: {} });
     hooks.beforeBranchDelete = () => setParentAgent(PROJECT_PATH, 'durable_2_h', null);
 
@@ -1119,7 +1119,7 @@ describe('delete cascade', () => {
   });
 });
 
-describe('disposed rows', () => {
+describe('deleted rows', () => {
   beforeEach(() => {
     seed([
       agent('durable_1_orch'),
@@ -1140,8 +1140,8 @@ describe('disposed rows', () => {
     expect(await listHelpers(PROJECT_PATH, 'durable_1_orch', { recursive: true })).toEqual([]);
   });
 
-  it('is not disposed twice and is skipped by the cascade', async () => {
-    expect(await disposeHelper(PROJECT_PATH, 'durable_2_gone')).toMatchObject({ ok: true, message: 'Already disposed' });
+  it('is not deleted twice and is skipped by the cascade', async () => {
+    expect(await disposeHelper(PROJECT_PATH, 'durable_2_gone')).toMatchObject({ ok: true, message: 'Already deleted' });
     expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).toMatchObject({ ok: true, helperIds: [] });
     expect(gitCalls).toEqual([]);
   });
@@ -1217,7 +1217,7 @@ describe('helpers in another project (#2511)', () => {
     expect((await listHelpers(OTHER_PROJECT_PATH, 'durable_1_orch')).map((a) => a.id)).toEqual([]);
   });
 
-  it('dispose: the cascade disposes helpers in every project, helpers of helpers too', async () => {
+  it('delete: the cascade deletes helpers in every project, helpers of helpers too', async () => {
     seedAcross();
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
     await flushAllAgentConfigs();
@@ -1233,7 +1233,7 @@ describe('helpers in another project (#2511)', () => {
     expect(otherOnDisk('durable_5_own')).toEqual(agent('durable_5_own'));
   });
 
-  it('dispose: a helper at risk in another project blocks the whole cascade before anything is disposed', async () => {
+  it('delete: a helper at risk in another project blocks the whole cascade before anything is deleted', async () => {
     seedAcross({ dirty: 2 });
     const dry = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { dryRun: true });
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');

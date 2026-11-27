@@ -56,7 +56,7 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
   const grants = await effectiveAgentGrants(projectPath, callerId);
   if (item.remoteDispatcherAuthorization) {
     if (!['send_message', 'send_file'].includes(item.body.tool)
-      || federationRequestRouter()?.allowed(item.machine, item.body.args, item.body.tool) === false) return refuse('The receiving Dispatcher or its controller link is unavailable.');
+      || federationRequestRouter()?.allowed(item.machine, item.body.args, item.body.tool) === false) return refuse('The receiving Dispatcher or its controller connection is unavailable.');
     // The sender's own permission is final whatever the receiver's state, so it is checked first.
     const decision = evaluateGrant({ caller: { kind: 'agent', agentId: callerId, projectPath }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants);
     if (decision.outcome === 'refuse' || remoteDispatcherPermissionHash(callerId, grants) !== item.remoteDispatcherAuthorization.policyHash) {
@@ -69,7 +69,7 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
     if (isNetworkComputer(item.machine) && (!published?.agentId || published.agentId === item.body.to) && !published?.enabled) {
       return { allowed: false, reason: 'The receiving Dispatcher has not published its controller yet.', notReady: true };
     }
-    return refuse('The receiving Dispatcher or its controller link is unavailable.');
+    return refuse('The receiving Dispatcher or its controller connection is unavailable.');
   }
   const direction = getConnectionDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine });
   if (!direction && isDispatcherAgentId(callerId) && isNetworkComputer(item.machine) && !remoteFederationController(item.machine)?.agentId

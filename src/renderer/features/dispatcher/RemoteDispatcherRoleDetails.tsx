@@ -78,7 +78,7 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
       {(value || snapshotOnly) && enabled === undefined && <CardNote>{omitted('dispatcher') ? 'Dispatcher settings were omitted from this host snapshot.' : 'Dispatcher on/off state is not included in the host snapshot.'}</CardNote>}
       {settings && <>
         <CardRow label="CLI">{settings.provider}</CardRow><CardRow label="Model">{settings.model}</CardRow>
-        <CardRow label="Next start">{settings.runtime === 'chat' ? 'Chat' : 'CLI'}</CardRow><CardRow label="Access">{settings.access}</CardRow>
+        <CardRow label="Next start">{settings.runtime === 'chat' ? 'Chat' : 'Terminal'}</CardRow><CardRow label="Access">{settings.access}</CardRow>
         <CardRow label="Sandbox and approvals" labelWidth="wide">{settings.executionPolicy}</CardRow>
         {settings.autoSleep !== null && <CardRow label="Auto-sleep">{settings.autoSleep}</CardRow>}
         {settings.context !== null && <CardRow label="Context">{settings.context}</CardRow>}
@@ -92,7 +92,7 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
       {card('settings') ? <Evidence card={card('settings')!} /> : <CardNote>{note}</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="connections" title="Connections" summary={card('connections')?.summary || 'unavailable'} open onToggle={() => {}}>
-      {publishedLink && <><CardRow label="Link from here" labelWidth="wide">{publishedLink}</CardRow><CardNote>This computer’s published controller-link observation. It is not the selected computer’s connection inventory.</CardNote></>}
+      {publishedLink && <><CardRow label="Connection from here" labelWidth="wide">{publishedLink}</CardRow><CardNote>This computer’s published controller-connection observation. It is not the selected computer’s connection inventory.</CardNote></>}
       {value && eligible && value.details.connectionPages === 1
         ? <RemoteDispatcherConnectionPages machine={machine} roleAgentId={value.agentId} sources={value.details.connectionPageSources} contextKey={key}>
           {card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}
@@ -100,9 +100,9 @@ export function RemoteDispatcherRoleDetails({ machineId, dispatcherName, publish
         : card('connections') ? <Evidence card={card('connections')!} /> : <CardNote>{note}</CardNote>}
       {value && eligible && value.details.connectionPages !== 1 && <CardNote>This host shares the Dispatcher Connections summary only. Source pages need a host update.</CardNote>}
     </DetailsCard>
-    <DetailsCard embedded id="other-machines" title="Other machines" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
+    <DetailsCard embedded id="other-machines" title="Other computers" summary={peers ? otherMachinesSummary(peers) : 'unavailable'} open onToggle={() => {}}>
       {peers ? <><OtherMachinesList compact remotes={peers} /><CardNote>From the selected host’s confirmed shared snapshot; role metadata is read separately.</CardNote></>
-        : <CardNote>{!value && !snapshotOnly ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other machines were omitted from this host snapshot.' : 'The selected host has not shared its Other machines list. An absent list is not an empty network.'}</CardNote>}
+        : <CardNote>{!value && !snapshotOnly ? note : !sat?.snapshotReceipt ? 'Waiting for a confirmed host snapshot. Earlier private fields are withheld.' : omitted('dispatcherPresence') ? 'Other computers were omitted from this host snapshot.' : 'The selected host has not shared its Other computers list. An absent list is not an empty network.'}</CardNote>}
     </DetailsCard>
     <DetailsCard embedded id="actions" title="Actions" summary={card('actions')?.summary || 'unavailable'} open onToggle={() => {}}>
       {value && eligible && value.details.inventoryPages === 1 && value.details.inventorySources?.includes(REMOTE_ACTION_PAGE_SOURCE)

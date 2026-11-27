@@ -225,7 +225,7 @@ const ORCHESTRATOR_READS = new Set(['list_agent_templates', 'list_agent_parts'])
 async function orchestratorScope(callerId: string): Promise<((projectPath: string) => boolean) | null> {
   if (isDispatcherAgent(callerId)) return null;
   if (!(await managedAgents().helperTemplateChoice())) {
-    throw new ArgError('Orchestrators read the part library and templates only when the person lets them choose helper templates (Settings, Managed agents, Helpers). start_helper uses the default helper template.');
+    throw new ArgError('Orchestrators read the part library and templates only when the person lets them choose helper templates, on the Helpers page in Settings. start_helper uses the default helper template.');
   }
   if (isCrossProjectEnabled(callerId)) return null;
   const own = agentRegistry.get(callerId)?.projectPath;

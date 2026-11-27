@@ -44,7 +44,7 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
-  it('carries the real transcript cursor/receipt into explicit older Details reads without replacing current provider facts', async () => {
+  it('carries the real transcript cursor/receipt into explicit older Details reads without replacing current CLI facts', async () => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
     const historyBinding = { version: 1, projectId: 'p1', agentId: 'a1', sessionId: 's1', providerId: 'claude-code', driver: 'claude_agent_sdk', nativeSessionId: 'n1', displayRunId: 'runtime-a', startSeq: 1, subagents: 'full' };
     chatPage.mockImplementation(async (_host, _id, query) => page('tail', { agentId: 'a1', sessionId: 's1', currentSessionId: 's1', state: 'idle', displayRunId: 'runtime-a', historyBinding,
@@ -291,7 +291,7 @@ describe('remote full Details host evidence', () => {
     expect.soft(within(session).getAllByText('Ended')).toHaveLength(1); expect.soft(within(session).getAllByText('Why')).toHaveLength(1);
     expect(chatPage).not.toHaveBeenCalled(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
   });
-  it('keeps admitted current CLI identity when legacy optional provider fields are absent', async () => {
+  it('keeps admitted current CLI identity when legacy optional CLI fields are absent', async () => {
     const value = fixture(); value.providerLabel = 'Host Current Claude';
     value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };
     delete value.providerLabel; delete value.settings.providerId;
@@ -311,7 +311,7 @@ describe('remote full Details host evidence', () => {
     expect.soft(next).not.toBeNull(); if (next) expect.soft(next).toHaveTextContent('Host Next Codex');
     expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
   });
-  it('shows the actual current CLI separately from a changed inherited next-start provider', async () => {
+  it('shows the actual current CLI separately from a changed inherited next-start CLI', async () => {
     const value = fixture(); value.providerLabel = 'Host Current Claude';
     value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };
     read.mockResolvedValue({ status: 'ok', value });
@@ -324,7 +324,7 @@ describe('remote full Details host evidence', () => {
     expect(screen.getByTestId('details-card-session')).not.toHaveTextContent('Host Next Codex');
     expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
   });
-  it('uses independently read initial provider facts outside a cut transcript only after matching runtime hydration', async () => {
+  it('uses independently read initial CLI facts outside a cut transcript only after matching runtime hydration', async () => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
     chatPage.mockResolvedValue({ events: [{ v: 2, agentId: 'a1', sessionId: 's1', seq: 3000, ts: 3000, type: 'agent_message', data: { messageId: 'tail', text: 'Tail only' } }], readOnly: false, state: 'idle', truncated: true, displayRunId: 'runtime-a' });
     const localRead = vi.spyOn(window.clubhouse.chat, 'readTranscript');
@@ -342,7 +342,7 @@ describe('remote full Details host evidence', () => {
     expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Display reports from this runtime open are read separately');
     expect(localRead).not.toHaveBeenCalled(); localRead.mockRestore();
   });
-  it.each(['unavailable', 'unsupported'] as const)('does not fall back to retained provider reports when a new host explicitly says %s', async (state) => {
+  it.each(['unavailable', 'unsupported'] as const)('does not fall back to retained CLI reports when a new host explicitly says %s', async (state) => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidenceState: state } });
     chatPage.mockResolvedValue(page('RETAINED_VERSION', { displayRunId: 'runtime-a' }));
     render(<AgentDetails agent={agent} />);
@@ -353,9 +353,9 @@ describe('remote full Details host evidence', () => {
     expect(screen.queryByText('host-skill')).not.toBeInTheDocument();
     expect(screen.queryByText('High (default)')).not.toBeInTheDocument();
     expect(read).toHaveBeenCalledTimes(state === 'unavailable' ? 2 : 1);
-    if (state === 'unavailable') expect(screen.getByRole('button', { name: 'Refresh provider reports' })).toBeInTheDocument();
+    if (state === 'unavailable') expect(screen.getByRole('button', { name: 'Refresh CLI reports' })).toBeInTheDocument();
   });
-  it('does not promote an earlier display report after newer provider metadata arrives during hydration', async () => {
+  it('does not promote an earlier display report after newer CLI metadata arrives during hydration', async () => {
     const first = { ...fixture(), providerEvidence: evidence() };
     const nextEvidence = evidence(); nextEvidence.lastSeq = 4000; nextEvidence.values.cliVersion = 'NEW_VERSION'; nextEvidence.observedAt.cliVersion = 4000;
     read.mockResolvedValueOnce({ status: 'ok', value: first }).mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: nextEvidence } });
@@ -367,7 +367,7 @@ describe('remote full Details host evidence', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
     expect(read).toHaveBeenCalledTimes(2);
   });
-  it.each(['replacement', 'missing-run-id', 'offline', 'error'] as const)('withholds initial provider reports across same-session %s hydration', async (mode) => {
+  it.each(['replacement', 'missing-run-id', 'offline', 'error'] as const)('withholds initial CLI reports across same-session %s hydration', async (mode) => {
     const first = { ...fixture(), providerEvidence: evidence() };
     read.mockResolvedValueOnce({ status: 'ok', value: first }).mockResolvedValue({ status: 'error' });
     chatPage.mockResolvedValue(page('TAIL_VERSION', { displayRunId: mode === 'missing-run-id' ? undefined : mode === 'replacement' ? 'runtime-b' : 'runtime-a', ...(mode === 'offline' ? { readOnly: true, state: 'sleeping' } : mode === 'error' ? { state: 'error' } : {}) }));
@@ -455,7 +455,7 @@ describe('remote full Details host evidence', () => {
     await waitFor(() => expect(screen.getByTestId('details-setting-effort')).toHaveTextContent('High'));
     expect(within(screen.getByTestId('details-card-session')).getByText('Running')).toBeInTheDocument();
   });
-  it('preserves Effort/default, CLI version and inherited-provider skills bound to the selected session', async () => {
+  it('preserves Effort/default, CLI version and inherited-CLI skills bound to the selected session', async () => {
     const chat = { ...createChatViewState(agent.id), provider: 'claude-code', driver: 'claude_agent_sdk' as const, sessionId: 's1', nativeSessionId: 'n1', effort: 'high', effortReported: true, effortIsDefault: true, cliVersion: '1.2.3', providerSkills: { provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const, sessionId: 's1', nativeSessionId: 'n1', reportedAt: 1000, names: ['host-skill'] } };
     render(<AgentDetails agent={agent} chat={chat} />);
     await screen.findByText('Host CLI 1.2.3');
@@ -510,7 +510,7 @@ describe('remote full Details host evidence', () => {
     expect(screen.getByTestId('details-card-canvases')).toHaveTextContent('not in the host’s current shared snapshot');
     expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
   });
-  it.each(['forbidden', 'error', 'unavailable'] as const)('withholds retained provider evidence after a %s host read', async (status) => {
+  it.each(['forbidden', 'error', 'unavailable'] as const)('withholds retained CLI evidence after a %s host read', async (status) => {
     read.mockResolvedValue({ status });
     const chat = { ...createChatViewState(agent.id), provider: 'claude-code', sessionId: 's1', nativeSessionId: 'n1', cliVersion: 'STALE_VERSION', effort: 'STALE_EFFORT', effortReported: true, mcpServers: [{ name: 'STALE_MCP', status: 'connected' as const }] };
     render(<AgentDetails agent={agent} chat={chat} />);
@@ -540,7 +540,7 @@ describe('remote full Details host evidence', () => {
     act(() => satellite({ state: 'disconnected', snapshot }));
     act(() => satellite({ state: 'connected', snapshot }));
     await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Refreshing provider evidence'));
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Refreshing CLI evidence'));
     expect(screen.queryByText('Host CLI Fresh A')).not.toBeInTheDocument();
     await act(async () => { finish(page('Fresh B')); });
     await screen.findByText('Host CLI Fresh B');
@@ -603,7 +603,7 @@ describe('remote full Details host evidence', () => {
     fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
     expect(screen.getByText('host-skill')).toBeInTheDocument();
     expect(screen.getByText('PROVIDER_MCP')).toBeInTheDocument();
-    expect(screen.getByText('Recorded wire to CURRENT_WIRE_RECORD')).toBeInTheDocument();
+    expect(screen.getByText('Recorded connection to CURRENT_WIRE_RECORD')).toBeInTheDocument();
     act(() => useChatStore.getState().applyEvent({ v: 2, agentId: agent.id, sessionId: 's1', seq: 4, ts: 4, type: 'session_ended', data: { reason: 'error' } }));
     expect(screen.queryByText('Host CLI 1.2.3')).not.toBeInTheDocument();
     expect(screen.queryByText('host-skill')).not.toBeInTheDocument();
@@ -617,7 +617,7 @@ describe('remote full Details host evidence', () => {
   });
 });
 
-describe('selected host outgoing Wires consumer', () => {
+describe('selected host outgoing Connections consumer', () => {
   const selected = () => ({ ...fixture(), outgoingWires: { source: 'selected-outgoing-binding-records' as const, state: 'recorded' as const, total: 2, omitted: 1, rows: [{ name: 'SELECTED_HOST_WIRE', kind: 'browser' as const }] } });
   const openSkills = () => { const toggle = screen.getByTestId('details-card-skills-mcp-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle); };
 
@@ -627,19 +627,19 @@ describe('selected host outgoing Wires consumer', () => {
     expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
     read.mockResolvedValue({ status: 'ok', value });
     render(<AgentDetails agent={{ ...agent, status }} />); await waitFor(() => expect(read).toHaveBeenCalled()); openSkills();
-    await screen.findByText('Recorded wire to SELECTED_HOST_WIRE');
-    const wires = screen.getByRole('region', { name: 'Wires' });
-    expect(wires).toHaveTextContent('browser'); expect(wires).toHaveTextContent('1 additional outgoing binding records omitted');
+    await screen.findByText('Recorded connection to SELECTED_HOST_WIRE');
+    const wires = screen.getByRole('region', { name: 'Outgoing connections' });
+    expect(wires).toHaveTextContent('browser'); expect(wires).toHaveTextContent('1 additional outgoing connection records omitted');
     expect(wires).toHaveTextContent('do not establish health, reachability, authorization or a live connection');
     expect(within(wires).queryByRole('button')).not.toBeInTheDocument(); expect(within(wires).queryByRole('link')).not.toBeInTheDocument();
     expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled(); expect(window.clubhouse.managed.getSetup).not.toHaveBeenCalled();
     expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled(); expect(read).toHaveBeenCalledTimes(1); expect(chatPage).not.toHaveBeenCalled();
   });
 
-  it.each(['offline', 'snapshot-unavailable', 'denied', 'dispatcher-role', 'quick-role'] as const)('withholds prior wire records across %s continuity changes', async (mode) => {
+  it.each(['offline', 'snapshot-unavailable', 'denied', 'dispatcher-role', 'quick-role'] as const)('withholds prior connection records across %s continuity changes', async (mode) => {
     read.mockResolvedValue({ status: 'ok', value: selected() });
     const view = render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled()); openSkills();
-    await screen.findByText('Recorded wire to SELECTED_HOST_WIRE');
+    await screen.findByText('Recorded connection to SELECTED_HOST_WIRE');
     if (mode === 'offline') act(() => satellite({ state: 'disconnected' }));
     if (mode === 'snapshot-unavailable') act(() => satellite({ snapshotUnavailable: true }));
     if (mode === 'denied') { read.mockResolvedValue({ status: 'forbidden' }); act(() => satellite()); }
@@ -654,7 +654,7 @@ describe('selected host outgoing Wires consumer', () => {
     expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
   });
 
-  it('does not replay a late previous-host wire record into a different host with the same native agent id', async () => {
+  it('does not replay a late previous-host connection record into a different host with the same native agent id', async () => {
     let finish!: (value: unknown) => void;
     read.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockResolvedValue({ status: 'forbidden' });
     const view = render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled());
@@ -663,7 +663,7 @@ describe('selected host outgoing Wires consumer', () => {
     await act(async () => { finish({ status: 'ok', value: selected() }); });
     openSkills(); await waitFor(() => expect(read).toHaveBeenCalledWith('other-host', 'a1'));
     expect(screen.queryByText(/SELECTED_HOST_WIRE/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Recorded outgoing wires' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Recorded outgoing connections' })).not.toBeInTheDocument();
     expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled();
   });
 });

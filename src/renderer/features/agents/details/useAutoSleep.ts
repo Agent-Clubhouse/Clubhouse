@@ -29,11 +29,11 @@ export function useAutoSleep(agent: Agent, chat: ChatViewState | undefined, proj
     return () => { alive = false; };
   }, [agent.id, asleep, local, chatFlag, orchestrator, projectPath, runtimeMode, key]);
   const nextRuntime = runtime?.key === key ? runtime.value : null;
-  const runsIn: 'Chat' | 'CLI' | null = !asleep ? (chat ? 'Chat' : 'CLI')
+  const runsIn: 'Chat' | 'Terminal' | null = !asleep ? (chat ? 'Chat' : 'Terminal')
     : !local ? null
-      : chatFlag === false ? 'CLI'
-        : nextRuntime ? (nextRuntime.chat ? 'Chat' : 'CLI')
-          : runtimeMode === 'chat' ? 'Chat' : runtimeMode === 'terminal' ? 'CLI' : null;
+      : chatFlag === false ? 'Terminal'
+        : nextRuntime ? (nextRuntime.chat ? 'Chat' : 'Terminal')
+          : runtimeMode === 'chat' ? 'Chat' : runtimeMode === 'terminal' ? 'Terminal' : null;
   const showAutoSleep = local && (asleep ? runsIn === 'Chat' : !!chat);
   const idle = loaded ? normalizeIdleSleep(config?.idleSleep) : null;
   return {

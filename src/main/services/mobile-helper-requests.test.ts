@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./clubhouse-mcp/tools/helper-tools', () => ({ approveHelperStart: vi.fn(), declineHelperStart: vi.fn() }));
 vi.mock('./helper-dispose-decisions', async (importOriginal) => ({
-  ...await importOriginal<typeof import('./helper-dispose-decisions')>(),
+  ...await importOriginal<typeof import('./helper-delete-decisions')>(),
   disposeHelperForUser: vi.fn(),
   reportDisposeDecision: vi.fn(),
 }));
@@ -28,7 +28,7 @@ function disposeRequest(checks: HelperDisposeChecks = clean, forceRequested = fa
 }
 
 function startRequest(at = Date.parse('2026-10-26T09:00:00Z')) {
-  const result = recordStartRequest('/p', 'orch', 'Planner (old name)', { name: 'impl-ipc', task: 'Wire the IPC', model: 'opus' }, at);
+  const result = recordStartRequest('/p', 'orch', 'Planner (old name)', { name: 'impl-ipc', task: 'Connection the IPC', model: 'opus' }, at);
   if (!result.ok) throw new Error('not recorded');
   return result.request.requestId;
 }
@@ -57,7 +57,7 @@ afterEach(() => {
 });
 
 describe('buildMobileHelperRequests', () => {
-  it('lists starts and disposes, oldest first, with the desktop Needs you lines', () => {
+  it('lists starts and deletes, oldest first, with the desktop Needs you lines', () => {
     const disposeId = disposeRequest({ dirty: 2, unpushed: 1, unmerged: 3 }, true);
     const startId = startRequest();
     expect(buildMobileHelperRequests(projects, agents)).toEqual([
@@ -66,27 +66,27 @@ describe('buildMobileHelperRequests', () => {
         requester: { agentId: 'orch', name: 'Planner' }, helper: { agentId: null, name: 'impl-ipc' },
         requestedAt: '2026-10-26T09:00:00.000Z', expiresAt: '2026-10-27T09:00:00.000Z',
         summary: 'Wants to start the helper impl-ipc',
-        start: { task: 'Wire the IPC', persona: null, model: 'opus', access: null, branchFrom: null },
+        start: { task: 'Connection the IPC', persona: null, model: 'opus', access: null, branchFrom: null },
         requestedRouting: { provider: null, model: 'opus', effort: null, difficulty: null },
       },
       {
         requestId: disposeId, kind: 'dispose', projectId: 'proj',
         requester: { agentId: 'orch', name: 'Planner' }, helper: { agentId: 'helper', name: 'Docs' },
         requestedAt: '2026-10-26T10:00:00.000Z', expiresAt: null,
-        summary: 'Planner asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit, 3 unmerged commits.',
+        summary: 'Planner asked to delete this helper (forced). 2 uncommitted files, 1 unpushed commit, 3 unmerged commits.',
         dispose: { uncommittedFiles: 2, unpushedCommits: 1, unmergedCommits: 3, checkError: null, forceRequested: true, workAtRisk: true, canDispose: true },
       },
     ]);
   });
 
-  it('marks a dispose whose check failed as not disposable', () => {
+  it('marks a delete whose check failed as not disposable', () => {
     disposeRequest({ dirty: 0, unpushed: 0, unmerged: null, error: 'its remote has never been fetched' });
     const [only] = buildMobileHelperRequests(projects, agents);
     expect(only.dispose).toMatchObject({ checkError: 'its remote has never been fetched', canDispose: false, workAtRisk: false });
-    expect(only.summary).toBe('Planner asked to dispose this helper. Its remote has never been fetched.');
+    expect(only.summary).toBe('Planner asked to delete this helper. Its remote has never been fetched.');
   });
 
-  it('leaves out unregistered projects and helpers that are gone or disposed', () => {
+  it('leaves out unregistered projects and helpers that are gone or deleted', () => {
     disposeRequest();
     startRequest();
     expect(buildMobileHelperRequests([], agents)).toEqual([]);
@@ -175,7 +175,7 @@ describe('runHelperCommand: starts', () => {
   });
 });
 
-describe('runHelperCommand: disposes', () => {
+describe('runHelperCommand: deletes', () => {
   it('refuses an unknown request, or one whose helper moved to another parent', async () => {
     expect(await rejection(runHelperCommand(command('helper.approve', 'hdispose_nope'), deps()))).toMatchObject({ code: 'helper_request_not_found' });
     const id = disposeRequest();
@@ -184,9 +184,9 @@ describe('runHelperCommand: disposes', () => {
     expect(disposeHelperForUser).not.toHaveBeenCalled();
   });
 
-  it('disposes a clean helper, reloads the rail and tells the orchestrator', async () => {
+  it('deletes a clean helper, reloads the rail and tells the orchestrator', async () => {
     const id = disposeRequest();
-    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: true, message: 'Disposed', stopped: true });
+    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: true, message: 'Deleted', stopped: true });
     const d = deps();
     expect(await runHelperCommand(command('helper.approve', id), d)).toEqual({ requestId: id, kind: 'dispose', approved: true, stopped: true });
     expect(disposeHelperForUser).toHaveBeenCalledWith('/p', 'helper', { force: false, seen: clean });
@@ -194,17 +194,17 @@ describe('runHelperCommand: disposes', () => {
     expect(reportDisposeDecision).toHaveBeenCalledWith('/p', 'helper', 'disposed');
   });
 
-  it('needs force when work is at risk, as Dispose anyway', async () => {
+  it('needs force when work is at risk, as Delete anyway', async () => {
     const atRisk = { dirty: 2, unpushed: 1, unmerged: 0 };
     const id = disposeRequest(atRisk);
     expect(await rejection(runHelperCommand(command('helper.approve', id), deps()))).toMatchObject({ code: 'helper_work_at_risk', statusCode: 409 });
     expect(disposeHelperForUser).not.toHaveBeenCalled();
-    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: true, message: 'Disposed' });
+    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: true, message: 'Deleted' });
     expect(await runHelperCommand(command('helper.approve', id, true), deps())).toMatchObject({ approved: true, stopped: false });
     expect(disposeHelperForUser).toHaveBeenCalledWith('/p', 'helper', { force: true, seen: atRisk });
   });
 
-  it('never disposes a helper whose check failed', async () => {
+  it('never deletes a helper whose check failed', async () => {
     const id = disposeRequest({ dirty: 0, unpushed: 0, unmerged: null, error: 'git failed' });
     const err = await rejection(runHelperCommand(command('helper.approve', id, true), deps()));
     expect(err).toMatchObject({ code: 'helper_check_failed' });
@@ -226,19 +226,19 @@ describe('runHelperCommand: disposes', () => {
 
   it('maps a check that fails on approve', async () => {
     const id = disposeRequest();
-    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: false, message: 'Docs wasn’t disposed (git failed)', checks: { ...clean, error: 'git failed' } });
+    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: false, message: 'Docs wasn’t deleted (git failed)', checks: { ...clean, error: 'git failed' } });
     expect(await rejection(runHelperCommand(command('helper.approve', id), deps()))).toMatchObject({ code: 'helper_check_failed' });
     expect(listDisposeRequests()[0].request.checks.error).toBe('git failed');
   });
 
-  it('maps work that appeared since the request to Dispose anyway', async () => {
+  it('maps work that appeared since the request to Delete anyway', async () => {
     const id = disposeRequest();
-    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: false, message: 'Docs has work that disposing would lose', checks: { dirty: 1, unpushed: 0, unmerged: 0 } });
-    expect(await rejection(runHelperCommand(command('helper.approve', id), deps()))).toMatchObject({ code: 'helper_work_at_risk', detail: 'Docs has work that disposing would lose.' });
+    vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: false, message: 'Docs has work that deleting would lose', checks: { dirty: 1, unpushed: 0, unmerged: 0 } });
+    expect(await rejection(runHelperCommand(command('helper.approve', id), deps()))).toMatchObject({ code: 'helper_work_at_risk', detail: 'Docs has work that deleting would lose.' });
     expect(listDisposeRequests()[0].requestId).not.toBe(id);
   });
 
-  it('reports a dispose that failed for another reason', async () => {
+  it('reports a delete that failed for another reason', async () => {
     const id = disposeRequest();
     vi.mocked(disposeHelperForUser).mockResolvedValue({ ok: false, message: 'Agent not found' });
     expect(await rejection(runHelperCommand(command('helper.approve', id), deps()))).toMatchObject({ code: 'helper_dispose_failed', outcome: 'failed', detail: 'Agent not found.' });
@@ -248,7 +248,7 @@ describe('runHelperCommand: disposes', () => {
     const id = disposeRequest();
     expect(await runHelperCommand(command('helper.decline', id), deps())).toEqual({ requestId: id, kind: 'dispose', declined: true });
     expect(reportDisposeDecision).toHaveBeenCalledWith('/p', 'helper', 'declined');
-    vi.mocked(reportDisposeDecision).mockResolvedValue({ ok: false, delivered: false, message: 'No dispose request' });
+    vi.mocked(reportDisposeDecision).mockResolvedValue({ ok: false, delivered: false, message: 'No delete request' });
     expect(await rejection(runHelperCommand(command('helper.decline', id), deps()))).toMatchObject({ code: 'helper_request_not_found' });
   });
 });

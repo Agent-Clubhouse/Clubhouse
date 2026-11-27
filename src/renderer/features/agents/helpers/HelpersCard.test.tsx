@@ -70,7 +70,7 @@ beforeEach(() => {
   window.clubhouse.agent.disposeHelper = vi.fn(async (_p: string, id: string) => {
     configs = configs.map((c) => (c.id === id ? { ...c, disposedAt: '2026-10-18T12:00:00Z' } : c));
     otherConfigs = otherConfigs.map((c) => (c.id === id ? { ...c, disposedAt: '2026-10-18T12:00:00Z' } : c));
-    return { ok: true, message: 'Disposed' };
+    return { ok: true, message: 'Deleted' };
   });
   window.clubhouse.agent.removeDisposed = vi.fn(async (_p: string, id: string) => {
     configs = configs.filter((c) => c.id !== id);
@@ -171,22 +171,22 @@ describe('Helpers card (#2232)', () => {
     expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith(PROJECT, 'h2', true);
   });
 
-  it('disposes through the dispose dialog, not the delete dialog', async () => {
+  it('deletes through the delete dialog, not the delete dialog', async () => {
     await renderCard();
     fireEvent.click(within(screen.getByTestId('helper-row-h2')).getByTestId('helper-dispose'));
     const dialog = await screen.findByTestId('dispose-helper-dialog');
     expect(useAgentStore.getState().deleteDialogAgent).toBeFalsy();
-    expect(dialog).toHaveTextContent('Dispose of qa-settings?');
+    expect(dialog).toHaveTextContent('Delete qa-settings?');
     await waitFor(() => expect(screen.getByTestId('dispose-confirm')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('dispose-confirm'));
     await waitFor(() => expect(screen.queryByTestId('dispose-helper-dialog')).not.toBeInTheDocument());
     expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h2', undefined, { dirty: 0, unpushed: 0, unmerged: 0 });
     // It moves to Disposed.
     await waitFor(() => expect(screen.queryByTestId('helper-row-h2')).not.toBeInTheDocument());
-    expect(screen.getByTestId('helpers-disposed-toggle')).toHaveTextContent('Disposed 2');
+    expect(screen.getByTestId('helpers-disposed-toggle')).toHaveTextContent('Deleted 2');
   });
 
-  it('shows disposed helpers on request and removes one for good after a confirm', async () => {
+  it('shows deleted helpers on request and removes one for good after a confirm', async () => {
     await renderCard();
     expect(screen.queryByTestId('helpers-disposed')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('helpers-disposed-toggle'));
@@ -205,12 +205,12 @@ describe('Helpers card (#2232)', () => {
   });
 
   it('shows a refused remove', async () => {
-    window.clubhouse.agent.removeDisposed = vi.fn(async () => ({ ok: false, message: 'merge-1 isn\'t disposed' }));
+    window.clubhouse.agent.removeDisposed = vi.fn(async () => ({ ok: false, message: 'merge-1 isn\'t deleted' }));
     await renderCard();
     fireEvent.click(screen.getByTestId('helpers-disposed-toggle'));
     fireEvent.click(within(screen.getByTestId('disposed-row-d1')).getByTestId('disposed-remove'));
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
-    expect(await screen.findByTestId('helpers-error')).toHaveTextContent('merge-1 isn\'t disposed');
+    expect(await screen.findByTestId('helpers-error')).toHaveTextContent('merge-1 isn\'t deleted');
   });
 
   it('says why there are none', async () => {
@@ -224,9 +224,9 @@ describe('Helpers card (#2232)', () => {
     await renderCard();
     expect(within(screen.getByTestId('helper-row-h2')).getByTestId('helper-state')).toHaveTextContent('Handed off');
     const ready = screen.getByTestId('helpers-ready');
-    expect(ready).toHaveTextContent('qa-settings is handed off and ready to dispose');
+    expect(ready).toHaveTextContent('qa-settings is handed off and ready to delete');
     fireEvent.click(within(ready).getByRole('button', { name: 'Review' }));
-    expect(await screen.findByTestId('dispose-helper-dialog')).toHaveTextContent('Dispose of qa-settings?');
+    expect(await screen.findByTestId('dispose-helper-dialog')).toHaveTextContent('Delete qa-settings?');
   });
 });
 
@@ -396,7 +396,7 @@ describe('HelpersCard with a helper in another project (#2514)', () => {
     expect(window.clubhouse.agent.getDisposeChecks).not.toHaveBeenCalledWith(PROJECT, 'x1');
   });
 
-  it('sleeps, wakes, opens and disposes it in its own project', async () => {
+  it('sleeps, wakes, opens and deletes it in its own project', async () => {
     const spawn = vi.fn(async () => 'x1');
     useAgentStore.setState({ spawnDurableAgent: spawn } as never);
     await renderCard();
@@ -426,7 +426,7 @@ describe('HelpersCard with a helper in another project (#2514)', () => {
     await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(OTHER, 'x1', undefined, expect.anything()));
   });
 
-  it('removes a disposed helper from its own project', async () => {
+  it('removes a deleted helper from its own project', async () => {
     await renderCard();
     fireEvent.click(screen.getByTestId('helpers-disposed-toggle'));
     const row = screen.getByTestId('disposed-row-x2');

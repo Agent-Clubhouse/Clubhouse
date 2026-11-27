@@ -55,7 +55,7 @@ The sidebar selection decides what Terminal, Files and Git point at. Select an a
 
 ## Agent details
 
-**Details** beside an agent's conversation opens a column of cards, in this order when they apply: Settings, Changes, the Dispatcher's card, Orchestration, Subagents, Connections, Other machines, Actions, Skills and MCP, Session and Canvases. Press `⌥⌘D` to show or hide it. See [Agents](#help:agents-overview).
+**Details** beside an agent's conversation opens a column of cards, in this order when they apply: Settings, Changes, the Dispatcher's card, Orchestration, Subagents, Connections, Other computers, Actions, Skills and MCP, Session and Canvases. Press `⌥⌘D` to show or hide it. See [Agents](#help:agents-overview).
 
 ## Quick agents from anywhere
 

@@ -89,7 +89,7 @@ const CONNECTION_KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> 
 export const connectionSourceKind = (id: string): ConnectionSourceKind => Object.prototype.hasOwnProperty.call(CONNECTION_KIND_BY_SOURCE, id) ? CONNECTION_KIND_BY_SOURCE[id] : 'other';
 
 export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, string>> = {
-  canvas: 'Canvas wire',
+  canvas: 'Canvas connection',
   helper: 'Helper',
   dispatcher_auto: 'Connect to Dispatcher',
   tool_link: 'Made by an agent',

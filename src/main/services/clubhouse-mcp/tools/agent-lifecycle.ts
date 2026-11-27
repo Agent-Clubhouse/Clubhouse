@@ -78,7 +78,7 @@ function turnRefusal(agentId: string, name: string): { reason: string; state?: s
   if (runtime?.kind !== 'chat') {
     return {
       reason: 'turn_state_unknown',
-      note: `${name}'s turn state is unknown: agents in the CLI view don't report it, so it may be mid-turn. ` +
+      note: `${name}'s turn state is unknown: agents in the Terminal view don't report it, so it may be mid-turn. ` +
         'To stop it anyway, call sleep_agent again with force: true.',
     };
   }
