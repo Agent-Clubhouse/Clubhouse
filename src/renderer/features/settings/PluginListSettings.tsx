@@ -490,11 +490,11 @@ function CustomMarketplaceManager() {
   if (loading) return null;
 
   return (
-    <SettingsSection title="Plugin stores" meta={String(marketplaces.length)}>
+    <SettingsSection title="Other marketplaces" meta={String(marketplaces.length)}>
       <div data-testid="custom-marketplace-section">
         <p className={`${settingsHelp} mb-2`}>
-          Private or third-party registries to discover, install and update plugins from.
-          Each store hosts a <code className="font-mono text-ctp-subtext1">registry.json</code> in the Workshop format.
+          Private or third-party places to find, install and update plugins from, besides the Clubhouse Workshop.
+          Each one is a link to a <code className="font-mono text-ctp-subtext1">registry.json</code> file in the Workshop format.
         </p>
         {marketplaces.map((m) => (
           <div
@@ -532,8 +532,8 @@ function CustomMarketplaceManager() {
               type="text"
               value={addName}
               onChange={(e) => setAddName(e.target.value)}
-              placeholder="Store name"
-              aria-label="Store name"
+              placeholder="Name"
+              aria-label="Marketplace name"
               className={`${settingsInput} flex-1 min-w-0`}
               data-testid="custom-marketplace-name"
             />
@@ -541,8 +541,8 @@ function CustomMarketplaceManager() {
               type="text"
               value={addUrl}
               onChange={(e) => setAddUrl(e.target.value)}
-              placeholder="Registry URL, e.g. https://…/registry.json"
-              aria-label="Registry URL"
+              placeholder="Link, e.g. https://…/registry.json"
+              aria-label="Marketplace link"
               className={`${settingsInput} flex-[2] min-w-0`}
               data-testid="custom-marketplace-url"
               onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
@@ -553,7 +553,7 @@ function CustomMarketplaceManager() {
               kind="ghost"
               data-testid="custom-marketplace-add"
             >
-              {adding ? 'Adding…' : 'Add store'}
+              {adding ? 'Adding…' : 'Add marketplace'}
             </Button>
           </div>
           {addError && <p className="text-xs text-ctp-error mt-1.5">{addError}</p>}
@@ -815,7 +815,7 @@ export function PluginListSettings() {
         aria-expanded={storesOpen}
         data-testid="custom-marketplace-toggle"
       >
-        Plugin stores…
+        Other marketplaces…
       </Button>
       <Button
         onClick={() => setMarketplaceOpen(true)}
@@ -853,7 +853,7 @@ export function PluginListSettings() {
               label="Allow external plugins"
               help={restartHint
                 ? <span className="text-ctp-warning">Restart Clubhouse for this change to take full effect.</span>
-                : 'Plugins from the Clubhouse Workshop and custom stores.'}
+                : 'Plugins from the Clubhouse Workshop and other marketplaces.'}
             >
               <span data-testid="external-plugins-toggle" className="inline-flex">
                 <Toggle
@@ -881,7 +881,7 @@ export function PluginListSettings() {
               label="Plugin updates"
               help={lastCheck
                 ? <span data-testid="last-check-time">Last checked {new Date(lastCheck).toLocaleString()}.</span>
-                : 'Check the marketplace and your stores for newer versions.'}
+                : 'Check the Clubhouse Workshop and your other marketplaces for newer versions.'}
             >
               {updates.length > 1 && (
                 <Button
@@ -902,11 +902,11 @@ export function PluginListSettings() {
                 {checking ? 'Checking…' : 'Check for updates'}
               </Button>
             </SettingsField>
-            <SettingsField label="Beta versions" help="Offer beta versions from the official plugin registry.">
+            <SettingsField label="Preview versions" help="Offer preview versions from the Clubhouse Workshop.">
               <Toggle
                 checked={showBetaPlugins}
                 onChange={handleBetaPluginsToggle}
-                aria-label="Show beta plugins"
+                aria-label="Preview versions of plugins"
               />
             </SettingsField>
             <SettingsField

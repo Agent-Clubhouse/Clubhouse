@@ -147,7 +147,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
         return (
           <div className="mt-1.5 flex items-center gap-3">
             <p className="flex-1 min-w-0 text-xs text-ctp-subtext1">
-              Beta {betaPlugin.latest} is available
+              Preview {betaPlugin.latest} is available
               {betaPlugin.marketplaceName ? ` from ${betaPlugin.marketplaceName}` : ''}.
               {!betaCompatible && betaRelease && (
                 <span className="text-ctp-error"> Uses plugin API {betaRelease.api}, which this version can&apos;t load.</span>
@@ -158,7 +158,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
               disabled={installingBeta || !betaCompatible}
               kind="ghost"
             >
-              {installingBeta ? 'Installing…' : 'Install beta'}
+              {installingBeta ? 'Installing…' : 'Install preview'}
             </Button>
           </div>
         );
@@ -405,7 +405,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
         <>
           <p className={`${settingsHelp} mr-auto`}>
             {data ? `${allPlugins.length} plugin(s) available` : ''}
-            {customPlugins.length > 0 ? `, ${customPlugins.length} from custom stores` : ''}
+            {customPlugins.length > 0 ? `, ${customPlugins.length} from other marketplaces` : ''}
           </p>
           <Button onClick={onClose} kind="ghost" data-testid="marketplace-close">
             Close
@@ -435,7 +435,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
 
           {showRestartPrompt && (
             <div className="mb-2 flex items-center gap-3">
-              <p className="flex-1 min-w-0 text-xs text-ctp-text">Beta installed. Restart Clubhouse to load the new version.</p>
+              <p className="flex-1 min-w-0 text-xs text-ctp-text">Preview installed. Restart Clubhouse to load the new version.</p>
               <Button
                 onClick={() => window.clubhouse.app.restart()}
                 kind="primary"

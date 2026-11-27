@@ -96,6 +96,18 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(screen.getByText('External editor')).toBeInTheDocument();
   });
 
+  it('labels the Managed agents group and its parts in app settings only (#2750)', () => {
+    vi.spyOn(window.clubhouse.app, 'isPreviewEligible').mockResolvedValue(false);
+    render(<AccessoryPanel />);
+    const labels = [...screen.getByRole('navigation').children].map((el) => el.textContent);
+    const at = labels.indexOf('Managed agentsAgent partsInstruction blocks');
+    expect(at).toBe(labels.indexOf('Agents & CLIs') + 1);
+    expect(labels.slice(at + 1, at + 3)).toEqual(['Skills', 'MCP servers']);
+    expect(screen.getAllByTestId('settings-classic-group-managed')).toHaveLength(1);
+    act(() => { useUIStore.setState({ settingsContext: 'project' }); });
+    expect(screen.queryByTestId('settings-classic-group-managed')).toBeNull();
+  });
+
   it('opens the local Group Projects directory from app settings, not project settings', () => {
     vi.spyOn(window.clubhouse.app, 'isPreviewEligible').mockResolvedValue(false);
     vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({});

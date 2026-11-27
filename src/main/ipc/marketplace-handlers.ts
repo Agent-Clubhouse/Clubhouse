@@ -95,7 +95,7 @@ export function registerMarketplaceHandlers(): void {
     const customs = await customMarketplaceService.listCustomMarketplaces();
     const { showBetaPlugins } = marketplaceService.getMarketplaceSettings();
     const allCustoms = showBetaPlugins
-      ? [...customs, { id: '_preview', name: 'Beta Plugins', url: marketplaceService.PREVIEW_REGISTRY_URL, enabled: true }]
+      ? [...customs, { id: '_preview', name: 'Preview plugins', url: marketplaceService.PREVIEW_REGISTRY_URL, enabled: true }]
       : customs;
     const result = await marketplaceService.fetchAllRegistries(allCustoms);
     return result.custom;

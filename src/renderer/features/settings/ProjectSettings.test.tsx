@@ -449,7 +449,7 @@ describe('ProjectSettings', () => {
       ).toBeInTheDocument();
     });
 
-    it('renders binary name and Default MCPs when wrapper is configured', async () => {
+    it('renders binary name and default MCP servers when wrapper is configured', async () => {
       setupWrapperState({
         wrapper: wrapperNoRefresh,
         catalog: [
@@ -467,7 +467,7 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
       expect(await screen.findByText('mywrapper')).toBeInTheDocument();
-      expect(await screen.findByText('Default MCPs for new agents')).toBeInTheDocument();
+      expect(await screen.findByText('Default MCP servers for new agents')).toBeInTheDocument();
       expect(screen.getByText('Filesystem')).toBeInTheDocument();
       expect(screen.queryByText('Refresh')).toBeNull();
     });
