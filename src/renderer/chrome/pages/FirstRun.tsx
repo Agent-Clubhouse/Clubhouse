@@ -94,7 +94,7 @@ export function AgentClis() {
  * `embedded` is the welcome tour's Get started step (#2814): the same steps,
  * without the page's own title, so the tour and the empty app never differ.
  */
-export function FirstRun({ embedded = false }: { embedded?: boolean } = {}) {
+export function FirstRun({ embedded = false, onProjectAdded }: { embedded?: boolean; onProjectAdded?: () => void } = {}) {
   const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
   const addProject = useProjectStore((s) => s.addProject);
   const newAgentBinding = useKeyboardShortcutsStore((s) => s.shortcuts['new-quick-agent']?.currentBinding);
@@ -102,7 +102,7 @@ export function FirstRun({ embedded = false }: { embedded?: boolean } = {}) {
 
   const choose = () => {
     reportChromeFeature('first_run_add');
-    pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
+    pickAndAddProject().then((project) => { if (project) onProjectAdded?.(); }).catch((err) => reportChromeActionFailed('add_project', err));
   };
 
   const drop = (e: React.DragEvent) => {
@@ -113,7 +113,7 @@ export function FirstRun({ embedded = false }: { embedded?: boolean } = {}) {
     const path = window.clubhouse.getPathForFile(file);
     if (!path) return;
     reportChromeFeature('first_run_drop');
-    addProject(path).catch((err) => reportChromeActionFailed('add_project', err));
+    addProject(path).then(() => onProjectAdded?.()).catch((err) => reportChromeActionFailed('add_project', err));
   };
 
   const openAnnex = () => {

@@ -123,7 +123,7 @@ export const app = {
   saveBadgeSettings: (settings: BadgeSettings) =>
     ipcRenderer.invoke(IPC.APP.SAVE_BADGE_SETTINGS, settings),
   /** The welcome tour's own saved state (#2814), and whether its file couldn't be read. */
-  getWelcomeTour: (): Promise<{ state: WelcomeTourState; unreadable: boolean }> =>
+  getWelcomeTour: (): Promise<{ state: WelcomeTourState; unreadable: boolean; earlierRun?: boolean }> =>
     ipcRenderer.invoke(IPC.APP.GET_WELCOME_TOUR),
   saveWelcomeTour: (state: WelcomeTourState): Promise<WelcomeTourState> =>
     ipcRenderer.invoke(IPC.APP.SAVE_WELCOME_TOUR, state),

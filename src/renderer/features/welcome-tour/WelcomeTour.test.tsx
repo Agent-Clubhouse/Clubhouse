@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { act, render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { WelcomeTour } from './WelcomeTour';
+import { WelcomeTour, USER_NAVIGATION_WINDOW_MS } from './WelcomeTour';
 import { openWelcomeTour, startWelcomeTourIfDue, useWelcomeTourStore } from './welcomeTourStore';
-import { findHelpTopic, HELP_LINKS, openHelpLink } from './tour-actions';
+import { findHelpTopic, HELP_LINKS, LINKS_WITHOUT_STAND_IN, openHelpLink } from './tour-actions';
+import { SCENES } from './scenes';
 import { playScene } from './scene-engine';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useAgentStore } from '../../stores/agentStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { WELCOME_TOUR_VERSION, type WelcomeTourState } from '../../../shared/welcome-tour';
 
@@ -67,6 +69,12 @@ describe('startWelcomeTourIfDue', () => {
     useChromeFlagStore.setState({ enabled: false });
     await expect(startWelcomeTourIfDue()).resolves.toBe(false);
     expect(saved).toEqual([]);
+  });
+
+  it('opens the upgraders\' tour for someone with no projects whose earlier run left files', async () => {
+    stored = { ...stored, earlierRun: true } as typeof stored;
+    await startWelcomeTourIfDue();
+    expect(useWelcomeTourStore.getState()).toMatchObject({ open: true, variant: 'upgrade', hasProjects: false });
   });
 
   it('treats an unreadable state file as upgrading', async () => {
@@ -139,11 +147,38 @@ describe('the tour', () => {
     expect(document.activeElement).toBe(screen.getByTestId('welcome-tour-title'));
   });
 
-  it('closes, as seen, when something else opens from the sidebar', async () => {
+  it('closes, as seen, when the person opens something else from the sidebar', async () => {
     await openAs('upgrade');
+    fireEvent.pointerDown(document.body);
     act(() => useUIStore.setState({ explorerTab: 'settings' }));
     expect(useWelcomeTourStore.getState().open).toBe(false);
     expect(saved.at(-1)?.seenVersion).toBe(WELCOME_TOUR_VERSION);
+  });
+
+  it('stays open, unseen, when an agent starts in the background (a plugin or an orchestrator)', async () => {
+    vi.useFakeTimers();
+    await openAs('upgrade');
+    fireEvent.keyDown(document.body, { key: 'a' });
+    vi.advanceTimersByTime(USER_NAVIGATION_WINDOW_MS + 1);
+    // spawnQuickAgent / spawnDurableAgent make the new agent active.
+    act(() => useAgentStore.setState({ activeAgentId: 'spawned-in-background' }));
+    act(() => useProjectStore.setState({ activeProjectId: 'p-background' }));
+    expect(useWelcomeTourStore.getState().open).toBe(true);
+    expect(saved.every((s) => s.seenVersion === 0)).toBe(true);
+    // The next change the person makes still closes it.
+    fireEvent.pointerDown(document.body);
+    act(() => useUIStore.setState({ explorerTab: 'help' }));
+    expect(useWelcomeTourStore.getState().open).toBe(false);
+  });
+
+  it('ends when a project is added from Get started, however long the folder dialog took', async () => {
+    let resolve: (p: unknown) => void = () => {};
+    useProjectStore.setState({ pickAndAddProject: vi.fn(() => new Promise((r) => { resolve = r; })) } as never);
+    await openAs('new', false);
+    fireEvent.click(screen.getByTestId('welcome-tour-step-start'));
+    fireEvent.click(screen.getByTestId('first-run-choose'));
+    await act(async () => { resolve({ id: 'p1' }); });
+    expect(useWelcomeTourStore.getState().open).toBe(false);
   });
 
   it('changes nothing but its own state, from first step to Done (#2814 must-not-happen list)', async () => {
@@ -167,6 +202,12 @@ describe('the tour', () => {
     expect(saved.at(-1)).toEqual({ seenVersion: WELCOME_TOUR_VERSION, variant: 'upgrade', variantVersion: WELCOME_TOUR_VERSION });
   });
 
+  it('doesn\'t open from anywhere in the classic layout, where there\'s no pane for it', async () => {
+    useChromeFlagStore.setState({ enabled: false });
+    await openWelcomeTour();
+    expect(useWelcomeTourStore.getState().open).toBe(false);
+  });
+
   it('reopens from Help at the first step, with the audience it was decided for', async () => {
     seed({ seenVersion: WELCOME_TOUR_VERSION, variant: 'new', variantVersion: WELCOME_TOUR_VERSION });
     useProjectStore.setState({ projects: [{ id: 'p1' }] } as never);
@@ -178,12 +219,18 @@ describe('the tour', () => {
 });
 
 describe('help links', () => {
-  it('every link finds a topic Help has today, or falls back to Help\'s start', () => {
+  it('every link finds a topic Help has today, except the ones shown only once their page exists', () => {
     for (const [link, ids] of Object.entries(HELP_LINKS)) {
-      const found = findHelpTopic(ids);
+      if (LINKS_WITHOUT_STAND_IN.includes(link as never)) continue;
       // Each list ends on a topic that exists now, so nothing links nowhere.
-      expect(found, link).not.toBeNull();
+      expect(findHelpTopic(ids), link).not.toBeNull();
     }
+  });
+
+  it('the upgraders\' "Everything that changed" link waits for Coming from classic', () => {
+    const Extra = SCENES['welcome-upgrade'].Extra!;
+    const { container } = render(<Extra />);
+    expect(container.textContent).toBe(findHelpTopic(HELP_LINKS.fromClassic) ? 'Everything that changed, in Help' : '');
   });
 
   it('opening one closes the tour and shows the topic', () => {

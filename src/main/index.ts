@@ -72,6 +72,7 @@ import { isChatEnabled } from './services/chat-runtime-settings';
 import { shutdownFeedback, startFeedback } from './services/framebriar';
 import { installHelperDeliverySeam } from './services/clubhouse-mcp/tools/helper-delivery-seam';
 import { codeOf } from './services/managed-agents/log-code';
+import { noteEarlierRun } from './services/welcome-tour-state';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -94,6 +95,10 @@ if (process.env.CLUBHOUSE_USER_DATA) {
   // projects, agent state, or group-project state with another app process.
   app.setPath('home', process.env.CLUBHOUSE_USER_DATA);
 }
+
+// Before anything writes to userData: did Clubhouse run here before? The
+// welcome tour (#2814) tells an upgrader with no projects from someone new.
+noteEarlierRun();
 
 // Opt-in telemetry export, off by default. Reads its settings after
 // the userData override above; when enabled, the SDK chunk loads in the

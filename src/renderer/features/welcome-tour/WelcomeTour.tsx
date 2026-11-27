@@ -19,7 +19,19 @@ import { SCENES, type SceneDef } from './scenes';
 const STAGE_W = 740;
 const STAGE_H = 300;
 
-/** Close the tour once something else opens: a tab, project, agent, host, the Dispatcher or New agent. */
+/**
+ * How recent a person's own click or key press must be for a change of view to
+ * count as theirs. Views change in the same moment as the input that changed
+ * them; the window only covers a re-render or two.
+ */
+export const USER_NAVIGATION_WINDOW_MS = 1500;
+
+/**
+ * Close the tour once the person opens something else: a tab, project, agent,
+ * host, the Dispatcher or New agent. A change nobody asked for (a plugin or an
+ * orchestrator starting an agent in the background, say) only moves the
+ * baseline, so the tour stays and isn't marked seen.
+ */
 function useCloseOnNavigation(): void {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeHostId = useUIStore((s) => s.activeHostId);
@@ -28,10 +40,21 @@ function useCloseOnNavigation(): void {
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const newAgent = useChromeStore((s) => s.newAgent);
   const base = useRef<string | null>(null);
+  const lastInput = useRef(0);
+  useEffect(() => {
+    const mark = () => { lastInput.current = Date.now(); };
+    document.addEventListener('pointerdown', mark, true);
+    document.addEventListener('keydown', mark, true);
+    return () => {
+      document.removeEventListener('pointerdown', mark, true);
+      document.removeEventListener('keydown', mark, true);
+    };
+  }, []);
   const now = [explorerTab, activeHostId, dispatcherOpen, activeProjectId, activeAgentId, !!newAgent].join('|');
   useEffect(() => {
-    if (base.current === null) { base.current = now; return; }
-    if (base.current !== now) useWelcomeTourStore.getState().closeTour('navigate');
+    if (base.current === null || base.current === now) { base.current = now; return; }
+    base.current = now;
+    if (Date.now() - lastInput.current <= USER_NAVIGATION_WINDOW_MS) useWelcomeTourStore.getState().closeTour('navigate');
   }, [now]);
 }
 

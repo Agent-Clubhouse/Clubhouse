@@ -97,18 +97,20 @@ export interface TourLaunchInput {
   lastSeenVersion: string | null | undefined;
   currentVersion: string;
   projectCount: number;
+  /** Clubhouse left files here on an earlier run (main checks before this launch writes). Undefined when unknown. */
+  earlierRun?: boolean;
 }
 
 export type TourLaunchDecision =
   | { show: false; reason: 'seen' }
-  | { show: true; variant: WelcomeTourVariant; reason: 'resumed' | 'unreadable' | 'has_projects' | 'earlier_version' | 'fresh' };
+  | { show: true; variant: WelcomeTourVariant; reason: 'resumed' | 'unreadable' | 'has_projects' | 'earlier_version' | 'earlier_run' | 'fresh' };
 
 /**
  * Decided once at startup, from saved state, with one result (#2814):
  * - Already finished or skipped this tour version: nothing.
  * - Opened before for this version and not finished: the same audience again.
  * - Anything unreadable: upgrading, which never hides existing work.
- * - Projects saved, or an earlier version recorded: upgrading.
+ * - Projects saved, an earlier version recorded, or files an earlier run left: upgrading.
  * - Otherwise: new.
  */
 export function decideTourAtLaunch(input: TourLaunchInput): TourLaunchDecision {
@@ -118,6 +120,7 @@ export function decideTourAtLaunch(input: TourLaunchInput): TourLaunchDecision {
   if (!state || input.lastSeenVersion === undefined) return { show: true, variant: 'upgrade', reason: 'unreadable' };
   if (input.projectCount > 0) return { show: true, variant: 'upgrade', reason: 'has_projects' };
   if (input.lastSeenVersion !== null && input.lastSeenVersion !== input.currentVersion) return { show: true, variant: 'upgrade', reason: 'earlier_version' };
+  if (input.earlierRun) return { show: true, variant: 'upgrade', reason: 'earlier_run' };
   return { show: true, variant: 'new', reason: 'fresh' };
 }
 

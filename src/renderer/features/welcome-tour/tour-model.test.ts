@@ -37,6 +37,11 @@ describe('decideTourAtLaunch: the audience seeds (#2814)', () => {
     expect(decideTourAtLaunch({ ...base, projectCount: 1 })).toEqual({ show: true, variant: 'upgrade', reason: 'has_projects' });
   });
 
+  it('upgraded from 0.42 with no projects and What\'s New never dismissed: an earlier run\'s files say so', () => {
+    expect(decideTourAtLaunch({ ...base, earlierRun: true })).toEqual({ show: true, variant: 'upgrade', reason: 'earlier_run' });
+    expect(decideTourAtLaunch({ ...base, earlierRun: false })).toMatchObject({ variant: 'new' });
+  });
+
   it('already introduced: nothing, whatever else is saved', () => {
     const seen = { seenVersion: WELCOME_TOUR_VERSION, variant: 'upgrade' as const, variantVersion: WELCOME_TOUR_VERSION };
     expect(decideTourAtLaunch({ ...base, state: seen, projectCount: 5, lastSeenVersion: '0.40.0' })).toEqual({ show: false, reason: 'seen' });

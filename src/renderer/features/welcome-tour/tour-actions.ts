@@ -12,25 +12,29 @@ import { useWelcomeTourStore } from './welcomeTourStore';
  */
 
 /**
- * Help topics the tour links to, most specific first. The 1.0 help pages
- * (#3902) are being written alongside the tour; until a topic exists, the
- * next id in its list is the nearest page that does.
+ * Help topics the tour links to, most specific first, using the ids the 1.0
+ * help pages (#3902) give them. Until a page lands, the next id in its list is
+ * the nearest page that exists. `fromClassic` has no stand-in: its link shows
+ * only once Coming from classic is in Help.
  */
 export const HELP_LINKS = {
   managed: ['agents-managed', 'agents-durable'],
   dispatcher: ['agents-dispatcher'],
-  helpers: ['agents-helpers', 'agents-orchestrated-helpers'],
-  smartRouting: ['agents-smart-routing', 'agents-helpers', 'agents-orchestrated-helpers'],
-  fromClassic: ['coming-from-classic', 'general-coming-from-classic', 'updates'],
-  access: ['agents-access', 'access-and-permissions', 'agents-overview'],
-  connections: ['agents-connections', 'connections', 'agents-overview'],
+  helpers: ['agents-orchestrated-helpers'],
+  smartRouting: ['agents-orchestrated-helpers'],
+  fromClassic: ['coming-from-classic'],
+  access: ['agents-access', 'agents-overview'],
+  connections: ['agents-connections', 'agents-overview'],
   groupProjects: ['group-projects'],
   actions: ['agents-actions'],
-  annex: ['settings-annex-network', 'settings-annex'],
-  privacy: ['settings-privacy', 'privacy-and-diagnostics', 'settings-logging'],
-  usage: ['settings-usage', 'clis-and-usage', 'orchestrators'],
+  annex: ['settings-annex'],
+  privacy: ['settings-privacy', 'settings-logging'],
+  usage: ['agents-clis-usage', 'orchestrators'],
   gettingStarted: ['getting-started'],
 } as const satisfies Record<string, readonly string[]>;
+
+/** Links shown only once their page exists, since nothing else says the same. */
+export const LINKS_WITHOUT_STAND_IN: readonly HelpLink[] = ['fromClassic'];
 
 export type HelpLink = keyof typeof HELP_LINKS;
 

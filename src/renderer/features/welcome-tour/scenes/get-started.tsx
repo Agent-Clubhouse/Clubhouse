@@ -1,4 +1,5 @@
 import { FirstRun } from '../../../chrome/pages/FirstRun';
+import { useWelcomeTourStore } from '../welcomeTourStore';
 import type { SceneDef } from './types';
 
 /**
@@ -8,7 +9,7 @@ import type { SceneDef } from './types';
 function GetStartedStage() {
   return (
     <div className="wt-start">
-      <FirstRun embedded />
+      <FirstRun embedded onProjectAdded={() => useWelcomeTourStore.getState().closeTour('done')} />
     </div>
   );
 }

@@ -123,11 +123,11 @@ async function readSmartRouting(): Promise<boolean> {
   return false;
 }
 
-async function readSaved(): Promise<{ state: WelcomeTourState | null }> {
+async function readSaved(): Promise<{ state: WelcomeTourState | null; earlierRun?: boolean }> {
   try {
-    const { state, unreadable } = await window.clubhouse.app.getWelcomeTour();
+    const { state, unreadable, earlierRun } = await window.clubhouse.app.getWelcomeTour();
     useWelcomeTourStore.setState({ saved: state });
-    return { state: unreadable ? null : state };
+    return { state: unreadable ? null : state, earlierRun };
   } catch (err) {
     // telemetry-exempt: logged; unreadable state shows the upgrading tour, which never hides work.
     log('warn', 'Could not read the welcome tour state', { error: err instanceof Error ? err.name : 'unknown' });
@@ -155,13 +155,13 @@ async function readLastSeenVersion(): Promise<string | null | undefined> {
 export async function startWelcomeTourIfDue(): Promise<boolean> {
   try {
     if (!isNewChromeEnabled()) return false;
-    const [{ state }, lastSeenVersion, currentVersion] = await Promise.all([
+    const [{ state, earlierRun }, lastSeenVersion, currentVersion] = await Promise.all([
       readSaved(),
       readLastSeenVersion(),
       window.clubhouse.app.getVersion(),
     ]);
     const projectCount = useProjectStore.getState().projects.length;
-    const decision = decideTourAtLaunch({ state, lastSeenVersion, currentVersion, projectCount });
+    const decision = decideTourAtLaunch({ state, lastSeenVersion, currentVersion, projectCount, earlierRun });
     if (!decision.show) return false;
     const smartRouting = await readSmartRouting();
     clearPane();
@@ -177,6 +177,8 @@ export async function startWelcomeTourIfDue(): Promise<boolean> {
 
 /** Reopen the tour from Help or Settings › What's new, at its first step. */
 export async function openWelcomeTour(): Promise<void> {
+  // Only the new layout's pane can show it; anywhere else it would stay open unseen.
+  if (!isNewChromeEnabled()) return;
   const saved = useWelcomeTourStore.getState().saved ?? (await readSaved()).state;
   const projectCount = useProjectStore.getState().projects.length;
   const smartRouting = await readSmartRouting();

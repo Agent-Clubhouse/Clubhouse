@@ -1,6 +1,6 @@
 import { AgentClis } from '../../../chrome/pages/FirstRun';
 import { Av, Ov, TourLink, Wire, pos } from '../stage-parts';
-import { openHelpLink } from '../tour-actions';
+import { findHelpTopic, HELP_LINKS, openHelpLink } from '../tour-actions';
 import type { SceneDef } from './types';
 
 /** Welcome, new: agents side by side, each on its own branch, and the one that needs you. */
@@ -95,6 +95,8 @@ function WelcomeUpgradeStage() {
 }
 
 function WelcomeUpgradeExtra() {
+  // Coming from classic (#3899) is the page for this; until it's in Help there's nothing to link to.
+  if (!findHelpTopic(HELP_LINKS.fromClassic)) return null;
   return (
     <div className="wt-x">
       <TourLink onClick={() => openHelpLink('fromClassic')}>Everything that changed, in Help</TourLink>

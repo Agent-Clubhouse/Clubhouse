@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useUpdateStore } from '../../stores/updateStore';
 import { WhatsNewSettingsView } from './WhatsNewSettingsView';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 // Mock window.clubhouse
 Object.defineProperty(globalThis, 'window', {
@@ -63,6 +64,16 @@ function resetStore(overrides?: Partial<ReturnType<typeof useUpdateStore.getStat
 
 describe('WhatsNewSettingsView', () => {
   beforeEach(() => resetStore());
+
+  it('offers the welcome tour in the new layout only (#2814)', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const { unmount } = render(<WhatsNewSettingsView />);
+    expect(screen.getByTestId('whats-new-welcome-tour')).toBeInTheDocument();
+    unmount();
+    useChromeFlagStore.setState({ enabled: false });
+    render(<WhatsNewSettingsView />);
+    expect(screen.queryByTestId('whats-new-welcome-tour')).not.toBeInTheDocument();
+  });
 
   it('renders the page header', () => {
     render(<WhatsNewSettingsView />);
