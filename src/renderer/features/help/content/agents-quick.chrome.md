@@ -11,17 +11,21 @@ The quickest way is the project's start page:
 3. Pick **Runs on** and **Model** if you want something other than the defaults.
 4. Press `⌘Enter` or click **Start**.
 
-Faster still, press `⌘N`. It opens a one-line prompt: type the task and press Enter, and a quick agent starts in the current project with your default settings. **Details** changes the project, CLI, model or access for that one start, and Esc closes the prompt without starting anything. With no project in view, such as in the Dispatcher or Settings, the prompt asks for one, starting with the last you used. On a satellite, `⌘N` opens the **New Quick Agent** dialog instead. `⇧⌘N` opens **New agent** with **Durable** selected. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
+Faster still, press `⌘N`. It opens a one-line prompt: type the task and press Enter, and a quick agent starts in the current project with your default settings. **Details** changes the project, CLI, model or access for that one start, and Esc closes the prompt without starting anything. With no project in view, such as in the Dispatcher or Settings, the prompt asks for one, starting with the last you used. While the sidebar shows another computer, `⌘N` switches back to this one first. `⇧⌘N` opens **New agent** with **Durable** selected. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
 
-For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:
+For more options, click **New** at the top of the sidebar and choose **Quick agent…**. The **New agent** page opens with **Quick** selected:
 
-- **Parent agent**, to inherit a durable agent's quick agent defaults and work in its worktree;
-- **Access**, how much the agent may do without asking;
-- a **Project** picker, when you start it from outside a project.
+- **Project**, where it runs
+- **Task**, what it should do, which it needs
+- **Template**, to start from a managed template, and **This run**, to add parts for this one run with **Add a part…**
+- **Runs in**, the **Project root** or a durable agent's worktree, so it works on that branch
+- **Runs on**, **Model** and **Access**
+
+Click **Start** to run it.
 
 ## Access
 
-**Access** is the level the agent starts at. New quick agents start at **Default access** in **Settings > Agents & CLIs**, and you can pick another level in the dialog.
+**Access** is the level the agent starts at. New quick agents start at **Default access** in **Settings > Agents & CLIs**, and you can pick another level on the New agent page or in the prompt's **Details**.
 
 | Level | What the agent does |
 |-------|---------------------|

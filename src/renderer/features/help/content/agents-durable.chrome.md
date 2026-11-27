@@ -5,18 +5,18 @@ Durable agents are for ongoing work. Each keeps its own Git worktree and branch,
 ## Creating one
 
 1. Click **New** at the top of the sidebar and choose **Durable agent…**. Or hover a project and click its **+** button.
-2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent: set its **Runs on** and **Model**, and optionally its **MCP servers** and **Access**. A plain agent keeps its own files, so Clubhouse Mode is off for it.
-3. Leave **Use git worktree** on to give the agent its own branch.
-4. Click **Create agent**. The agent appears under its project and starts right away. Select it to give it work.
+2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent: set its **Runs on** and **Model**, and optionally its **MCP servers** and **Access**. A plain agent keeps its own files.
+3. For a plain agent, leave **Own worktree and branch** on to give it a `<name>/standby` branch from the current branch, checked out in `.clubhouse/agents/<name>`. Turned off, it works in the project folder on whatever branch is checked out there. A managed agent always gets its own worktree.
+4. Click **Create**, or **Create agent** after the template or builder step. The agent appears under its project and starts right away. Select it to give it work.
 
 Templates are in **Settings > Managed agents > Templates**. A template can set the agent's **Access**. Otherwise a new agent starts at your **Default access**. See **Access** below.
 
 ## Waking a sleeping agent
 
-- Select the project's name. On the start page, choose the agent under **Wake a sleeping agent**, type what it should do, and press `⌘Enter`.
-- Or use **Wake** in the agent's row menu or hover card, then type in its pane.
+- Select the project's name. On the start page, set **Run as** to **Wake a sleeping agent**, choose the agent, type what it should do, and press `⌘Enter`.
+- Or use **Wake & Resume** in the agent's row menu or hover card to continue its last session, or **Wake with a fresh session** in the row menu to start over, then type in its pane.
 
-**Stop** in the row menu puts it back to sleep. Its worktree and branch stay as they are.
+**Sleep** in the row menu or on the hover card puts it back to sleep. Its worktree and branch stay as they are.
 
 ## Worktrees
 
@@ -40,10 +40,10 @@ Open **Settings** from the agent's row menu or hover card.
 | **Access** | The level the agent starts at. See **Access** below. |
 | **Instructions**, **Skills** and **MCP servers** | A Clubhouse managed agent's parts: the blocks it reads in order, the skills copied into its folder and the MCP servers it gets |
 | **Helpers** | Whether the agent orchestrates, and how it starts and deletes helpers |
-| **Quick agents** | What quick agents started from this agent inherit |
+| **Quick agent defaults** | What quick agents started from this agent inherit |
 | **Preview** | What a Clubhouse managed agent gets at its next start |
 
-A plain agent has only **General**, **Helpers** and **Quick agents** here. It keeps its instructions, skills, MCP servers and permissions in its own files, and the classic layout still edits them in the app.
+A plain agent has **General**, **Clubhouse permissions**, **Helpers**, **Quick agent defaults** and **Actions** here. It keeps its instructions, skills, MCP servers and permissions in its own files, and the classic layout still edits them in the app.
 
 An agent that used Clubhouse Mode or a persona switches to managed on its own at its next start, keeping what it has now, and says so in its settings under **General > Setup**. Any other agent made before Clubhouse-managed agents can switch there, or with others in **Settings > Managed agents > Switch agents**.
 
@@ -93,7 +93,7 @@ These permissions are a guardrail on Clubhouse, not a sandbox. Other programs ru
 
 ## Deleting
 
-Stop the agent first, then choose **Delete** in the row menu. What the dialog offers depends on the agent's worktree:
+Put the agent to sleep first, then choose **Delete** in the row menu. What the dialog offers depends on the agent's worktree:
 
 - **No worktree**: **Remove** takes it out of Clubhouse.
 - **Worktree with nothing uncommitted or unpushed**: **Delete** removes the agent and its worktree, and **Leave files** keeps the worktree on disk.
