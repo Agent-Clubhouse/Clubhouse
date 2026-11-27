@@ -119,7 +119,9 @@ describe('helper routing', () => {
     // The text comes from the maintainer's builder (#2902), so check what it must not say, not its wording.
     const text = fs.readFileSync(path.join(__dirname, '../main/services/managed-agents/builtin-text/orchestrator.md'), 'utf8');
     expect(text).toContain('difficulty');
-    expect(text).toContain('cli: "auto"');
+    expect(text).toContain('provider: "auto"');
+    // cli is provider's older name and still works (#2776), so the block still says so.
+    expect(text).toContain('the older name `cli` still works');
     expect(text).not.toMatch(/\b(cheap|cheaper|cheapest|best provider|preferred provider|free tier)\b/i);
   });
 });

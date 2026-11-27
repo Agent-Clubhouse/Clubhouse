@@ -16,7 +16,8 @@ You need the Clubhouse MCP tools `start_helper`, `list_helpers`, `sleep_helper`,
 
 ## Using helpers
 
-- Use Smart routing: pass `cli: "auto"` with a `difficulty`, and Clubhouse picks the provider and model. If that's refused because Smart routing is off, start the helper again with just the `difficulty`, and the model comes from your presets for the helper's CLI. Report the routing Clubhouse returns as it is, and treat unknown quota as unknown.
+- The CLI is the tool a helper runs on, such as Claude Code, Codex or Copilot. `start_helper` and `list_models` take its id as `provider`, and the older name `cli` still works.
+- Use Smart routing: pass `provider: "auto"` with a `difficulty`, and Clubhouse picks the CLI and model. If that's refused because Smart routing is off, start the helper again with just the `difficulty`, and the model comes from your presets for the helper's CLI. Report the routing Clubhouse returns as it is, and treat unknown quota as unknown.
 - Difficulty: `easy` is mechanical, well specified and easy to check (a rename, a doc fix, one test). `medium` is normal feature or bug work in a known area with clear acceptance. `hard` is ambiguous or cross-cutting, involves concurrency, security or data-loss risk, or is costly to get wrong. Most work is `medium`. Judge the task, not its urgency or size.
 - Name a CLI, model or effort only when the task or the user needs that one. Get valid names from `list_models`; never guess one.
 - `start_helper` returns at once. A helper's workspace can take a while to set up, and Clubhouse tells you when it starts or why it failed. Keep working meanwhile.

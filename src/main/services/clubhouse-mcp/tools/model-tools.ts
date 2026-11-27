@@ -49,7 +49,7 @@ function describeModel(m: ModelInfo): Record<string, unknown> {
   };
 }
 
-/** Providers listed when no `cli` is given: those enabled in Settings, in registration order. */
+/** Providers listed when no `provider` (or `cli`) is given: those enabled in Settings, in registration order. */
 function enabledProviders(): OrchestratorProvider[] {
   const all = getAllProviders();
   const enabled = getOrchestratorSettings().enabled ?? [];
@@ -62,9 +62,10 @@ async function describeProvider(provider: OrchestratorProvider, refresh: boolean
     const list = await modelListFor(provider, refresh);
     if (!list) {
       const models = await provider.getModelOptions();
-      return { cli: provider.id, name: provider.displayName, source: 'fallback', via: 'static', models: models.map((m) => describeModel(m)) };
+      return { provider: provider.id, cli: provider.id, name: provider.displayName, source: 'fallback', via: 'static', models: models.map((m) => describeModel(m)) };
     }
     return {
+      provider: provider.id,
       cli: provider.id,
       name: provider.displayName,
       source: list.source,
@@ -74,17 +75,30 @@ async function describeProvider(provider: OrchestratorProvider, refresh: boolean
     };
   } catch (err) {
     // telemetry-exempt: the error reaches the calling agent in the tool result
-    return { cli: provider.id, name: provider.displayName, error: errorText(err), models: [] };
+    return { provider: provider.id, cli: provider.id, name: provider.displayName, error: errorText(err), models: [] };
   }
 }
 
-async function listModels(args: Record<string, unknown>): Promise<McpToolResult> {
+/**
+ * The provider asked about (#2776): `provider`, or `cli`, its older name,
+ * which still works. Both given and different is refused.
+ */
+function askedProvider(args: Record<string, unknown>): string | undefined {
+  const provider = optionalString(args, 'provider')?.trim() || undefined;
   const cli = optionalString(args, 'cli')?.trim() || undefined;
+  if (provider && cli && provider !== cli) {
+    throw new McpArgError(`provider "${provider}" and cli "${cli}" name different CLIs. Pass only provider.`);
+  }
+  return provider ?? cli;
+}
+
+async function listModels(args: Record<string, unknown>): Promise<McpToolResult> {
+  const asked = askedProvider(args);
   const refresh = args.refresh === true;
   let providers: OrchestratorProvider[];
-  if (cli) {
-    const provider = getProvider(cli as OrchestratorId);
-    if (!provider) throw new McpArgError(`Unknown cli "${cli}". Available: ${getAllProviders().map((p) => p.id).join(', ')}`);
+  if (asked) {
+    const provider = getProvider(asked as OrchestratorId);
+    if (!provider) throw new McpArgError(`Unknown CLI "${asked}". Available: ${getAllProviders().map((p) => p.id).join(', ')}`);
     providers = [provider];
   } else {
     providers = enabledProviders();
@@ -99,7 +113,8 @@ export function registerModelTools(): void {
     {
       description:
         'List the models each CLI accepts, to pick start_helper\'s model: pass a model\'s "id" as start_helper\'s ' +
-        '"model", with that provider\'s "cli", and one of its "efforts" as "effort". Each model has a label and, where the CLI reports them, whether it ' +
+        '"model", with that entry\'s "provider" as "provider", and one of its "efforts" as "effort". Each entry also has "cli", the older name for "provider". ' +
+        'Each model has a label and, where the CLI reports them, whether it ' +
         'is the CLI\'s default, its reasoning effort levels and a cost hint. "source" is "live" when the CLI listed ' +
         'the models itself, or "fallback" when Clubhouse fell back to an older or built-in list that may be stale. ' +
         'start_helper refuses a model missing from a live list and warns for one missing from a fallback list. ' +
@@ -108,9 +123,13 @@ export function registerModelTools(): void {
       inputSchema: {
         type: 'object',
         properties: {
+          provider: {
+            type: 'string',
+            description: 'Optional CLI id, for example claude-code, codex-cli or copilot-cli. Defaults to every enabled CLI.',
+          },
           cli: {
             type: 'string',
-            description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to every enabled CLI.',
+            description: 'The older name for provider, and it still works. Pass one of them. If both are given they must match.',
           },
           refresh: { type: 'boolean', description: 'Ask the CLIs again instead of using the cached lists.' },
         },
