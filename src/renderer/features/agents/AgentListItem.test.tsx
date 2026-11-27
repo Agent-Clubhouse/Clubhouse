@@ -162,6 +162,14 @@ describe('AgentListItem actions', () => {
     expect(screen.getByTestId('action-stop')).toBeInTheDocument();
   });
 
+  it('calls ending a durable agent Sleep and a quick agent\'s run Stop (#2764)', () => {
+    const { unmount } = renderItem({ status: 'running' });
+    expect(screen.getByTestId('action-stop')).toHaveAttribute('title', 'Sleep');
+    unmount();
+    renderItem({ status: 'running', kind: 'quick' });
+    expect(screen.getByTestId('action-stop')).toHaveAttribute('title', 'Stop');
+  });
+
   it('renders delete button for sleeping durable agent', () => {
     renderItem({ status: 'sleeping' });
     expect(screen.getByTestId('action-delete')).toBeInTheDocument();
@@ -196,13 +204,13 @@ describe('AgentListItem context menu', () => {
     expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
   });
 
-  it('context menu shows all available actions including Start New Session', () => {
+  it('context menu shows all available actions including Wake with a fresh session', () => {
     renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
     const row = screen.getByTestId('agent-item-agent-1');
     fireEvent.contextMenu(row);
 
     expect(screen.getByTestId('ctx-wake')).toBeInTheDocument();
-    expect(screen.getByTestId('ctx-wake-new')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-wake-new')).toHaveTextContent('Wake with a fresh session');
     expect(screen.getByTestId('ctx-popout')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-spawn')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-settings')).toBeInTheDocument();

@@ -208,7 +208,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
           status: 'timeout', isWorking: true,
           message: action === 'interrupt'
             ? 'Interrupt did not respond in time. Try again or choose Stop now.'
-            : 'Stop did not respond in time. Try Stop now again.',
+            : 'Stop now did not respond in time. Try again.',
         }), UPDATE_AGENT_ACTION_TIMEOUT_MS + 2000);
       });
       const result = await Promise.race([window.clubhouse.app.resolveWorkingAgent(agentId, action), deadline]);

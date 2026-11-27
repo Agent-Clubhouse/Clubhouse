@@ -40,15 +40,22 @@ describe('PopoutAgentActions', () => {
   });
   afterEach(() => setWidth(width));
 
-  it('shows Show in main window and Stop while running', () => {
+  it('shows Show in main window and Sleep while a durable agent runs', () => {
     mockAgents['agent-1'] = agent();
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
     expect(screen.getByTestId('popout-view-button')).toHaveTextContent('Show in main window');
-    expect(screen.getByTestId('popout-stop-button')).toHaveTextContent('Stop');
+    expect(screen.getByTestId('popout-stop-button')).toHaveTextContent('Sleep');
     expect(screen.queryByTestId('popout-wake-button')).not.toBeInTheDocument();
   });
 
-  it('shows Wake instead of Stop for a sleeping durable agent', () => {
+  it('says Stop for a running quick agent (#2764)', () => {
+    mockAgents['agent-1'] = agent({ kind: 'quick' });
+    render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
+    expect(screen.getByTestId('popout-stop-button')).toHaveTextContent('Stop');
+    expect(screen.getByTestId('popout-stop-button')).not.toHaveTextContent('Sleep');
+  });
+
+  it('shows Wake instead of Sleep for a sleeping durable agent', () => {
     mockAgents['agent-1'] = agent({ status: 'sleeping' });
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
     expect(screen.getByTestId('popout-wake-button')).toBeInTheDocument();
@@ -108,7 +115,7 @@ describe('PopoutAgentActions', () => {
       await waitFor(() => expect(mockWake).toHaveBeenCalledWith(DISPATCHER_PROJECT_ID, 'dispatcher-dir', 'disp', 'resume'));
     });
 
-    it('stops it with its folder and shows its view in the main window', async () => {
+    it('sleeps it with its folder and shows its view in the main window', async () => {
       mockAgents.disp = agent({ id: 'disp', name: 'Dispatcher', projectId: DISPATCHER_PROJECT_ID });
       render(<PopoutAgentActions agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
       fireEvent.click(screen.getByTestId('popout-stop-button'));
@@ -118,9 +125,17 @@ describe('PopoutAgentActions', () => {
     });
   });
 
-  it('toasts when Stop fails', async () => {
+  it('toasts when Sleep fails', async () => {
     window.clubhouse.agent.killAgent = vi.fn().mockRejectedValue(new Error('gone'));
     mockAgents['agent-1'] = agent();
+    render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
+    fireEvent.click(screen.getByTestId('popout-stop-button'));
+    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message.includes("Couldn't put the agent to sleep: gone"))).toBe(true));
+  });
+
+  it('toasts when Stop fails for a quick agent', async () => {
+    window.clubhouse.agent.killAgent = vi.fn().mockRejectedValue(new Error('gone'));
+    mockAgents['agent-1'] = agent({ kind: 'quick' });
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
     fireEvent.click(screen.getByTestId('popout-stop-button'));
     await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message.includes("Couldn't stop the agent: gone"))).toBe(true));
@@ -133,6 +148,6 @@ describe('PopoutAgentActions', () => {
     const view = screen.getByTestId('popout-view-button');
     expect(view).toHaveTextContent('');
     expect(view).toHaveAttribute('aria-label', 'Show in main window');
-    expect(screen.getByTestId('popout-stop-button')).toHaveAttribute('aria-label', 'Stop agent');
+    expect(screen.getByTestId('popout-stop-button')).toHaveAttribute('aria-label', 'Sleep agent');
   });
 });

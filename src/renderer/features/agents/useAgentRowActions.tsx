@@ -230,11 +230,12 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 1: Start/Stop (highest — collapses last)
+    // Priority 1: Sleep/Wake (highest — collapses last). Ending a durable agent's
+    // CLI puts it to sleep, so it says Sleep; Stop is only for a quick agent's run (#2764).
     if (agent.status === 'running') {
       list.push({
         id: 'stop',
-        label: 'Stop',
+        label: isDurable ? 'Sleep' : 'Stop',
         icon: <span>{'\u25A0'}</span>,
         hoverColor: 'hover:text-status-warning',
         visible: true,
@@ -251,7 +252,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
       list.push({
         id: 'wake-new',
-        label: 'Start New Session',
+        label: 'Wake with a fresh session',
         icon: (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14" />

@@ -76,7 +76,7 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
   }, [satelliteId, originalAgentId, agent.status, sendAgentWake]);
 
   const primaryAction = agent.status === 'running'
-    ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-status-warning', handler: handleStop }
+    ? { id: 'stop', title: isDurable ? 'Sleep' : 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-status-warning', handler: handleStop }
     : isDurable && (agent.status === 'sleeping' || agent.status === 'error')
       ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-ctp-success', handler: handleWake }
       : null;

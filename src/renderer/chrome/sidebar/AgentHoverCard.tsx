@@ -92,8 +92,6 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
   // A chat agent's Working time is its turn's, as in the chat header (#2197).
   const since = chatState === 'running' && turnStartedAt ? turnStartedAt : spawnedAt;
   const running = agent.status === 'running' && since;
-  // In chat, Stop in the header ends the turn; this ends the runtime, so it says Sleep.
-  const inChat = agent.kind === 'durable' && chatState !== null && chatState !== 'sleeping';
   // "Done" already says the agent is idle.
   const message = detailed?.message === 'Idle' && dot === 'idle' ? undefined : detailed?.message;
   const worktree = agent.worktreePath && projectPath ? relativeTo(projectPath, agent.worktreePath) : agent.worktreePath;
@@ -158,7 +156,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
           )}
           {quick.map((action) => (
             <button key={action.id} type="button" data-testid={`hover-${action.id}`} onClick={() => onAction(action)} className="text-ctp-subtext0 hover:text-ctp-text cursor-pointer">
-              {action.id === 'stop' && inChat ? 'Sleep' : action.label}
+              {action.label}
             </button>
           ))}
         </div>
