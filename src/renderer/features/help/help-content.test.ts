@@ -80,7 +80,7 @@ describe('help-content', () => {
     const find = (sections: typeof HELP_SECTIONS, id: string) => sections.flatMap((s) => s.topics).find((t) => t.id === id)!;
 
     it('has the article after Terminal in both shells', () => {
-      for (const [sections, title] of [[HELP_SECTIONS, 'Orchestrated Helpers'], [CHROME_HELP_SECTIONS, 'Orchestrated helpers']] as const) {
+      for (const [sections, title] of [[HELP_SECTIONS, 'Orchestrated Helpers'], [CHROME_HELP_SECTIONS, 'Helpers and Smart routing']] as const) {
         const agents = sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
         expect(agents.indexOf('agents-orchestrated-helpers')).toBe(agents.indexOf('agents-terminal') + 1);
         expect(find(sections, 'agents-orchestrated-helpers').title).toBe(title);
