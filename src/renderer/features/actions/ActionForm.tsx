@@ -180,7 +180,7 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
       )}
       {step.kind !== 'sleep' && (
         <Field
-          label={step.kind === 'wake' ? 'Prompt (optional)' : step.kind === 'notify' ? 'Notice text' : step.kind === 'message' ? 'Message' : 'Prompt'}
+          label={step.kind === 'wake' ? 'Task (optional)' : step.kind === 'notify' ? 'Notice text' : step.kind === 'message' ? 'Message' : step.kind === 'quick' ? 'Task' : 'Prompt'}
           htmlFor={`${uid}-text`}
           help={step.kind === 'wake' ? 'It resumes its last session. If it’s already awake, it gets this as a message.'
             : step.kind === 'message' && remoteTarget ? 'Annex queues this durably while the receiving agent is busy or asleep. Receipt confirms runtime acceptance, not model processing.'

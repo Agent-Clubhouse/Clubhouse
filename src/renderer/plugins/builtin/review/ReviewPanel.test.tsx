@@ -343,6 +343,7 @@ describe('MainPanel', () => {
     expect(screen.getByTestId('review-wake-button')).toBeTruthy();
     expect(screen.queryByTestId('review-sleep-button')).toBeNull();
     expect(screen.getByTestId('review-wake-prompt').getAttribute('placeholder')).toBe('Tell dozy what to do when it wakes…');
+    expect(screen.getByTestId('review-wake-prompt').getAttribute('aria-label')).toBe('Task for dozy when it wakes');
     await waitFor(() => expect(screen.getByTestId('review-sleeping-card').textContent).toContain('No earlier sessions'));
     fireEvent.click(screen.getByTestId('review-skip'));
     expect(showing('a2')).toBe(true);

@@ -216,10 +216,12 @@ describe('QuickAgentDialog', () => {
     expect(mockSpawnQuickAgent).toHaveBeenCalledWith('proj-1', '/project1', 'Look around', 'default', undefined, 'codex', 'ask', undefined, undefined, { fallbackAccess: 'full_access' });
   });
 
-  it('shows prompt textarea', () => {
+  it('shows the Task textarea', () => {
     setupStores();
     render(<QuickAgentDialog />);
     expect(screen.getByPlaceholderText('What should this quick agent do?')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /Task/ })).toBe(screen.getByPlaceholderText('What should this quick agent do?'));
+    expect(screen.queryByText('Prompt')).toBeNull();
   });
 
   it('Start Agent button is disabled when prompt is empty', () => {

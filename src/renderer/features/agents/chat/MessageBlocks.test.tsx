@@ -175,9 +175,9 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-sent-body').textContent).toBe('Ready');
   });
 
-  it('labels a sender\'s steer and mission beside the name', () => {
+  it('labels a sender\'s steer and task beside the name', () => {
     render(<UserMessage item={item({ text: 'x', source: 'mission', delivery: 'steer', routed: routed('Short') })} />);
-    expect(screen.getByTestId('chat-sent-part').textContent).toContain('· Mission · Steered into the running turn');
+    expect(screen.getByTestId('chat-sent-part').textContent).toContain('· Task · Steered into the running turn');
   });
 
   it('shows each sender of a burst, in one row', () => {

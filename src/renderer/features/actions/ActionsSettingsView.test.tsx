@@ -93,6 +93,7 @@ describe('Settings > Actions', () => {
   it('keeps an older quick step on the project provider until Auto is explicitly selected', () => {
     render(<ActionForm open action={action({ steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review changes' }] })} onClose={vi.fn()} onSaved={vi.fn()} />);
     const form = screen.getByTestId('action-form');
+    expect(within(form).getByLabelText('Task')).toHaveValue('Review changes');
     expect((within(form).getByLabelText('Provider') as HTMLSelectElement).value).toBe('');
     expect(within(form).queryByLabelText('Difficulty')).toBeNull();
     fireEvent.change(within(form).getByLabelText('Provider'), { target: { value: 'auto' } });

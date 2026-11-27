@@ -61,7 +61,7 @@ describe('NewAgentPage', () => {
     const name = (screen.getByTestId('new-agent-name') as HTMLInputElement).value;
     expect(screen.getByText(`${name}/standby`)).toBeTruthy();
     expect(screen.getByTestId('new-agent-submit').textContent).toBe('Create');
-    expect(screen.queryByRole('textbox', { name: /Mission/ })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: /Task/ })).toBeNull();
   });
 
   it('starts on the last project used when none is selected', () => {
@@ -166,9 +166,12 @@ describe('NewAgentPage', () => {
     );
   });
 
-  it('Quick swaps the durable rows for a required Mission and Runs in', async () => {
+  it('Quick swaps the durable rows for a required Task and Runs in', async () => {
     render(<NewAgentPage request={req({ kind: 'quick' })} />);
     const mission = screen.getByTestId('new-agent-mission');
+    expect(screen.getByRole('textbox', { name: 'Task' })).toBe(mission);
+    expect(screen.getByText('Runs one task, reports back, and finishes.')).toBeTruthy();
+    expect(screen.queryByText(/mission/i)).toBeNull();
     expect(mission).toHaveFocus();
     expect(screen.queryByTestId('new-agent-name')).toBeNull();
     expect(screen.queryByTestId('new-agent-persona')).toBeNull();

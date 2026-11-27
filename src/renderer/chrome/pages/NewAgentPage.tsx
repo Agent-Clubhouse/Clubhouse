@@ -39,7 +39,7 @@ import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, draftFromSeed, templ
  * The New agent page (#2031): one form in the pane for every way of making an
  * agent (the sidebar's New menu, a project's +, ⌘⇧N). No prompt box: Project,
  * Kind (Durable by default, or Quick), then the fields AddAgentDialog had.
- * Quick swaps the durable-only rows for a required Mission and Runs in.
+ * Quick swaps the durable-only rows for a required Task and Runs in.
  *
  * A durable agent asks for identity (adding an optional image), then
  * Clubhouse managed (#2893). On, the runtime rows give way to Build from
@@ -83,7 +83,7 @@ export function quickTemplateHelp(t: Pick<ManagedTemplate, 'setup'> | undefined,
   return parts.join(' ');
 }
 
-/** The Template row of a quick agent, under its mission. Mounted only with the flag on, so templates load only then. */
+/** The Template row of a quick agent, under its task. Mounted only with the flag on, so templates load only then. */
 function QuickTemplateRow({ value, onChange, disabled, mcpLaunchFlags, cliName }: {
   value: string;
   onChange: (template: ManagedTemplate | null) => void;
@@ -216,7 +216,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     [agents, projectId],
   );
 
-  // The cursor starts in Name, or in Mission for a quick agent.
+  // The cursor starts in Name, or in Task for a quick agent.
   useEffect(() => {
     (durable ? nameRef.current : missionRef.current)?.focus();
   }, [durable]);
@@ -579,7 +579,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           label="Kind"
           help={durable
             ? 'Keeps its name, settings and history. You start it and talk to it whenever you like.'
-            : 'Runs one mission, reports back, and finishes.'}
+            : 'Runs one task, reports back, and finishes.'}
         >
           <div role="radiogroup" aria-label="Kind" className="inline-flex p-0.5 gap-0.5 rounded-[7px] bg-ctp-crust">
             {(['durable', 'quick'] as const).map((k) => (
@@ -676,7 +676,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           </>
         ) : (
           <>
-            <Row label="Mission" htmlFor="new-agent-mission" top help="Required. A quick agent runs this one prompt and finishes.">
+            <Row label="Task" htmlFor="new-agent-mission" top help="Required. A quick agent runs this one task and finishes.">
               <textarea
                 id="new-agent-mission"
                 ref={missionRef}
