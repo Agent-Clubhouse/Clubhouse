@@ -16,6 +16,7 @@ import {
   type TourPosition,
   type TourShape,
 } from './tour-model';
+import { readSmartRoutingClis } from './smart-routing-gate';
 
 /**
  * The welcome tour's open state (#2814). It covers the pane like the
@@ -26,12 +27,19 @@ import {
 
 export type TourCloseReason = 'skip' | 'done' | 'navigate';
 
+/** Opening the tour: its shape, plus the CLIs the Smart routing scene draws. */
+export interface TourOpening extends TourShape {
+  smartRoutingClis?: string[];
+}
+
 interface WelcomeTourStoreState extends TourShape {
   open: boolean;
+  /** The CLIs Smart routing could pick between when the tour opened, readers first. Empty without the scene. */
+  smartRoutingClis: string[];
   position: TourPosition;
   /** The saved state as last read or written. Null until read. */
   saved: WelcomeTourState | null;
-  openTour: (shape: TourShape) => void;
+  openTour: (shape: TourOpening) => void;
   closeTour: (reason: TourCloseReason) => void;
   next: () => void;
   back: () => void;
@@ -62,11 +70,12 @@ export const useWelcomeTourStore = create<WelcomeTourStoreState>((set, get) => (
   variant: 'new',
   hasProjects: false,
   smartRouting: false,
+  smartRoutingClis: [],
   position: { step: 0, scene: 0 },
   saved: null,
 
   openTour: (shape) => {
-    set({ ...shape, open: true, position: { step: 0, scene: 0 } });
+    set({ ...shape, smartRoutingClis: shape.smartRoutingClis ?? [], open: true, position: { step: 0, scene: 0 } });
     const prev = get().saved;
     if (prev?.variant !== shape.variant || prev.variantVersion !== WELCOME_TOUR_VERSION) {
       void persist({ seenVersion: prev?.seenVersion ?? 0, variant: shape.variant, variantVersion: WELCOME_TOUR_VERSION });
@@ -104,6 +113,12 @@ export const useWelcomeTourStore = create<WelcomeTourStoreState>((set, get) => (
   }),
 }));
 
+/** Whether something other than the start of the app holds the pane: Settings, Help, an app view, the Dispatcher or New agent. */
+function paneInUse(): boolean {
+  const ui = useUIStore.getState();
+  return !!useChromeStore.getState().newAgent || ui.dispatcherOpen || ui.explorerTab === 'settings' || ui.explorerTab === 'help' || ui.explorerTab.startsWith('plugin:app:');
+}
+
 /** Clear the pane for the tour: leave Settings, Help or an app view, and close the Dispatcher and New agent. */
 function clearPane(): void {
   useChromeStore.getState().closeNewAgent();
@@ -112,15 +127,6 @@ function clearPane(): void {
   if (ui.explorerTab === 'settings') ui.toggleSettings();
   else if (ui.explorerTab === 'help') ui.toggleHelp();
   else if (ui.explorerTab.startsWith('plugin:app:')) ui.setExplorerTab('agents');
-}
-
-/**
- * Whether two or more Smart routing candidates are signed in, at least one with
- * a plan Clubhouse can read. Filled in by the Smart routing scene's gate; until
- * then the Orchestrators step has one scene.
- */
-async function readSmartRouting(): Promise<boolean> {
-  return false;
 }
 
 async function readSaved(): Promise<{ state: WelcomeTourState | null; earlierRun?: boolean }> {
@@ -163,9 +169,15 @@ export async function startWelcomeTourIfDue(): Promise<boolean> {
     const projectCount = useProjectStore.getState().projects.length;
     const decision = decideTourAtLaunch({ state, lastSeenVersion, currentVersion, projectCount, earlierRun });
     if (!decision.show) return false;
-    const smartRouting = await readSmartRouting();
-    clearPane();
-    useWelcomeTourStore.getState().openTour({ variant: decision.variant, hasProjects: projectCount > 0, smartRouting });
+    const smartRoutingClis = await readSmartRoutingClis();
+    // Nothing is cleared at launch: if the person already opened something
+    // while this was read (Settings, a draft on New agent), the tour waits for
+    // the next launch rather than pulling them out of it.
+    if (paneInUse()) {
+      log('info', 'Welcome tour left for the next launch: the pane was in use', { variant: decision.variant });
+      return false;
+    }
+    useWelcomeTourStore.getState().openTour({ variant: decision.variant, hasProjects: projectCount > 0, smartRouting: smartRoutingClis.length > 0, smartRoutingClis });
     log('info', 'Welcome tour opened at launch', { variant: decision.variant, reason: decision.reason });
     return true;
   } catch (err) {
@@ -181,9 +193,10 @@ export async function openWelcomeTour(): Promise<void> {
   if (!isNewChromeEnabled()) return;
   const saved = useWelcomeTourStore.getState().saved ?? (await readSaved()).state;
   const projectCount = useProjectStore.getState().projects.length;
-  const smartRouting = await readSmartRouting();
+  const smartRoutingClis = await readSmartRoutingClis();
+  // Asked for from Help or What's new, so the pane is cleared for it.
   clearPane();
-  useWelcomeTourStore.getState().openTour({ variant: variantForReopen(saved, projectCount), hasProjects: projectCount > 0, smartRouting });
+  useWelcomeTourStore.getState().openTour({ variant: variantForReopen(saved, projectCount), hasProjects: projectCount > 0, smartRouting: smartRoutingClis.length > 0, smartRoutingClis });
 }
 
 export type { WelcomeTourVariant };
