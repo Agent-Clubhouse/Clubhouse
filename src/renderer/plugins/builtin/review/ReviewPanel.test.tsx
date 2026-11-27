@@ -276,7 +276,7 @@ describe('MainPanel', () => {
     const menu = screen.getByTestId('review-jump-list');
     expect(menu.getAttribute('role')).toBe('menu');
     expect(screen.getByTestId('review-jump-list-a1').getAttribute('aria-current')).toBe('true');
-    expect(screen.getByTestId('review-jump-list-a2').textContent).toContain('Done');
+    expect(screen.getByTestId('review-jump-list-a2').textContent).toContain('Idle');
     fireEvent.keyDown(menu, { key: '3' });
     expect(screen.queryByTestId('review-jump-list')).toBeNull();
     expect(showing('a3')).toBe(true);

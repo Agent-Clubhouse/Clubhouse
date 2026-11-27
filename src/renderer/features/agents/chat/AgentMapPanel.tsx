@@ -15,19 +15,19 @@ import type { ChatItem } from '../../../stores/chatStore';
 import type { Agent } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { AgentAvatar } from '../AgentAvatar';
-import { chatDot, DOT_CLASS, DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
+import { chatDot, DOT_CLASS, DOT_LABEL, FINISHED_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { AgentMessage, ThoughtRow } from './MessageBlocks';
 import { ToolRow } from './ToolBlocks';
 import { scrollWithin } from './scroll';
 import { ChevronDown, ChevronRight } from './icons';
 import { formatDuration, formatElapsed, formatTokens, type AgentMap, type AgentMapNode, type AgentMapStatus } from './view-model';
 
-/** Subagent states in the shared status words; a stopped subagent is Done, and one the driver never settled says so. */
+/** Subagent states in the shared status words; a subagent that ended is Finished or Stopped (#2763), and one the driver never settled says so. */
 const STATUS_LABELS: Record<AgentMapStatus, string> = {
   running: DOT_LABEL.working,
-  completed: DOT_LABEL.idle,
+  completed: FINISHED_LABEL,
   failed: DOT_LABEL.error,
-  cancelled: DOT_LABEL.idle,
+  cancelled: 'Stopped',
   unknown: 'Status not reported',
 };
 const STATUS_DOT: Record<AgentMapStatus, AgentDot | null> = {

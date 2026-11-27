@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { agentDot, chatDetailedStatus, chatDot, dispatcherDot, dispatcherWorkingText, DOT_LABEL, StatusDot, statusCounts, statusRingColor } from './agent-status';
 
 describe('agent status vocabulary', () => {
-  it('uses the five words, with Done for an agent between turns', () => {
+  it('uses the five words, with Idle for an agent between turns', () => {
     expect([DOT_LABEL.working, DOT_LABEL.needs, DOT_LABEL.error, DOT_LABEL.sleeping, DOT_LABEL.idle])
-      .toEqual(['Working', 'Needs you', 'Error', 'Sleeping', 'Done']);
+      .toEqual(['Working', 'Needs you', 'Error', 'Sleeping', 'Idle']);
   });
 
   it('maps chat session states onto the same dots', () => {

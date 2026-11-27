@@ -342,7 +342,7 @@ describe('AgentRow hover card for a chat agent (#2197)', () => {
     expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
   });
 
-  it('says Done without repeating Idle once the turn ends', () => {
+  it('says Idle once the turn ends, with no Idle message line under it', () => {
     vi.useFakeTimers();
     chatState('idle', null);
     const { focusable } = setup(durable({ status: 'running' }), {
@@ -351,8 +351,8 @@ describe('AgentRow hover card for a chat agent (#2197)', () => {
     fireEvent.focus(focusable);
     act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
     const card = screen.getByTestId('agent-hover-card');
-    expect(card).toHaveTextContent('Done');
-    expect(card).not.toHaveTextContent('Idle');
+    expect(card).toHaveTextContent('Idle');
+    expect(screen.queryByTestId('agent-hover-message')).toBeNull();
     expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
   });
 

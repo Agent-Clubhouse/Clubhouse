@@ -50,9 +50,9 @@ describe('QuickAgentGhost', () => {
     window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({ events: [], totalEvents: 0 });
   });
 
-  it('shows Done in the toolbar with the mission, meta line and summary, and no chips', () => {
+  it('shows Finished in the toolbar with the mission, meta line and summary, and no chips', () => {
     render(<QuickAgentGhost {...defaultProps} />);
-    expect(screen.getByTestId('state-word')).toHaveTextContent('Done');
+    expect(screen.getByTestId('state-word')).toHaveTextContent('Finished');
     expect(screen.getByTestId('quick-mission')).toHaveTextContent('Fix the bug in auth module');
     expect(screen.getByText('bouncy-salmon · quick agent · Claude Code · opus · exit 0')).toBeInTheDocument();
     expect(screen.getByTestId('quick-summary')).toHaveTextContent('Fixed authentication issue');

@@ -58,9 +58,9 @@ beforeEach(() => {
 });
 
 describe('HeadlessRunFinished', () => {
-  it('shows a finished run in place: Done, summary, files with diff sizes, no chips', async () => {
+  it('shows a finished run in place: Finished, summary, files with diff sizes, no chips', async () => {
     render(<HeadlessRunFinished completed={done} onDismiss={vi.fn()} onDelete={vi.fn()} />);
-    expect(screen.getByTestId('state-word')).toHaveTextContent('Done');
+    expect(screen.getByTestId('state-word')).toHaveTextContent('Finished');
     expect(screen.getByTestId('run-toolbar')).toHaveTextContent('finished in 6m 41s');
     expect(screen.getByTestId('run-summary-text')).toHaveTextContent('Moved 175 hex literals');
     expect(screen.getByTestId('treehouse')).toHaveAttribute('data-phase', 'done');

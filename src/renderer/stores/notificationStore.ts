@@ -72,7 +72,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     } else if (eventKind === 'stop' && (s.agentIdle || s.agentStopped)) {
       // A finished turn: the agent is idle, not stopped (#2763). Either saved key turns it on.
       title = `${agentName} is idle`;
-      body = 'It finished its turn.';
+      body = 'Waiting for your next message.';
     } else if (eventKind === 'tool_error' && s.agentError) {
       title = `${agentName} hit an error`;
       body = detail ? `${detail} failed` : 'A tool call failed';

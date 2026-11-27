@@ -17,7 +17,7 @@ import type { ChatEvent, ChatEventDataMap, ChatEventType } from '../../../shared
 
 /**
  * #2208: the surfaces #2199 didn't convert read hook status, which
- * clearStaleStatuses drops after 30s without a tool event, so they showed Done
+ * clearStaleStatuses drops after 30s without a tool event, so they showed Done (now Idle)
  * mid chat turn. Each now reads the effective status (agent-status-store).
  * Every case runs for a chat agent mid-turn and for a terminal agent, whose
  * status still follows its hooks.
@@ -80,7 +80,7 @@ function terminalWorking() {
   });
 }
 
-/** A terminal agent whose last hook status went stale: Done, as before. */
+/** A terminal agent whose last hook status went stale: Idle, as before. */
 function terminalStale() {
   terminalWorking();
   advance(31_000);
@@ -103,9 +103,9 @@ const cases: Array<{ name: string; setup: () => void; dot: 'working' | 'idle' }>
 ];
 
 describe.each(cases)('status surfaces: $name', ({ setup, dot }) => {
-  const word = dot === 'working' ? 'Working' : 'Done';
+  const word = dot === 'working' ? 'Working' : 'Idle';
 
-  it('the hook status alone reads Done for the chat case (the drift)', () => {
+  it('the hook status alone reads Idle for the chat case (the drift)', () => {
     setup();
     const hookOnly = agentDot(agent, useAgentStore.getState().agentDetailedStatus[ID]);
     const chatCase = useChatStore.getState().live[ID] === true;
@@ -175,7 +175,7 @@ describe('re-rendering on chat status (#2208)', () => {
   it('a toolbar already on screen turns Working when a quiet chat turn starts', () => {
     useChatStore.getState().applyEvent(ev('session_state', { state: 'idle' }));
     render(<TerminalPaneToolbar agent={agent} />);
-    expect(screen.getByTestId('pane-status')).toHaveTextContent('Done');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Idle');
     act(() => {
       useChatStore.getState().applyEvent(ev('session_state', { state: 'running' }));
       useChatStore.getState().applyEvent(ev('turn_started', { trigger: 'prompt' }, 't1'));

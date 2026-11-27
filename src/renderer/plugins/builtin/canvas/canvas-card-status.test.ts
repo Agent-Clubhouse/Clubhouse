@@ -14,8 +14,8 @@ describe('cardDot', () => {
     ['warning attention on a working agent', 'running', detailed('working'), attention('warning'), 'Needs you'],
     ['warning attention on a sleeping agent', 'sleeping', null, attention('warning'), 'Needs you'],
     // Otherwise the app's one status vocabulary.
-    ['an idle agent between turns', 'running', detailed('idle'), null, 'Done'],
-    ['a running agent with no hook status', 'running', null, null, 'Done'],
+    ['an idle agent between turns', 'running', detailed('idle'), null, 'Idle'],
+    ['a running agent with no hook status', 'running', null, null, 'Idle'],
     ['mid-turn Thinking between tool calls', 'running', detailed('idle', 'Thinking'), null, 'Working'],
     ['a working agent', 'running', detailed('working'), null, 'Working'],
     ['a permission prompt', 'running', detailed('needs_permission'), null, 'Needs you'],

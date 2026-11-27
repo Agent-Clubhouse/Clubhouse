@@ -8,10 +8,13 @@
 
 import type { ReactNode } from 'react';
 import { OrchestratorGlyph } from '../OrchestratorGlyph';
-import { DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
+import { DOT_LABEL, FINISHED_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { splitPath } from './format';
 
-/** The states these views show, in the app's one status vocabulary (agent-status.tsx, #2018). */
+/**
+ * The states these views show, in the app's one status vocabulary (agent-status.tsx, #2018).
+ * `done` is a quick agent or run that ended: the idle dot, with the word Finished (#2763).
+ */
 export type StateDotKind = 'working' | 'needs' | 'error' | 'sleeping' | 'done';
 
 const TO_DOT: Record<StateDotKind, AgentDot> = {
@@ -39,7 +42,7 @@ export function StateToolbar({ status, detail, right, testId }: {
       data-testid={testId}
     >
       <StateDot kind={status} />
-      <span className="text-ctp-text" data-testid="state-word">{DOT_LABEL[TO_DOT[status]]}</span>
+      <span className="text-ctp-text" data-testid="state-word">{status === 'done' ? FINISHED_LABEL : DOT_LABEL[TO_DOT[status]]}</span>
       {detail && <span className="truncate min-w-0">{detail}</span>}
       {right && <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">{right}</div>}
     </div>
