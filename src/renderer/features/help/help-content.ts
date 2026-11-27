@@ -32,6 +32,7 @@ export const PREPARE_HANDOFF_SKILL_TOPIC_CONTENT = [
   '',
 ].join('\n');
 import agentsDispatcherChrome from './content/agents-dispatcher.chrome.md';
+import agentsManagedChrome from './content/agents-managed.chrome.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import agentsAntigravity from './content/agents-antigravity.md';
 import pluginsOverview from './content/plugins-overview.md';
@@ -223,14 +224,29 @@ export const GROUP_PROJECT_TOPICS: HelpTopic[] = [
   { id: 'group-projects', title: 'Group projects', content: groupProjects },
   { id: 'group-project-glossary', title: 'Group project glossary', content: groupProjectGlossary },
 ];
-const CHROME_SECTIONS_WITH_ANNEX: HelpSection[] = CHROME_HELP_SECTIONS.map((s) => {
+/**
+ * The 1.0 pages the classic layout has no article for (#3902), each placed
+ * after the topic it names. Their ids are what the welcome tour links to, so
+ * keep them stable.
+ */
+export const NEW_LAYOUT_TOPICS: ReadonlyArray<{ after: string; topic: HelpTopic }> = [
+  { after: 'agents-overview', topic: { id: 'agents-managed', title: 'Managed agents', content: agentsManagedChrome } },
+];
+/** Puts each new-layout topic after the one it names, in order, in whichever section holds that one. */
+function withNewLayoutTopics(sections: HelpSection[]): HelpSection[] {
+  return NEW_LAYOUT_TOPICS.reduce((acc, { after, topic }) => acc.map((s) => {
+    const at = s.topics.findIndex((t) => t.id === after);
+    return at < 0 ? s : { ...s, topics: [...s.topics.slice(0, at + 1), topic, ...s.topics.slice(at + 1)] };
+  }), sections);
+}
+const CHROME_SECTIONS_WITH_ANNEX: HelpSection[] = withNewLayoutTopics(CHROME_HELP_SECTIONS.map((s) => {
   if (s.id === 'settings') return { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] };
   if (s.id === 'agents') {
     const at = s.topics.findIndex((t) => t.id === 'agents-orchestrated-helpers') + 1;
     return { ...s, topics: [...s.topics.slice(0, at), DISPATCHER_TOPIC, ...GROUP_PROJECT_TOPICS, ...s.topics.slice(at)] };
   }
   return s;
-});
+}));
 
 /** The active shell's built-in sections. */
 export function getHelpSections(): HelpSection[] {
