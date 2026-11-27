@@ -2,7 +2,7 @@
 
 An action is a small workflow built into Clubhouse. When its trigger fires, it does one to three steps in order.
 
-Actions run whenever Clubhouse is open, even with no window or project open. They run on the computer they were made on, except that a group project's actions run on the computer that hosts the group. **Settings > Actions** lists actions on your other computers under **Actions on other computers**, read-only.
+Actions run whenever Clubhouse is open, even with no window or project open. They run on the computer they were made on, except that a group project's actions run on the computer that holds the group. **Settings > Actions** lists actions on your other computers under **Actions on other computers**, read-only.
 
 ## Triggers
 
@@ -122,7 +122,7 @@ An agent's action can do only what the agent itself may. Its steps and what it w
 
 ### Group project actions
 
-A group project's actions belong to the group, not to the agent that made them, and stay with it if that agent leaves. They run on the computer that hosts the group. They can watch only that group's own board, and their steps reach only its members and the projects they're in. The group's **Permissions** section turns them on or off with **Run group project Actions**, next to **Tell members about new posts** and **Wake sleeping members**. All three are on by default.
+A group project's actions belong to the group, not to the agent that made them, and stay with it if that agent leaves. They run on the computer that holds the group. They can watch only that group's own board, and their steps reach only its members and the projects they're in. The group's **Permissions** section turns them on or off with **Run group project Actions**, next to **Tell members about new posts** and **Wake sleeping members**. All three are on by default.
 
 ### Being told when something happens
 

@@ -283,7 +283,7 @@ describe('help-content in the new shell', () => {
     for (const part of [
       'only the selected one shows its label', 'All groups', 'lands on its **Board**', 'Start with every agent in', 'Include linked computers',
       'never added automatically', 'explicit project link', 'Offer to link', 'Coverage not verified on this computer', 'Needs you',
-      'Waiting for approval', 'Members on this computer', 'On this computer', '**Applied** means the host made it', '**Refused** gives the host', 'stops only agents on linked computers', 'while its Dispatcher is off',
+      'Waiting for approval', 'Members on this computer', 'On this computer', '**Applied** means that computer made it', '**Refused** gives that computer', 'stops only agents on linked computers', 'while its Dispatcher is off',
       'made by an earlier version keeps its earlier matching', 'still matches other computers\' projects by repository key', 'a phone paired with that computer',
     ]) expect(content, part).toContain(part);
     expect(content).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
