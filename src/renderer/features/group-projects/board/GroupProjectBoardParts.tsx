@@ -44,7 +44,7 @@ export function ProjectScopeLine({ ctx }: { ctx: GroupProjectContextValue }) {
   const resolvedName = (ctx.project as (typeof ctx.project & { hostName?: string }))?.hostName;
   const hostName = !machine ? 'This computer' : !fingerprint ? 'Unknown'
     : machine.toLowerCase() === fingerprint.toLowerCase() ? 'This computer' : resolvedName || machine;
-  return <div className="px-3 text-xs text-ctp-overlay1" data-testid="group-project-scope">{label}{scope.reach === 'network' && ` · Host: ${hostName}`}</div>;
+  return <div className="px-3 text-xs text-ctp-overlay1" data-testid="group-project-scope">{label}{scope.reach === 'network' && ` · Computer: ${hostName}`}</div>;
 }
 
 /* ---------- Shared pieces ---------- */

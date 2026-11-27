@@ -115,8 +115,8 @@ describe('palette in the new shell', () => {
     // Same name, two groups: told apart by scope and host, opened by id.
     const [first, second] = ['gp1', 'gp2'].map((id) => list.find((i) => i.id === `group-project:${id}`)!);
     expect(first).toMatchObject({ label: 'Release checks', category: 'Group Projects', searchOnly: true });
-    expect(first.detail).toBe('Scope: Clubhouse. Reach: This computer. Host: This computer');
-    expect(second.detail).toBe('Scope: App-wide. Reach: Network. Host: Studio');
+    expect(first.detail).toBe('Scope: Clubhouse. Reach: This computer. Computer: This computer');
+    expect(second.detail).toBe('Scope: App-wide. Reach: Network. Computer: Studio');
     act(() => second.execute());
     expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp2' });
     useGroupProjectStore.setState({ projects: [] });

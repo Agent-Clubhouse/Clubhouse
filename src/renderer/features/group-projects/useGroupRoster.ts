@@ -10,7 +10,7 @@ export const ROSTER_AGED_MS = 3 * ROSTER_REREAD_MS;
 /** A copy of a group project hosted on another computer, by the store. */
 export function useIsCopy(groupProjectId: string): { copy: boolean; hostName: string } {
   const copy = useGroupProjectStore((s) => s.projects.find((p) => p.id === groupProjectId)?.network?.role === 'replica');
-  const hostName = useGroupProjectStore((s) => s.projects.find((p) => p.id === groupProjectId)?.hostName) ?? 'its host';
+  const hostName = useGroupProjectStore((s) => s.projects.find((p) => p.id === groupProjectId)?.hostName) ?? 'the computer that holds it';
   return { copy, hostName };
 }
 

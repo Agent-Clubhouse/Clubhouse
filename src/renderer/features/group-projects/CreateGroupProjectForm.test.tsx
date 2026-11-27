@@ -194,7 +194,7 @@ describe('choosing the host (#3547)', () => {
   beforeEach(() => {
     vi.spyOn(window.clubhouse.groupProject, 'createHosts').mockResolvedValue(hosts);
   });
-  const hostRadio = (name: string | RegExp) => within(screen.getByRole('group', { name: 'Host' })).getByRole('radio', { name });
+  const hostRadio = (name: string | RegExp) => within(screen.getByRole('group', { name: 'Computer' })).getByRole('radio', { name });
 
   async function onStudio(name = 'Launch') {
     render(<CreateGroupProject defaultScope={{ level: 'app', reach: 'network' }} onCreated={created} />);
@@ -209,7 +209,7 @@ describe('choosing the host (#3547)', () => {
   it('offers only with network reach, defaults to this computer, and explains computers that can\'t be chosen', async () => {
     render(<CreateGroupProject />);
     await screen.findByText('0 agents will join now.');
-    expect(screen.queryByRole('group', { name: 'Host' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Computer' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('radio', { name: 'Network' }));
     await waitFor(() => expect(hostRadio('This computer')).toBeChecked());
     expect(hostRadio(/Harbor/)).toBeDisabled();
@@ -342,11 +342,11 @@ describe('coverage preview for another host (#3547, #3568)', () => {
     } as never);
     render(<CreateGroupProject defaultScope={scope} />);
     expect(await screen.findByText('Covers Atlas.')).toBeInTheDocument();
-    const host = within(await screen.findByRole('group', { name: 'Host' }));
+    const host = within(await screen.findByRole('group', { name: 'Computer' }));
     await waitFor(() => expect(host.getByRole('radio', { name: 'Studio' })).toBeEnabled());
     fireEvent.click(host.getByRole('radio', { name: 'Studio' }));
     expect(screen.getByText('As seen from this computer, it covers Atlas.')).toBeInTheDocument();
-    expect(screen.getByText('Coverage is verified on the host when the group is created.')).toBeInTheDocument();
+    expect(screen.getByText('The computer that holds the group verifies its coverage when the group is created.')).toBeInTheDocument();
     fireEvent.click(host.getByRole('radio', { name: 'This computer' }));
     expect(screen.getByText('Covers Atlas.')).toBeInTheDocument();
   });

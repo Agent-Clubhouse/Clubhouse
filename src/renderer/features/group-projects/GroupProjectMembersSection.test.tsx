@@ -164,7 +164,7 @@ describe('automatic membership and lost-link review', () => {
     const { unmount } = render(<GroupProjectMembersSection groupProjectId="gp1" />);
     expect(await screen.findByLabelText('Start with every agent in Alpha')).toBeDisabled();
     expect(screen.getByLabelText('Include linked computers')).toBeDisabled();
-    expect(screen.getByText('Only the host can change automatic membership.')).toBeInTheDocument();
+    expect(screen.getByText('Only the computer that holds this group project can change automatic membership.')).toBeInTheDocument();
     unmount();
     vi.mocked(window.clubhouse.groupProject.listMembers).mockResolvedValue(view());
     render(<GroupProjectMembersSection groupProjectId="gp1" />);

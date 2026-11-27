@@ -124,7 +124,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
             )}
             <CoverageSummary coverage={coverage} />
             {view.automaticMembership && <div className="flex flex-col items-start gap-2">
-              {!view.automaticMembership.editable && <p className={settingsHelp}>Only the host can change automatic membership.</p>}
+              {!view.automaticMembership.editable && <p className={settingsHelp}>Only the computer that holds this group project can change automatic membership.</p>}
               <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={view.autoJoin} disabled={busy || !view.automaticMembership.editable}
                 onChange={(event) => void reviewAutomatic({ autoJoin: event.target.checked, includeLinkedComputers: view.includeLinkedComputers ?? false })} />
                 Start with every agent in {view.automaticMembership.projectName}

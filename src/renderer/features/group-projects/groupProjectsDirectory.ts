@@ -128,7 +128,7 @@ export function buildDirectory(
     const notVerified = matching.filter((g) => coverageOf(g, view.projectId, coverage) === 'not-verified');
     add(`project:${view.projectId}`, project ? projectLabel(project) : 'This project', covering);
     add('app', APP_WIDE_HEADING, appWide);
-    add('not-verified', 'Copies from other computers', notVerified, `${COVERAGE_NOT_VERIFIED}. These cover a project on the computer that hosts them.`);
+    add('not-verified', 'Copies from other computers', notVerified, `${COVERAGE_NOT_VERIFIED}. These cover a project on the computer that holds them.`);
     const shown = covering.length + appWide.length + notVerified.length;
     return { sections, hiddenByView: matching.length - shown, shown };
   }
