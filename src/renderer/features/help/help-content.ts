@@ -36,6 +36,7 @@ import agentsDispatcherChrome from './content/agents-dispatcher.chrome.md';
 import agentsManagedChrome from './content/agents-managed.chrome.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import agentsAntigravity from './content/agents-antigravity.md';
+import agentsClisUsageChrome from './content/agents-clis-usage.chrome.md';
 import pluginsOverview from './content/plugins-overview.md';
 import pluginsPermissions from './content/plugins-permissions.md';
 import pluginsCreating from './content/plugins-creating.md';
@@ -43,6 +44,8 @@ import settingsThemes from './content/settings-themes.md';
 import settingsSound from './content/settings-sound.md';
 import settingsNotifications from './content/settings-notifications.md';
 import settingsLogging from './content/settings-logging.md';
+import settingsPrivacyChrome from './content/settings-privacy.chrome.md';
+import comingFromClassicChrome from './content/general-coming-from-classic.chrome.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
 import gettingStartedChrome from './content/general-getting-started.chrome.md';
@@ -232,6 +235,9 @@ export const GROUP_PROJECT_TOPICS: HelpTopic[] = [
  */
 export const NEW_LAYOUT_TOPICS: ReadonlyArray<{ after: string; topic: HelpTopic }> = [
   { after: 'agents-overview', topic: { id: 'agents-managed', title: 'Managed agents', content: agentsManagedChrome } },
+  { after: 'agents-antigravity', topic: { id: 'agents-clis-usage', title: 'CLIs and usage', content: agentsClisUsageChrome } },
+  { after: 'keyboard-shortcuts', topic: { id: 'coming-from-classic', title: 'Coming from classic', content: comingFromClassicChrome } },
+  { after: 'settings-logging', topic: { id: 'settings-privacy', title: 'Privacy and diagnostics', content: settingsPrivacyChrome } },
   { after: 'agents-overview', topic: { id: 'agents-chat', title: 'Chat and media', content: agentsChatChrome } },
 ];
 /** Puts each new-layout topic after the one it names, in order, in whichever section holds that one. */
