@@ -1,6 +1,6 @@
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { AnnexSettings, AnnexStatus } from '../../../shared/types';
-import { SettingsField, settingsInput } from './SettingsLayout';
+import { SettingsField } from './SettingsLayout';
 
 interface Props {
   settings: AnnexSettings;
@@ -11,17 +11,6 @@ interface Props {
 export function AnnexIdentitySection({ settings, status, onSave }: Props) {
   return (
     <>
-      <SettingsField label="Alias" help="How this machine appears to other Clubhouse instances." htmlFor="annex-alias">
-        <input
-          id="annex-alias"
-          type="text"
-          value={settings.alias}
-          onChange={(e) => onSave({ ...settings, alias: e.target.value })}
-          className={`${settingsInput} w-[220px]`}
-          placeholder="My Mac"
-        />
-      </SettingsField>
-
       <SettingsField label="Color">
         <div className="flex gap-1.5">
           {AGENT_COLORS.map((color) => {

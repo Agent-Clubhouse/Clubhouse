@@ -33,6 +33,7 @@ export function AnnexNetworkSettingsView() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
   // On while either half runs, so an older server-only or client-only setup still shows its tools.
   const on = settings.enableServer || settings.enableClient;
   const reverseInbound = settings.enableServer && settings.enableClient && devices.some((device) =>
@@ -213,14 +214,19 @@ export function AnnexNetworkSettingsView() {
 
       {on && (
         <SettingsSection title="This computer">
-          <SettingsField label="Device name" htmlFor="annex-device-name">
+          <SettingsField label="Device name" help="How this computer appears to other computers and the phone." htmlFor="annex-device-name">
             <input
               id="annex-device-name"
               type="text"
-              value={settings.deviceName}
-              onChange={(e) => saveSettings({ ...settings, deviceName: e.target.value })}
+              value={nameDraft ?? (settings.alias || settings.deviceName)}
+              onChange={(e) => {
+                // One name (#2783): it saves to both stored fields. A cleared field keeps the old network name.
+                const name = e.target.value;
+                setNameDraft(name);
+                saveSettings({ ...settings, alias: name, deviceName: name.trim() ? name : settings.deviceName });
+              }}
               className={`${settingsInput} w-[220px]`}
-              placeholder="Clubhouse on my Mac"
+              placeholder="My Mac"
             />
           </SettingsField>
           <SettingsField

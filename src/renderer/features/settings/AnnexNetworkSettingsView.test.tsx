@@ -144,6 +144,26 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ deviceName: 'Saved Mac', alias: 'Saved', enableServer: true })));
   });
 
+  it('has one Device name field, showing the alias and saving both names', () => {
+    setup(ON);
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.queryByLabelText('Alias')).not.toBeInTheDocument();
+    const field = screen.getByLabelText('Device name');
+    expect(field).toHaveValue('Studio');
+    fireEvent.change(field, { target: { value: 'Desk' } });
+    expect(field).toHaveValue('Desk');
+    expect(saveSettings).toHaveBeenLastCalledWith({ ...ON, alias: 'Desk', deviceName: 'Desk' });
+    fireEvent.change(field, { target: { value: '' } });
+    expect(field).toHaveValue('');
+    expect(saveSettings).toHaveBeenLastCalledWith({ ...ON, alias: '', deviceName: 'Studio Mac' });
+  });
+
+  it('shows the device name when no alias was saved', () => {
+    setup({ ...ON, alias: '' });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByLabelText('Device name')).toHaveValue('Studio Mac');
+  });
+
   it('shows as on, with its tools, while only one half runs (an older phone setup)', () => {
     setup({ ...OFF, enableServer: true });
     render(<AnnexNetworkSettingsView />);
