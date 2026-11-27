@@ -10,7 +10,7 @@ Clubhouse enforces a permission system that controls what each plugin can access
 | **files.external** | Access files outside the project (requires declared external roots) |
 | **git** | Git status, log, branches, diffs |
 | **terminal** | Spawn and control shell sessions |
-| **agents** | List, run, kill, resume, and monitor agents |
+| **agents** | List, run, stop, resume, and monitor agents |
 | **agents.free-agent-mode** | Start agents above Ask first, at Auto or Full access (elevated, requires `agents`) |
 | **notifications** | Show notices, errors, confirmations, input prompts, open URLs |
 | **storage** | Persistent data storage (project, project-local, global scopes) |
@@ -70,6 +70,6 @@ The `agents.free-agent-mode` permission lets a plugin start agents at Auto or Fu
 }
 ```
 
-The agent starts at your **Default access** in **Settings > Agents & CLIs** when that is **Auto** or **Full access**. Otherwise it starts at the level Clubhouse used for these agents before the Access setting: **Full access**, or **Auto** if you had picked Auto. With Auto, a check decides what needs your approval, and it can be wrong. Without `freeAgentMode`, a plugin's agents start at your Default access.
+The agent starts at your **Default access** in **Settings > Agents & CLIs** when that is **Auto** or **Full access**. Otherwise it starts at the level Clubhouse used for these agents before the Access setting: **Full access**, or **Auto** if you had picked Auto. With Auto, a check decides what needs your approval, and it can be wrong. Without `freeAgentMode`, a durable agent a plugin creates starts at **Ask first**, whatever your Default access, and the plugin can't ask for a higher level.
 
 Only grant to plugins you fully trust.

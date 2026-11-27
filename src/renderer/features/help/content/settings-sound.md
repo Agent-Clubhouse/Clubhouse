@@ -20,7 +20,7 @@ Four sound events, each with independent settings:
 
 | Event | Triggers When |
 |-------|--------------|
-| **Agent Finished** | An agent completes its mission |
+| **Agent Finished** | An agent finishes its task |
 | **Error** | An agent encounters a fatal error |
 | **Permission Request** | An agent is waiting for approval |
 | **General Notification** | Other notification events |
@@ -32,7 +32,7 @@ For each event:
 
 ## Per-Project Overrides
 
-Each project can use a different sound pack: **Sound Pack Override** on the project's **Notifications & Alerts** settings page.
+Each project can use a different sound pack: **Sound Pack Override** on the project's **Notifications & alerts** settings page.
 
 ## Managing Packs
 
@@ -40,4 +40,4 @@ Each project can use a different sound pack: **Sound Pack Override** on the proj
 - Delete user-created packs from Settings
 - Plugin-provided packs show a "Plugin" badge and cannot be removed
 
-**Access:** **Settings > Notifications & Alerts**, under **Sounds**
+**Access:** **Settings > Notifications & alerts**, under **Sounds**

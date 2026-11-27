@@ -28,4 +28,4 @@ When you open the palette with no query, it shows your most recently used items 
 
 Each result shows its keyboard shortcut (if one exists), so you can learn shortcuts as you use the palette.
 
-> **Example:** Type `Cmd+K` then `>key` to quickly jump to **Settings > Keyboard Shortcuts**.
+> **Example:** Type `Cmd+K` then `>key` to quickly jump to **Settings > Keyboard shortcuts**.

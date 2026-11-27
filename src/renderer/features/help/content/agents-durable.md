@@ -7,7 +7,7 @@ Durable agents are persistent, long-lived agents designed for ongoing work. They
 1. Select a project, open the Agents tab, click **New Agent**
 2. Configure: **Name**, **Color**, **Emoji**, **Branch**, **Model**, **Runs on**
 3. Click **Create** — the agent appears in the explorer immediately
-4. Give it a mission to start working, or leave it sleeping
+4. Give it a task to start working, or leave it sleeping
 
 > **Tip:** Templates for Clubhouse managed agents are in **Settings > Managed agents > Templates**.
 
@@ -29,7 +29,7 @@ Each durable agent operates in its own worktree on a dedicated branch:
 ## Quick Agent Defaults
 
 A durable agent can serve as a launchpad for quick agents, inheriting:
-- System prompt (prepended to the quick agent's mission)
+- System prompt (put before the quick agent's task)
 - Allowed tools (e.g., restrict to read-only access)
 - Default model
 

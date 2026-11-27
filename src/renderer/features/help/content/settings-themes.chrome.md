@@ -20,7 +20,7 @@ Pick a theme and it applies right away, terminals included.
 
 ## Theme collections
 
-More collections come built in. Themes are dark unless marked light.
+The theme picker groups themes by where they come from. The originals are under **Clubhouse**, each collection under its own name, and themes from plugins come last, under each plugin's name. Themes are dark unless marked light.
 
 | Collection | Themes |
 |------------|--------|
@@ -33,9 +33,11 @@ More collections come built in. Themes are dark unless marked light.
 | **Tech Modern** | Redmond, Mountain View (light), Cupertino (light), AI Lab (light), Seattle |
 | **Neon** | Neon Cyberpunk, Synthwave, Neon Tokyo, Electric, Vaporwave (light) |
 
-These started as Workshop theme packs. Some of their colors were adjusted so text, notices and code stay readable. If you used one from an installed pack, pick it again here.
+These started as separate theme packs. Some of their colors were adjusted so text, notices and code stay readable. If your saved theme isn't installed any more, the picker says so and shows another one until you pick a theme.
 
-Plugins can add more themes, which show up in the same list.
+## Finding a theme
+
+**Search themes** matches a theme's name, its group, or "light" and "dark". **Show** narrows the list to **All themes**, **Dark** or **Light**. The line above the list says which theme you're using, and **Show all themes** brings it back when a search hides it.
 
 **Theme gradients & fonts** lets a theme use its own font families and background gradients, including themes from plugins. Turn it off to keep every theme to its colors and the standard fonts.
 

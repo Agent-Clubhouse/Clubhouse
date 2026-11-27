@@ -6,7 +6,7 @@ Quick fixes for problems people run into most.
 
 Check these in order:
 
-1. **Is the CLI installed?** In **Settings > Agents & CLIs**, a CLI that wasn't found can't be turned on, and its switch says **CLI not found**. Install the CLI so it's on your `PATH`, then restart Clubhouse.
+1. **Is the CLI installed?** In **Settings > Agents & CLIs**, a CLI that wasn't found shows **Not found** with its error, and can't be turned on. Install the CLI so it's on your `PATH`, then open that page again to check. **New agent** also warns when the CLI it would run on isn't found.
 2. **Is it turned on?** Check its switch on the same page.
 3. **Is it signed in?** Most providers need an API key or a login. See the provider's own docs.
 
@@ -38,11 +38,11 @@ A banner appears when the project has no `.git` folder. Click **git init** in th
 2. Click **Check now**.
 3. Check your connection, firewall and proxy.
 
-## The CLI view isn't responding
+## The Terminal isn't responding
 
-1. **Status says Error?** The agent crashed. Stop it and start it again.
-2. **No output?** The process may be hung. Stop it from the row menu, then start it again.
-3. **Can scroll but can't type?** Press `⇧⌘T` to focus the CLI view again.
+1. **Status says Error?** The agent crashed. Put it to sleep with **Sleep**, or **Stop** for a quick agent, and start it again.
+2. **No output?** The process may be hung. Use **Sleep** in the row menu, or **Stop** for a quick agent, then start it again.
+3. **Can scroll but can't type?** Press `⇧⌘T` to focus the Terminal again.
 4. **Slow to draw?** A very long output buffer can do that. Restart the agent to clear it.
 
 ## Models are missing
@@ -61,7 +61,7 @@ Models come from the CLI. Update it, check your API key, and look at its status 
 - **The project is collapsed.** Click the arrow beside its name.
 - **The project is idle.** Projects you haven't used for a while fold into one row at the bottom of the sidebar. Click it to see them.
 - **The agent is sleeping or finished.** Sleeping agents fold into **N sleeping**, and finished quick agents into **N finished quick agents**, under the project.
-- **You're on another host.** If the host row at the top says a satellite's name, switch back to **Local**.
+- **The sidebar shows another computer.** If **Show** at the top of the sidebar names one of your other computers, choose **This computer** or **All computers**.
 
 ## Still stuck?
 
@@ -70,3 +70,17 @@ Report it at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Ag
 - the steps that cause it;
 - the newest `telemetry-*.jsonl` file from the log folder, recorded with **Settings > Logging** set to Debug while you reproduce it. Check it first: **Logging and diagnostics** explains what it holds and how to remove the diagnostic lines;
 - your Clubhouse version, from **Settings > About**.
+
+## An MCP server failed
+
+Open the agent's **Details** and the **Skills and MCP** card. A server that failed shows **Failed** with its reason, such as a missing environment variable or the CLI's own error.
+
+## The Dispatcher is stuck
+
+Choose **Restart Dispatcher** in the Dispatcher's menu. **Restart, keep chat** keeps the conversation, and **Restart and start new chat** clears it. Its memory, agents, connections, Actions and settings stay either way. **Start new chat** in the same menu only clears the chat.
+
+To see what it does behind the scenes, turn on **Dispatcher debug view** in **Settings > Experimental**. A read-only **Dispatcher controller** row appears under the Dispatcher.
+
+## Another computer won't connect
+
+See [Annex Network](#help:settings-annex) for pairing, the **Devices** list and **Reconnect**.
