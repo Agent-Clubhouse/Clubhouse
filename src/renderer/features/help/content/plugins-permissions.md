@@ -10,7 +10,7 @@ Clubhouse enforces a permission system that controls what each plugin can access
 | **files.external** | Access files outside the project (requires declared external roots) |
 | **git** | Git status, log, branches, diffs |
 | **terminal** | Spawn and control shell sessions |
-| **agents** | List, run, kill, resume, and monitor agents |
+| **agents** | List, run, stop, resume, and monitor agents |
 | **agents.free-agent-mode** | Start agents above Ask first, at Auto or Full access (elevated, requires `agents`) |
 | **notifications** | Show notices, errors, confirmations, input prompts, open URLs |
 | **storage** | Persistent data storage (project, project-local, global scopes) |

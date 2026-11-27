@@ -42,8 +42,8 @@ Yellow banner = no `.git` directory found. Options:
 
 ## CLI View Not Responding
 
-1. **Red ring?** — Agent crashed. Stop and restart.
-2. **No output?** — Process may be hung. Use **Kill/Stop**, then restart.
+1. **Red ring?** The agent crashed. Put it to sleep, or stop a quick agent, and start it again.
+2. **No output?** The process may be hung. Use **Sleep**, or **Stop** for a quick agent, then start it again.
 3. **Rendering slow?** — Large output buffer. Restart the agent to clear it.
 
 ## Missing Models
@@ -57,7 +57,7 @@ Models come from the CLI, not Clubhouse. If models are missing:
 
 If `Cmd+K` doesn't work:
 - Ensure focus is on the Clubhouse window (not a pop-out's native input)
-- Check **Settings > Keyboard Shortcuts** for conflicts
+- Check **Settings > Keyboard shortcuts** for conflicts
 - Try `Cmd+K` from a non-text-input area first
 
 ## Still Stuck?

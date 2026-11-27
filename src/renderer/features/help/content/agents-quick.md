@@ -1,11 +1,11 @@
 # Quick Agents
 
-Quick agents are one-shot task runners. Give them a mission, they execute it, and they exit — no persistent state or dedicated branch.
+Quick agents are one-shot task runners. Give one a task, it does it, and it finishes. It keeps no state and no branch of its own.
 
 ## Launching
 
 1. Press `Cmd+Shift+N` (or click **Quick Agent** in the explorer)
-2. Type a mission description
+2. Type the task
 3. Optionally configure:
    - **Model** — from the orchestrator's available models
    - **Runs on**, the CLI to use, when no parent agent is selected

@@ -22,6 +22,7 @@ A project tab with its own list, such as Files or Git, swaps the sidebar to that
 | **Browser** | A web browser inside the pane |
 | **Canvas** | A board for laying out agents and notes, per project or app-wide |
 | **Review** | Go through agents one at a time, starting with the ones that need you |
+| **Group Project** and **Sticky Notes** | Cards on a canvas. They're listed while Canvas is on. |
 
 ## Turning plugins on
 
@@ -34,7 +35,7 @@ External plugins load from `~/.clubhouse/plugins/`. Loading them is off by defau
 
 1. In **Settings > Plugins**, turn on **Allow external plugins** under **From the marketplace**.
 2. Put the plugin's folder in `~/.clubhouse/plugins/`.
-3. Restart Clubhouse.
+3. Click **Reload** under **Local plugins** in **Settings > Plugins**.
 4. Turn it on for the app, then for each project that needs it.
 
 To uninstall, delete its folder from `~/.clubhouse/plugins/` or click its uninstall button in **Settings > Plugins**.
@@ -47,16 +48,21 @@ To uninstall, delete its folder from `~/.clubhouse/plugins/` or click its uninst
 | **Official** | Reviewed by the Clubhouse team |
 | **Community** | From someone else and not reviewed. Use your judgment. |
 
-## Plugin states
+## When a plugin doesn't load
 
-| State | Meaning |
-|-------|---------|
-| **Registered** | Found, but not turned on |
-| **Enabled** | On, ready to start |
-| **Activated** | Running |
-| **Disabled** | Turned off, by you or automatically after a permission violation |
-| **Errored** | Failed to start or crashed. Check the `core:plugins` and `plugin:<id>` diagnostic lines. |
-| **Incompatible** | Uses a plugin API version this Clubhouse can't load, either a removed one (0.5 or 0.6) or a newer one |
+A plugin's row in **Settings > Plugins** says why it isn't running, such as "Doesn't work with this version of Clubhouse." or the error it hit, with **View details**. For more, check the `core:plugins` and `plugin:<id>` diagnostic lines.
+
+Clubhouse loads plugins built for API 0.7, 0.8 or 0.9. A plugin built for 0.5 or 0.6, which were removed in 1.0, doesn't load, and Clubhouse tells you once which plugins those are.
+
+An update that needs more permissions than the plugin has says so, with **Reject**.
+
+## Retired plugins
+
+The Lounge, KanBoss and Bug Report plugins, and the Hub, were retired in 1.0. Clubhouse no longer loads them and removes them and their data at startup. Files git tracks in a project, such as a committed KanBoss board, stay where they are.
+
+## Plugins that add agent parts
+
+A plugin that adds instructions or MCP servers for agents adds them as parts in the library, in **Settings > Managed agents**, marked with the plugin's id. The plugin keeps them up to date, so make your own copy to change one. Uninstalling the plugin removes its parts.
 
 ## Badges
 
