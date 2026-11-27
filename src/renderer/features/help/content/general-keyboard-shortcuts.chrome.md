@@ -25,6 +25,8 @@ You can change any of these in **Settings > Keyboard shortcuts**. A binding you 
 | `⌘N` | New quick agent, as a one-line prompt |
 | `⇧⌘N` | New agent, with Durable selected |
 | `⇧⌘T` | Focus the active agent's CLI view, if typing stops reaching it |
+| `⌥⌘D` | Show or hide agent details |
+| `⌥⌘↑` and `⌥⌘↓` | Previous and next agent message in a chat |
 
 There are no shortcuts to switch projects by number. Use `⌘K` and type `/` with part of the project name.
 
@@ -45,6 +47,8 @@ Open `⌘K`, then start with:
 | `/` | Projects |
 | `#` | Canvases |
 | `>` | Commands and settings |
+
+Without a prefix, it also lists a few matching Help topics.
 
 ## Plugins
 
