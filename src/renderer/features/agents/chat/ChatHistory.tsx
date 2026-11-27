@@ -20,8 +20,8 @@ function SavedSession({ agentId, sessionId, agentName }: { agentId: string; sess
     }, () => { if (alive) setError(true); }); // telemetry-exempt: the archive displays the read error.
     return () => { alive = false; };
   }, [agentId, sessionId, tail]);
-  if (error) return <p role="alert" className="p-4 text-ctp-error">Could not load this conversation.</p>;
-  if (!state) return <p role="status" className="p-4 text-ctp-overlay1">Loading conversation…</p>;
+  if (error) return <p role="alert" className="p-4 text-ctp-error">Could not load this session.</p>;
+  if (!state) return <p role="status" className="p-4 text-ctp-overlay1">Loading session…</p>;
   return <ChatStream state={state} agentName={agentName} announce={false} emptyMessage="This session has no messages." onShowEarlier={partial ? () => setTail(undefined) : undefined} />;
 }
 
@@ -66,12 +66,12 @@ export function ChatHistory({ agentId, currentSessionId, onClose }: {
       onClose();
     }}>
       <div className="flex items-center gap-2 p-2 text-xs border-b border-surface-0">
-        <span className="text-ctp-overlay1">Saved conversation · read only</span>
+        <span className="text-ctp-overlay1">Saved session · read only</span>
         <button type="button" onClick={onClose} className="ml-auto text-ctp-accent">Back to current chat</button>
       </div>
       {error ? <p role="alert" className="p-4 text-ctp-error">Could not load saved sessions.</p>
         : sessions === null ? <p role="status" className="p-4 text-ctp-overlay1">Loading sessions…</p>
-          : sessions.length === 0 ? <p className="p-4 text-ctp-overlay1">No saved conversations.</p>
+          : sessions.length === 0 ? <p className="p-4 text-ctp-overlay1">No saved sessions.</p>
             : <select aria-label="Saved session" value={selected} onChange={(e) => setSelected(e.target.value)} className="m-2 p-2 bg-surface-0 text-ctp-text rounded">
               {sessions.filter(hasUserMessage).map(sessionOption)}
               {sessions.some((s) => !hasUserMessage(s)) && <optgroup label="Sessions without user messages">

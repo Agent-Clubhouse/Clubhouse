@@ -47,7 +47,7 @@ export function chatActivity(state: ChatViewState, now: number): string {
 }
 
 const LIMIT_NAMES: Record<string, { name: string; short: string }> = {
-  '5h': { name: 'Session (5-hour)', short: '5h' },
+  '5h': { name: '5-hour', short: '5h' },
   week: { name: 'Weekly', short: 'wk' },
   week_opus: { name: 'Weekly Opus', short: 'wk Opus' },
   week_sonnet: { name: 'Weekly Sonnet', short: 'wk Sonnet' },
@@ -56,7 +56,7 @@ const LIMIT_NAMES: Record<string, { name: string; short: string }> = {
   overage: { name: 'Extra usage', short: 'extra' },
 };
 
-/** A plan window's name for people: "Session (5-hour)", "Weekly", "Weekly Fable". */
+/** A plan window's name for people: "5-hour", "Weekly", "Weekly Fable". Callers add "limit". */
 export function limitName(window: string): string {
   if (window.startsWith('week:')) return `Weekly ${window.slice(5)}`;
   return LIMIT_NAMES[window]?.name ?? window;

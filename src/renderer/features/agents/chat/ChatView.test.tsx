@@ -1164,7 +1164,7 @@ describe('ChatView (store-bound)', () => {
     render(<ChatView agent={agent} />);
     await screen.findByTestId('chat-user-message');
     fireEvent.click(screen.getByRole('button', { name: 'History' }));
-    expect(await screen.findByText('No saved conversations.')).toBeInTheDocument();
+    expect(await screen.findByText('No saved sessions.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
     if (exit === 'Escape') fireEvent.keyDown(screen.getByRole('region', { name: 'Chat history' }), { key: 'Escape' });
     else fireEvent.click(screen.getByText('Back to current chat'));
@@ -1500,7 +1500,7 @@ describe('ChatView agent details', () => {
     expect(card).toHaveTextContent('Plan limits');
   });
 
-  it('opens the Changes review from Review all and goes back to Chat', async () => {
+  it('opens the Changes review from Review changes and goes back to Chat', async () => {
     useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/proj' } as never] });
     window.clubhouse.git.branchChanges = vi.fn(async () => ({
       available: true, branch: 'gallant-swift/rows', base: 'main', ahead: 1, uncommitted: 0,

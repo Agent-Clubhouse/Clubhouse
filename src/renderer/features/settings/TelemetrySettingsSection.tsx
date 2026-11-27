@@ -72,7 +72,7 @@ const SENT = [
   'Durations and outcomes of flows such as startup, agent spawn and updates',
   'Counts and timings, bucketed where needed',
   'App version, OS type and version, CPU architecture',
-  'A random install ID you can reset, and a per-run session ID',
+  'A random install ID you can reset, and a new ID each time Clubhouse runs',
 ];
 
 const isLoopbackHost = (host?: string) => !!host && /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
@@ -515,7 +515,7 @@ export function TelemetrySettingsSection() {
       <Modal open={preview !== null} onClose={() => setPreview(null)} title="Preview data" width="w-[640px]">
         {preview && preview.length === 0 ? (
           <p className="text-[13px] text-ctp-subtext1">
-            Nothing has been exported in this session yet. Turn telemetry on, or send a test event, to see exactly what leaves this computer.
+            Nothing has been exported since Clubhouse started. Turn telemetry on, or send a test event, to see exactly what leaves this computer.
           </p>
         ) : (
           <pre className="text-xs text-ctp-subtext1 bg-ctp-crust border border-surface-0 rounded-md p-3 max-h-[60vh] overflow-auto" data-testid="telemetry-preview">

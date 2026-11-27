@@ -45,9 +45,10 @@ describe('annex UI fixes', () => {
       expect(source).toContain('zIndex: CANVAS_Z.paneOverlay');
     });
 
-    it('overlay renders Session paused message', () => {
+    it('overlay renders Remote control paused message', () => {
       const source = fs.readFileSync(CANVAS_WORKSPACE_PATH, 'utf-8');
-      expect(source).toContain('Session paused');
+      expect(source).toContain('Remote control paused');
+      expect(source).not.toContain('Session paused');
       expect(source).toContain('That computer has paused remote control.');
     });
   });
