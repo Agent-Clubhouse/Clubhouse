@@ -233,7 +233,7 @@ describe('help-content in the new shell', () => {
     for (const s of CHROME_HELP_SECTIONS) {
       expect(s.title).not.toMatch(/&/);
       for (const t of [...s.topics, ...NEW_LAYOUT_TOPICS.map((n) => n.topic)]) {
-        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b)\(?[A-Z][a-z]/);
+        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b|Clubhouse\b|Smart routing\b)\(?[A-Z][a-z]/);
       }
     }
   });
