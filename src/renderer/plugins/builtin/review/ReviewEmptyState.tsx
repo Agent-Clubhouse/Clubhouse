@@ -27,16 +27,16 @@ function List({ children }: { children: React.ReactNode }) {
   return <div className="mt-1 py-1 rounded-lg border border-surface-0">{children}</div>;
 }
 
-/** "on Mac mini" for one host, "on 2 hosts" for more. */
+/** "on Mac mini" for one computer, "on 2 other computers" for more. */
 function useRemoteWhere(agents: AgentInfo[]): string {
   const satellites = useAnnexClientStore((s) => s.satellites);
   const hosts = new Set(agents.filter((a) => isRemoteAgentId(a.id)).map((a) => parseNamespacedId(a.id)?.satelliteId));
   if (hosts.size === 1) {
     const [id] = hosts;
     const alias = satellites.find((s) => s.id === id)?.alias;
-    return alias ? `on ${alias}` : 'on another host';
+    return alias ? `on ${alias}` : 'on another computer';
   }
-  return `on ${hosts.size} hosts`;
+  return `on ${hosts.size} other computers`;
 }
 
 export function ReviewEmptyState({ cause, all, detailed, onShowSleeping, onShowEveryone, onToggleSleeping, onToggleRemote, onClearFilters, onWake, onNewAgent }: {
@@ -105,7 +105,7 @@ export function ReviewEmptyState({ cause, all, detailed, onShowSleeping, onShowE
     );
   } else {
     const rows: React.ReactNode[] = [];
-    if (cause.hiddenByRemote > 0) rows.push(<FilterLine key="remote" label="Remote" detail={`${cause.hiddenByRemote} ${remoteWhere}`} onToggle={onToggleRemote} />);
+    if (cause.hiddenByRemote > 0) rows.push(<FilterLine key="remote" label="Other computers" detail={`${cause.hiddenByRemote} ${remoteWhere}`} onToggle={onToggleRemote} />);
     if (cause.hiddenBySleeping > 0) rows.push(<FilterLine key="sleeping" label="Sleeping" detail={`${cause.hiddenBySleeping} asleep`} onToggle={onToggleSleeping} />);
     body = (
       <>

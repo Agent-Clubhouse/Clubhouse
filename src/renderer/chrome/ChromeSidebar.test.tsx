@@ -1145,7 +1145,7 @@ describe('ChromeSidebar', () => {
       expect(useNetworkSidebarStore.getState().links).toEqual([['p3', rp]]);
       expect(useProjectStore.getState().projects.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
       fireEvent.contextMenu(screen.getByTestId('project-p3'));
-      fireEvent.click(screen.getByText('Split per machine'));
+      fireEvent.click(screen.getByText('Split per computer'));
       expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
       expect(useNetworkSidebarStore.getState().links).toEqual([]);
     });

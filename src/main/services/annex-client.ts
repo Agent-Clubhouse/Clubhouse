@@ -1065,8 +1065,8 @@ function pinnedTlsOptionsFor(fingerprint: string): tls.ConnectionOptions {
 const NEEDS_PAIRING_CODE = 'ERR_ANNEX_NEEDS_PAIRING';
 const NEEDS_PAIRING_MESSAGE = 'This pairing is from an older version of Clubhouse. Pair again to connect.';
 const PEER_NOT_PAIRED_MESSAGE = 'This computer is no longer paired there. Pair again to connect.';
-const CERT_EXPIRED_MESSAGE = "The satellite's certificate has expired. Pair again to connect.";
-const CERT_NOT_YET_VALID_MESSAGE = "The satellite's certificate isn't valid yet. Check the date and time on both computers, then retry.";
+const CERT_EXPIRED_MESSAGE = "That computer's certificate has expired. Pair again to connect.";
+const CERT_NOT_YET_VALID_MESSAGE = "That computer's certificate isn't valid yet. Check the date and time on both computers, then retry.";
 const certMismatchMessage = (alias: string) => `${alias} showed a different certificate. If it was reset, pair again.`;
 /** TLS errors meaning the server showed a certificate other than the pinned one. */
 const MISMATCH_CODES = ['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID'];

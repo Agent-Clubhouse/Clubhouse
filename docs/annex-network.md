@@ -184,7 +184,7 @@ Starts from: A and B connected. Steps happen on A unless they say otherwise.
 3. Find the repository that's open on both computers. ✓ A suggestion to link them shows once, in the sidebar and in project settings. Choose Link. ✓ One group holds both computers' agents, and B's sidebar doesn't change. (#3066)
 4. In project settings › Linked projects, unlink the two. ✓ They're two groups again, and the suggestion doesn't come back. On B, which keeps its own links, choose Keep separate on the same suggestion. ✓ It isn't suggested again on B. (#3066)
 5. In project settings, link the folder with no remote to one of B's projects by hand with "Link with another project", then unlink it. ✓ They group, then separate. (#3066)
-6. From a project's menu, use Merge with… to merge it with one of B's projects, then Split per machine. ✓ A group forms on A, then splits. B's sidebar doesn't change. (#3065)
+6. From a project's menu, use Merge with… to merge it with one of B's projects, then Split per computer. ✓ A group forms on A, then splits. B's sidebar doesn't change. (#3065)
 7. Turn B off. ✓ B's agents stay on A, dimmed and saying "offline", and their chats can still be read. Turn B back on. (#3065)
 8. Link a project on A with its copy on B. On A, pin the group. ✓ Within a few seconds it's pinned on B too. On B, unpin it, then mark it inactive. ✓ A shows the same. Turn B off, mark it active on A, turn B on. ✓ B shows it active and not idle.
 

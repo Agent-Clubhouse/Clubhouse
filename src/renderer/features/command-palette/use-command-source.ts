@@ -572,7 +572,7 @@ export function useCommandSource(): CommandItem[] {
     if (!isNewChromeEnabled() || satellites.length === 0) return [];
     const items: CommandItem[] = [{
       id: 'host:local',
-      label: 'Switch to Local',
+      label: 'Switch to this computer',
       category: CATEGORY.hosts,
       icon: 'host',
       execute: () => { switchHost(null); reportChromeFeature('host_switch'); },

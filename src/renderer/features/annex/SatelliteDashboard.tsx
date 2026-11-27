@@ -306,7 +306,7 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
   const navigateToAgent = useNavigateToRemoteAgent();
 
   const satellite = satellites.find((s) => s.id === activeHostId);
-  const satelliteName = satellite?.alias || 'Remote';
+  const satelliteName = satellite?.alias || 'Other computer';
   const colorHex = getAgentColorHex(satellite?.color);
 
   // Find projects for this satellite — applySatelliteSnapshot keys by satelliteId (= satellite.id)
@@ -357,7 +357,7 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-ctp-text">{satelliteName}</h1>
               <span className="text-xs font-medium text-ctp-peach bg-ctp-peach/10 px-2 py-0.5 rounded-full">
-                Remote
+                Other computer
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
@@ -406,13 +406,13 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
           />
         ) : satellite?.snapshotUnavailable ? (
           <EmptyState
-            title="Can't load this satellite yet"
+            title="Can't load that computer yet"
             description="Retrying. Its projects will show here when it answers."
           />
         ) : (
           <EmptyState
-            title="No projects on this satellite"
-            description="Open a project on the remote machine to see it here."
+            title="No projects on that computer"
+            description="Open a project in Clubhouse on that computer to see it here."
           />
         ))}
       </div>

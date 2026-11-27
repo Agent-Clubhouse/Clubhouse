@@ -49,7 +49,7 @@ export function SatelliteStartPage({ activeHostId }: { activeHostId: string }) {
   const detailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
   const icons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   const list = useMemo(() => projects ?? [], [projects]);
-  const name = satellite?.alias || 'Satellite';
+  const name = satellite?.alias || 'Other computer';
   const connected = satellite?.state === 'connected';
 
   const agentsByProject = useMemo(() => {
@@ -92,12 +92,12 @@ export function SatelliteStartPage({ activeHostId }: { activeHostId: string }) {
           <>
             {!satellite?.catalogIncomplete && <p className="mt-[18px] text-[13px] leading-normal text-ctp-subtext1">
               {connected
-                ? `Nothing is open on ${name} yet. Open a project in Clubhouse on that machine and it shows up here.`
+                ? `Nothing is open on ${name} yet. Open a project in Clubhouse on that computer and it shows up here.`
                 : `${name} isn't reachable right now. Its projects show up here when it reconnects.`}
             </p>}
             <div className="mt-3 flex gap-1.5">
               <Button kind="ghost" onClick={() => { switchHost(null); reportChromeFeature('host_switch'); }} className="focus-ring">
-                Switch to Local
+                Switch to this computer
               </Button>
               <Button kind="quiet" onClick={openAnnexSettings} className="focus-ring">Annex settings</Button>
             </div>

@@ -61,7 +61,7 @@ export function RemoteCanvasBoardPreview({ agent, satelliteId, hostAgentId, cont
   if (current.status !== 'ok') return <><CardNote>{current.status === 'unavailable' ? 'This host does not share board previews.' : current.status === 'forbidden' ? 'The host does not allow this board preview.' : 'Couldn’t read this board preview.'}</CardNote>{again}</>;
   const page = current.page;
   if (page.state === 'unavailable') return <><CardNote>{page.reason === 'limit' ? 'This board is too large to preview here.' : page.reason === 'changed' ? 'The saved board changed. Read it again.' : 'This saved board is unavailable to preview.'}</CardNote>{again}</>;
-  return <BoardLayout page={page} host={useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId)?.alias || 'the host'} />;
+  return <BoardLayout page={page} host={useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId)?.alias || 'that computer'} />;
 }
 
 function BoardLayout({ page, host }: { page: Extract<RemoteCanvasBoardPage, { state: 'recorded' }>; host: string }) {

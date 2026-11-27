@@ -79,7 +79,7 @@ describe('UserMessage', () => {
 
   it('keeps the source and steer labels readable', () => {
     render(<UserMessage item={item({ text: 'hi', source: 'annex', delivery: 'steer' })} />);
-    expect(screen.getByTestId('chat-you-label').textContent).toBe('You · From Annex · Steered into the running turn');
+    expect(screen.getByTestId('chat-you-label').textContent).toBe('You · From another device · Steered into the running turn');
   });
 
   it('says plainly when a queued message was not delivered, and nothing while it is sending', () => {

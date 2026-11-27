@@ -381,7 +381,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           testId="review-filter-needs-you"
         />
         <FilterSwitch label="Sleeping" checked={includeSleeping} onChange={toggleSleeping} testId="review-filter-sleeping" />
-        <FilterSwitch label="Remote" checked={includeRemote} onChange={toggleRemote} testId="review-filter-remote" />
+        <FilterSwitch label="Other computers" checked={includeRemote} onChange={toggleRemote} testId="review-filter-remote" />
         <Sep />
         <Button
           ref={jumpButtonRef}

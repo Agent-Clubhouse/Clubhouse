@@ -314,12 +314,12 @@ describe('MainPanel', () => {
     expect(showing('a1')).toBe(true);
   });
 
-  it('names Remote as the filter that hides everyone', () => {
+  it('names Other computers as the filter that hides everyone', () => {
     const agents = [makeAgent({ id: REMOTE('r1'), name: 'far' })];
     const { api } = makeApi(agents, { settings: { 'include-remote': false } });
     render(<MainPanel api={api} />);
     expect(screen.getByTestId('review-empty').getAttribute('data-cause')).toBe('filtered');
-    expect(screen.getByTestId('review-empty').textContent).toContain('Remote');
+    expect(screen.getByTestId('review-empty').textContent).toContain('Other computers');
     expect(screen.getByTestId('review-empty').textContent).not.toContain('Sleeping');
   });
 

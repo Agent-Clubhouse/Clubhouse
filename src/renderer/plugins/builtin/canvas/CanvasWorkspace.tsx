@@ -817,7 +817,7 @@ export function CanvasWorkspace({
               </svg>
             </div>
             <p className="text-sm text-ctp-subtext0 font-medium">Session paused</p>
-            <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
+            <p className="text-xs text-ctp-overlay0 mt-1">That computer has paused remote control.</p>
           </div>
         </div>
       )}

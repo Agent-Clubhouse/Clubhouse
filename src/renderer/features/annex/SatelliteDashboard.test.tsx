@@ -73,7 +73,7 @@ describe('SatelliteDashboard', () => {
 
     render(<SatelliteDashboard activeHostId="sat-1" />);
 
-    expect(screen.getByText('No projects on this satellite')).toBeTruthy();
+    expect(screen.getByText('No projects on that computer')).toBeTruthy();
   });
 
   it('shows an incomplete catalog while remaining connected, without claiming empty or retrying', () => {
@@ -82,7 +82,7 @@ describe('SatelliteDashboard', () => {
     expect(screen.getByText(/Connected/)).toBeTruthy();
     expect(screen.getByText('Project catalog is incomplete')).toBeTruthy();
     expect(screen.getByText('Waiting for a fresh project snapshot.')).toBeTruthy();
-    expect(screen.queryByText('No projects on this satellite')).toBeNull();
+    expect(screen.queryByText('No projects on that computer')).toBeNull();
     expect(screen.queryByText(/Retrying/)).toBeNull();
   });
 
@@ -100,8 +100,8 @@ describe('SatelliteDashboard', () => {
 
     render(<SatelliteDashboard activeHostId="sat-1" />);
 
-    expect(screen.getByText("Can't load this satellite yet")).toBeTruthy();
-    expect(screen.queryByText('No projects on this satellite')).toBeNull();
+    expect(screen.getByText("Can't load that computer yet")).toBeTruthy();
+    expect(screen.queryByText('No projects on that computer')).toBeNull();
   });
 
   it('marks what it shows as possibly out of date while a satellite cannot build a snapshot', () => {
@@ -120,7 +120,7 @@ describe('SatelliteDashboard', () => {
     render(<SatelliteDashboard activeHostId="sat-1" />);
 
     expect(screen.queryByText('This may be out of date. Retrying to load the latest.')).toBeNull();
-    expect(screen.queryByText("Can't load this satellite yet")).toBeNull();
+    expect(screen.queryByText("Can't load that computer yet")).toBeNull();
   });
 
   it('renders project cards for satellite projects', () => {
@@ -226,12 +226,12 @@ describe('SatelliteDashboard', () => {
     expect(screen.getByTestId('satellite-agent-row-remote||sat-1||agent-1')).toBeTruthy();
   });
 
-  it('shows Remote badge in header', () => {
+  it('shows Other computer badge in header', () => {
     useAnnexClientStore.setState({ satellites: [makeSatellite()] });
 
     render(<SatelliteDashboard activeHostId="sat-1" />);
 
-    expect(screen.getByText('Remote')).toBeTruthy();
+    expect(screen.getByText('Other computer')).toBeTruthy();
   });
 
   it('shows host address in header', () => {
@@ -314,13 +314,13 @@ describe('SatelliteDashboard', () => {
     expect(screen.getByTestId('satellite-action-stop')).toBeTruthy();
   });
 
-  it('falls back to "Remote" name when satellite not found in store', () => {
+  it('falls back to "Other computer" name when the computer is not in the store', () => {
     useAnnexClientStore.setState({ satellites: [] });
 
     render(<SatelliteDashboard activeHostId="sat-unknown" />);
 
-    // "Remote" appears as both the header title (fallback) and the badge
-    expect(screen.getAllByText('Remote').length).toBeGreaterThanOrEqual(1);
+    // "Other computer" appears as both the header title (fallback) and the badge
+    expect(screen.getAllByText('Other computer').length).toBeGreaterThanOrEqual(1);
   });
 
   it('has the satellite-dashboard test id', () => {

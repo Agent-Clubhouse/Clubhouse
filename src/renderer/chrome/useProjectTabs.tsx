@@ -149,11 +149,11 @@ export function useProjectTabs() {
               : <span className={isAvailable ? '' : 'opacity-60'}>{PLUGIN_FALLBACK_ICON}</span>,
             disabled: isMissing,
             disabledReason: p.status === 'missing'
-              ? `${p.name} is not installed on this machine`
+              ? `${p.name} is not installed on this computer`
               : p.status === 'version_mismatch'
-                ? `${p.name} version mismatch (local: ${p.localVersion}, remote: ${p.remoteVersion})`
+                ? `${p.name} versions differ (${p.localVersion} on this computer, ${p.remoteVersion} on the other)`
                 : isDimmed
-                  ? `${p.name} is not annex enabled`
+                  ? `${p.name} doesn't support Annex Network`
                   : undefined,
           };
         });

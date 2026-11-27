@@ -116,7 +116,7 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
 const SOURCE_LABELS: Partial<Record<UserMessageItem['source'], string>> = {
   mission: 'Mission',
   shoulder_tap: 'Shoulder tap',
-  annex: 'From Annex',
+  annex: 'From another device',
 };
 
 /** A message from another agent starts folded to a short preview, under its sender and above "Show more", unless it's a single short line (#2664, #3614). */

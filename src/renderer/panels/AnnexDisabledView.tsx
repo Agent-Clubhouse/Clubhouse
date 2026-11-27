@@ -10,9 +10,9 @@ export function AnnexDisabledView({ pluginName }: AnnexDisabledViewProps) {
           <circle cx="12" cy="12" r="10" />
           <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
         </svg>
-        <p className="text-lg mb-2">Not Annex Enabled</p>
+        <p className="text-lg mb-2">Not available over Annex Network</p>
         <p className="text-sm">
-          <strong>{pluginName}</strong> has not declared Annex compatibility and cannot be used over remote control.
+          <strong>{pluginName}</strong> doesn't support Annex Network, so it can't be used on another computer from here.
         </p>
       </div>
     </div>

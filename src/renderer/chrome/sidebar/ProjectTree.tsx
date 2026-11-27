@@ -72,7 +72,7 @@ export interface ProjectTreeProps {
   agentMachine?: (agent: Agent) => MachineInfo | undefined;
   /** For a project on another machine, every computer in its group, for its header (#3607). */
   projectMachines?: (projectId: string) => MachineInfo[];
-  /** More items for a project's menu: Merge with… and Split per machine. */
+  /** More items for a project's menu: Merge with… and Split per computer. */
   projectMenuItems?: (projectId: string) => MenuItem[];
 }
 

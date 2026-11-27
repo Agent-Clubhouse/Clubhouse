@@ -144,7 +144,7 @@ export interface ProjectGroupProps {
   agentMachine?: (agent: Agent) => MachineInfo | undefined;
   /** For a project on another machine: every computer it is on, for its header (#3607). */
   machines?: readonly MachineInfo[];
-  /** More project menu items, after the project's own: Merge with… and Split per machine (#3065). */
+  /** More project menu items, after the project's own: Merge with… and Split per computer (#3065). */
   extraMenuItems?: MenuItem[];
   /** Tree depth of the header: 1, or 2 inside the idle row. */
   level?: number;
