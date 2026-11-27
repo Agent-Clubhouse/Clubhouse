@@ -23,11 +23,13 @@ function finalState(scene: TourScene): HTMLElement {
   return root;
 }
 
+/** The CLIs the gate let through, readers first, as the tour's store holds them. */
 function setCli(ids: string[]) {
   useOrchestratorStore.setState({
     enabled: ids,
     availability: Object.fromEntries(ids.map((id) => [id, { available: true }])),
   });
+  useWelcomeTourStore.setState({ smartRoutingClis: ids });
 }
 
 describe('the Smart routing scene', () => {
@@ -38,6 +40,17 @@ describe('the Smart routing scene', () => {
     expect(root.querySelector('.n-hp-first .st')!.textContent).toBe('Codex, gpt-6-luna, low');
     expect(root.querySelector('.n-hp-then .st')!.textContent).toBe('Claude Code, Opus, high');
     expect(root.querySelector('.n-why')!.textContent).toBe('Each helper keeps its CLI and model, even if the limits change later.');
+  });
+
+  it('with Codex and Copilot and no Claude Code: those two cards, never a CLI they don\u2019t have', () => {
+    setCli(['codex-cli', 'copilot-cli']);
+    const root = finalState('smart-routing');
+    expect(root.querySelector('.n-pa b')!.textContent).toBe('Codex');
+    expect(root.querySelector('.n-pb b')!.textContent).toBe('Copilot');
+    expect(root.textContent).not.toContain('Claude Code');
+    expect(root.querySelector('.n-pbt')!.textContent).toBe('Plan unknown, so it comes last');
+    expect(root.querySelector('.n-hp-first .st')!.textContent).toBe('Codex, gpt-6-luna, low');
+    expect(root.querySelector('.n-hp-then .st')!.textContent).toBe('Copilot, claude-opus-5.5, high');
   });
 
   it('with Copilot: its plan shows as unknown and it comes last, so Claude Code goes first', () => {

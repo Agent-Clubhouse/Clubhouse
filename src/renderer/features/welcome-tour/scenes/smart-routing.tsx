@@ -1,6 +1,6 @@
 import { Button } from '../../../components/Button';
 import { providerDescriptor } from '../../../../shared/providers/descriptors';
-import { useOrchestratorStore } from '../../../stores/orchestratorStore';
+import { useWelcomeTourStore } from '../welcomeTourStore';
 import { curve, type SceneContext } from '../scene-engine';
 import { AgentStack, Av, Ov, TourLink, Wire, pos } from '../stage-parts';
 import { openHelpLink, openSmartRoutingSettings } from '../tour-actions';
@@ -10,15 +10,15 @@ import type { SceneDef } from './types';
  * Smart routing, shown only when it has CLIs to choose between
  * (smart-routing-gate.ts). Four columns, left to right: the orchestrator's
  * request, its difficulty, the CLIs and their plans, the helpers. The models
- * are the built-in presets for each difficulty. With Copilot as the second
- * CLI, its plan shows as unknown and it comes last, as Smart routing ranks it.
+ * are the built-in presets for each difficulty. The two cards are the first
+ * two CLIs that qualified, readers first, so the scene only ever shows CLIs
+ * this person has. When the second one's plan can't be read (Copilot), it
+ * shows as unknown and comes last, as Smart routing ranks it.
  */
-
-type Second = 'codex-cli' | 'copilot-cli';
 
 const DIFFS: Array<[k: 'e' | 'm' | 'h', label: string, y: number]> = [['e', 'Easy', 50], ['m', 'Medium', 100], ['h', 'Hard', 150]];
 const D = { e: 50 + 17, m: 100 + 17, h: 150 + 17 };
-/** The two CLI cards: Claude Code on top, the second below. Centres at top + 38. */
+/** The two CLI cards, the first qualifying CLI on top. Centres at top + 38. */
 const V = { a: 46 + 38, b: 136 + 38 };
 
 /** "Haiku, low", from a CLI's built-in preset for a difficulty. */
@@ -34,27 +34,36 @@ function name(id: string): string {
   return providerDescriptor(id)?.shortName ?? id;
 }
 
-/** Codex when it's ready, otherwise Copilot: the gate only shows this scene with one of them beside Claude Code, or both. */
-function useSecond(): Second {
-  const availability = useOrchestratorStore((s) => s.availability);
-  const enabled = useOrchestratorStore((s) => s.enabled);
-  return availability['codex-cli']?.available === true && enabled.includes('codex-cli') ? 'codex-cli' : 'copilot-cli';
+function readsPlan(id: string): boolean {
+  return providerDescriptor(id)?.helperRouting.quota === 'reader';
 }
 
-/** The story each pair tells: who takes the easy job, who then nears its limit, who takes the hard one. */
-function story(second: Second) {
-  return second === 'codex-cli'
-    ? { first: 'b' as const, then: 'a' as const, firstId: 'codex-cli', thenId: 'claude-code' }
-    : { first: 'a' as const, then: 'b' as const, firstId: 'claude-code', thenId: 'copilot-cli' };
+/** The pair this person's tour draws. The fallback only shows if the scene is drawn without the gate (a test, say). */
+function usePair(): [string, string] {
+  const clis = useWelcomeTourStore((s) => s.smartRoutingClis);
+  return clis.length >= 2 ? [clis[0], clis[1]] : ['claude-code', 'codex-cli'];
+}
+
+/**
+ * The story a pair tells: who takes the easy job, who then nears its limit,
+ * who takes the hard one. Two readers: the second has more room, so it goes
+ * first. A reader and a CLI whose plan can't be read: the reader goes first,
+ * and the other is the last resort.
+ */
+function story([a, b]: [string, string]) {
+  return readsPlan(b)
+    ? { first: 'b' as const, then: 'a' as const, firstId: b, thenId: a }
+    : { first: 'a' as const, then: 'b' as const, firstId: a, thenId: b };
 }
 
 function SmartRoutingStage() {
-  const second = useSecond();
-  const s = story(second);
+  const pair = usePair();
+  const [a, b] = pair;
+  const s = story(pair);
   const easyY = s.first === 'a' ? 62 : 152;
   const hardY = s.then === 'a' ? 62 : 152;
   return (
-    <div data-second={second} className="n-root">
+    <div data-pair={pair.join(' ')} className="n-root">
       <Ov>
         <Wire n="rq-e" d={curve(166, 142, 196, D.e)} />
         <Wire n="rq-h" d={curve(166, 142, 196, D.h)} />
@@ -71,14 +80,14 @@ function SmartRoutingStage() {
       <div className="pc rv newc n-req" style={pos(16, 120, 150, { minHeight: 44 })} />
       {DIFFS.map(([k, label, y]) => <div key={k} className={`dp rv n-d${k}`} style={pos(196, y, 100)}>{label}</div>)}
       <div className="prov rv n-pa" style={pos(330, 46, 170)}>
-        <b>{name('claude-code')}</b>
+        <b>{name(a)}</b>
         <span className="pbar"><i className="n-paf" style={{ width: '64%' }} /></span>
         <span className="wt-muted n-pat">64% of plan used</span>
         <span className="pm n-pam">&nbsp;</span>
       </div>
       <div className="prov rv n-pb" style={pos(330, 136, 170)}>
-        <b>{name(second)}</b>
-        {second === 'codex-cli' ? (
+        <b>{name(b)}</b>
+        {readsPlan(b) ? (
           <>
             <span className="pbar"><i className="n-pbf" style={{ width: '38%' }} /></span>
             <span className="wt-muted n-pbt">38% of plan used</span>
@@ -126,8 +135,8 @@ function path(c: SceneContext, ms: number, selector: string): void {
 }
 
 function play(c: SceneContext): void {
-  const second = (c.q('.n-root')?.getAttribute('data-second') as Second | null) ?? 'codex-cli';
-  const s = story(second);
+  const [a, b] = ((c.q('.n-root')?.getAttribute('data-pair') ?? 'claude-code codex-cli').split(' ') as [string, string]);
+  const s = story([a, b]);
   const other = s.first === 'a' ? 'b' : 'a';
   const firstName = name(s.firstId);
   const thenName = name(s.thenId);
@@ -139,11 +148,11 @@ function play(c: SceneContext): void {
   c.on(1000, '.n-de', 'lit');
   c.pulse(800, curve(166, 142, 196, D.e), 'var(--wt-accent)', 350);
   path(c, 1300, '.n-e-a, .n-e-b');
-  model(c, 1500, 'a', 'claude-code', 'easy');
-  model(c, 1500, 'b', second, 'easy');
-  c.caption(1500, '.n-why', second === 'codex-cli'
-    ? 'Both plans have room. Codex has more left, so it gets this one.'
-    : 'Claude Code’s plan has room. Clubhouse can’t read Copilot’s, so Copilot comes last.');
+  model(c, 1500, 'a', a, 'easy');
+  model(c, 1500, 'b', b, 'easy');
+  c.caption(1500, '.n-why', readsPlan(b)
+    ? `Both plans have room. ${name(b)} has more left, so it gets this one.`
+    : `${name(a)}’s plan has room. Clubhouse can’t read ${name(b)}’s, so ${name(b)} comes last.`);
   c.on(2300, `.n-p${s.first}`, 'lit');
   c.off(2300, `.n-e-${other}`, 'hot');
   c.on(2300, `.n-e-${other}`, 'gone');

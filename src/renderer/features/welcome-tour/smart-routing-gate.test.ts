@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { readSmartRoutingScene, smartRoutingSceneShows, type CliReadiness } from './smart-routing-gate';
+import { readSmartRoutingClis, smartRoutingClis, smartRoutingSceneShows, type CliReadiness } from './smart-routing-gate';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 const ready = (id: string): CliReadiness => ({ id, installed: true, turnedOn: true });
@@ -41,7 +41,14 @@ describe('smartRoutingSceneShows (#2814, #3896)', () => {
   });
 });
 
-describe('readSmartRoutingScene', () => {
+describe('smartRoutingClis', () => {
+  it('lists the CLIs that qualified, readers first, in Settings\u2019 order', () => {
+    expect(smartRoutingClis([ready('copilot-cli'), ready('codex-cli'), ready('claude-code')], allowed)).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
+    expect(smartRoutingClis([ready('copilot-cli'), ready('codex-cli')], allowed)).toEqual(['codex-cli', 'copilot-cli']);
+  });
+});
+
+describe('readSmartRoutingClis', () => {
   beforeEach(() => {
     useOrchestratorStore.setState({
       allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' }, { id: 'codex-cli', displayName: 'Codex' }] as never,
@@ -55,13 +62,28 @@ describe('readSmartRoutingScene', () => {
     window.clubhouse.app.getOrchestrationSettings = vi.fn(async () => ({ globalHelperCap: 3, copilotAuto: true })) as never;
     const routing = vi.fn();
     window.clubhouse.app.getHelperRouting = routing as never;
-    await expect(readSmartRoutingScene()).resolves.toBe(true);
+    await expect(readSmartRoutingClis()).resolves.toEqual(['claude-code', 'codex-cli']);
     // Never the routing read, which asks each CLI for its models and plan.
     expect(routing).not.toHaveBeenCalled();
   });
 
+  it('reuses the check startup already made, so opening the tour waits on no CLI', async () => {
+    useOrchestratorStore.setState({ availability: { 'claude-code': { available: true }, 'codex-cli': { available: true } } });
+    const check = vi.fn(async () => ({ available: true }));
+    window.clubhouse.agent.checkOrchestrator = check;
+    window.clubhouse.app.getOrchestrationSettings = vi.fn(async () => ({ globalHelperCap: 3 })) as never;
+    await expect(readSmartRoutingClis()).resolves.toEqual(['claude-code', 'codex-cli']);
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it('is empty when the scene doesn\u2019t show', async () => {
+    useOrchestratorStore.setState({ availability: { 'claude-code': { available: true }, 'codex-cli': { available: false } } });
+    window.clubhouse.app.getOrchestrationSettings = vi.fn(async () => ({ globalHelperCap: 3 })) as never;
+    await expect(readSmartRoutingClis()).resolves.toEqual([]);
+  });
+
   it('leaves the scene out when a read fails', async () => {
     window.clubhouse.agent.checkOrchestrator = vi.fn(async () => { throw new Error('nope'); });
-    await expect(readSmartRoutingScene()).resolves.toBe(false);
+    await expect(readSmartRoutingClis()).resolves.toEqual([]);
   });
 });
