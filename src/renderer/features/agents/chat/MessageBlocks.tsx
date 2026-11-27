@@ -114,7 +114,7 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
 
 /** Source labels beside a sender. `mcp`, `system` and `group_project` messages say who sent them by name instead. */
 const SOURCE_LABELS: Partial<Record<UserMessageItem['source'], string>> = {
-  mission: 'Mission',
+  mission: 'Task',
   shoulder_tap: 'Shoulder tap',
   annex: 'From another device',
 };

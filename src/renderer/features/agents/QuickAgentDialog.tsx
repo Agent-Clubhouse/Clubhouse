@@ -208,9 +208,9 @@ export function QuickAgentDialog() {
           </span>
         </div>
 
-        {/* Prompt */}
+        {/* Task */}
         <label className="block mb-4">
-          <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Prompt</span>
+          <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Task</span>
           <textarea
             ref={inputRef}
             value={mission}

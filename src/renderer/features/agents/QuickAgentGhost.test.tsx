@@ -56,7 +56,7 @@ describe('QuickAgentGhost', () => {
     expect(screen.getByTestId('quick-mission')).toHaveTextContent('Fix the bug in auth module');
     expect(screen.getByText('bouncy-salmon · quick agent · Claude Code · opus · exit 0')).toBeInTheDocument();
     expect(screen.getByTestId('quick-summary')).toHaveTextContent('Fixed authentication issue');
-    expect(screen.queryByText('Mission')).toBeNull();
+    expect(screen.queryByText('Task')).toBeNull();
     expect(screen.queryByText('Headless')).toBeNull();
   });
 

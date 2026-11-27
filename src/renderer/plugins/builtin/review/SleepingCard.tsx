@@ -159,7 +159,7 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={onPromptKeyDown}
             rows={2}
-            aria-label={`Prompt for ${agent.name} when it wakes`}
+            aria-label={`Task for ${agent.name} when it wakes`}
             data-testid="review-wake-prompt"
             placeholder={`Tell ${agent.name} what to do when it wakes…`}
             className="w-full resize-none bg-transparent px-3.5 py-3 text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none"
