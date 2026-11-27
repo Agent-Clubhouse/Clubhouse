@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { HELP_SECTIONS, CHROME_HELP_SECTIONS, DISPATCHER_TOPIC, GROUP_PROJECT_TOPICS, getHelpSections } from './help-content';
+import { HELP_SECTIONS, CHROME_HELP_SECTIONS, DISPATCHER_TOPIC, GROUP_PROJECT_TOPICS, NEW_LAYOUT_TOPICS, getHelpSections } from './help-content';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { PREPARE_HANDOFF_SKILL_MD } from '../../../shared/prepare-handoff-skill';
 
@@ -210,7 +210,7 @@ describe('help-content in the new shell', () => {
 
   const topics = () => CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
   // Personas are prompts, not descriptions of the app.
-  const articles = () => [...CHROME_HELP_SECTIONS.filter((s) => !['personas'].includes(s.id)).flatMap((s) => s.topics), DISPATCHER_TOPIC];
+  const articles = () => [...CHROME_HELP_SECTIONS.filter((s) => !['personas'].includes(s.id)).flatMap((s) => s.topics), DISPATCHER_TOPIC, ...NEW_LAYOUT_TOPICS.map((n) => n.topic)];
   // Articles written for the classic layout that the new shell replaces.
   const RETIRED = /Project Rail|Explorer Rail|Accessory Panel|Dashboard|Home icon|Cmd\+Shift\+H|ghost card/i;
 
@@ -232,7 +232,7 @@ describe('help-content in the new shell', () => {
   it('uses sentence-case titles', () => {
     for (const s of CHROME_HELP_SECTIONS) {
       expect(s.title).not.toMatch(/&/);
-      for (const t of s.topics) {
+      for (const t of [...s.topics, ...NEW_LAYOUT_TOPICS.map((n) => n.topic)]) {
         expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b)\(?[A-Z][a-z]/);
       }
     }
@@ -325,5 +325,72 @@ describe('Handoffs help (#3344)', () => {
       const skill = sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-prepare-handoff');
       expect(skill?.content).toContain(PREPARE_HANDOFF_SKILL_MD.trimEnd());
     }
+  });
+});
+
+describe('1.0 pages in the new layout (#3902)', () => {
+  afterEach(() => useChromeFlagStore.setState({ enabled: false }));
+  const topic = (id: string) => NEW_LAYOUT_TOPICS.find((n) => n.topic.id === id)!.topic;
+  const LINK = /\]\(#help:([a-z0-9-]+)\)/g;
+
+  it('places each page after the topic it names, in the new layout only', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const all = getHelpSections().flatMap((s) => s.topics.map((t) => t.id));
+    for (const { after, topic: t } of NEW_LAYOUT_TOPICS) {
+      expect(all, t.id).toContain(after);
+      expect(all.indexOf(t.id), t.id).toBeGreaterThan(all.indexOf(after));
+    }
+    expect(new Set(all).size).toBe(all.length);
+    const classic = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
+    for (const { topic: t } of NEW_LAYOUT_TOPICS) expect(classic, t.id).not.toContain(t.id);
+  });
+
+  it('follows the copy rules and links only to topics that exist', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const ids = new Set(getHelpSections().flatMap((s) => s.topics.map((t) => t.id)));
+    for (const { topic: t } of NEW_LAYOUT_TOPICS) {
+      expect(t.content, t.id).not.toContain('\u2014');
+      expect(t.content, t.id).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
+      expect(t.content, t.id).not.toMatch(/\b(dispose|disposing|wires?)\b/i);
+      for (const m of t.content.matchAll(LINK)) expect(ids.has(m[1]), `${t.id} links ${m[1]}`).toBe(true);
+    }
+  });
+
+  describe('Managed agents (#3894)', () => {
+    it('follows Agents in the agents section', () => {
+      useChromeFlagStore.setState({ enabled: true });
+      const agents = getHelpSections().find((s) => s.id === 'agents')!.topics.map((t) => t.id);
+      expect(agents.indexOf('agents-managed')).toBe(agents.indexOf('agents-overview') + 1);
+      expect(topic('agents-managed').title).toBe('Managed agents');
+    });
+
+    it('says how instructions are joined and which wildcards are filled', () => {
+      const content = topic('agents-managed').content;
+      expect(content).toContain('with a blank line between each one, and adds no text of its own');
+      for (const w of ['`@@AgentName`', '`@@Path`', '`@@StandbyBranch`']) expect(content, w).toContain(w);
+      expect(content).toContain('Any other `@@` word stays as you wrote it');
+      expect(content).toContain('**Show wildcards**');
+    });
+
+    it('lists the files each CLI reads its setup from', () => {
+      const content = topic('agents-managed').content;
+      for (const row of [
+        '| Claude Code | `CLAUDE.md` | `.claude/skills/` | `.mcp.json` |',
+        '| Codex CLI | `AGENTS.md` | `.agents/skills/` | Given to Codex when it starts |',
+        '| Copilot CLI | `.github/copilot-instructions.md` | `.github/skills/` | `.github/mcp.json` |',
+        '| Antigravity CLI | `AGENTS.md` | `.agents/skills/` | `.agents/mcp_config.json` |',
+      ]) expect(content, row).toContain(row);
+    });
+
+    it('covers the save dialog, the Setup changed bar, forking and the library with the labels that ship', () => {
+      const content = topic('agents-managed').content;
+      for (const label of [
+        '**Restart**', '**Save and restart**', 'Restart keeps the conversation', '**Keep mine**', '**Take theirs**', '**What changed**',
+        '**Fork**', '**Back to shared**', '"Coding standards, reviewer"', '**Make your copy**', '**Show parts used by one agent**',
+        '**Give each agent its own copy**', '**Remove it from those agents**', '**Save template only**', '**Save as template**',
+        '**Start with template**', '**Build from scratch**', '**Copy another agent**', '**Switch to plain**', '**Switch to managed**',
+        '`.clubhouse/parts/`', 'Clubhouse stores no secrets',
+      ]) expect(content, label).toContain(label);
+    });
   });
 });
