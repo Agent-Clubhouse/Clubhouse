@@ -209,3 +209,27 @@
   .wt .dots i { animation: none !important; }
   .wt .fl, .wt .msgx, .wt .mbtn, .wt .awhy { transition: none !important; }
 }
+
+/* Smart routing */
+.wt .prov { position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 4px; padding: 6px 9px; border: 1px solid var(--wt-s0); border-radius: 7px; background: var(--wt-base); font-size: 11px; }
+.wt .prov b { font-weight: 600; color: var(--wt-text); font-size: 12px; }
+.wt .prov.lit { border-color: var(--wt-accent); }
+.wt .pbar { display: block; height: 5px; border-radius: 3px; background: var(--wt-s0); overflow: hidden; }
+.wt .pbar i { display: block; height: 100%; background: var(--wt-green); border-radius: 3px; transition: width .8s ease, background-color .4s; }
+.wt .pbar i.warn { background: var(--wt-peach); }
+.wt .warnt { color: var(--wt-peach); }
+.wt .dp { position: absolute; z-index: 2; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--wt-s0); border-radius: 17px; background: var(--wt-base); color: var(--wt-sub); transition: border-color .3s, color .3s, opacity .45s, transform .45s; }
+.wt .dp.lit { border-color: var(--wt-accent); color: var(--wt-text); }
+.wt .pm { font: 10.5px var(--wt-mono); color: var(--wt-sub); min-height: 14px; white-space: nowrap; }
+.wt .ag.nine { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@keyframes wt-hlpA { 0%, 10% { transform: translate(0, 0); opacity: 0; } 30%, 70% { transform: translate(72px, -14px); opacity: 1; } 90%, 100% { transform: translate(0, 0); opacity: 0; } }
+@keyframes wt-hlpB { 0%, 10% { transform: translate(0, 0); opacity: 0; } 30%, 70% { transform: translate(72px, 14px); opacity: 1; } 90%, 100% { transform: translate(0, 0); opacity: 0; } }
+.wt .hA { animation: wt-hlpA 3.4s ease-in-out infinite; }
+.wt .hB { animation: wt-hlpB 3.4s ease-in-out .35s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wt .hA, .wt .hB { animation: none !important; opacity: 1; }
+  .wt .hA { transform: translate(72px, -14px); }
+  .wt .hB { transform: translate(72px, 14px); }
+  .wt .pbar i, .wt .dp { transition: none !important; }
+}

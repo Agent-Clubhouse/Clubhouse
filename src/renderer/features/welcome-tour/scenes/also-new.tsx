@@ -2,6 +2,7 @@ import { TourLink } from '../stage-parts';
 import type { ReactNode } from 'react';
 import { prefersReducedMotion } from '../scene-engine';
 import { openHelpLink, type HelpLink } from '../tour-actions';
+import { useWelcomeTourStore } from '../welcomeTourStore';
 import type { SceneDef } from './types';
 
 /** Also new: one small moving picture per area that's learned where it lives. */
@@ -98,6 +99,16 @@ const MINIS: Record<string, () => ReactNode> = {
       ))}
     </>
   ),
+  smart: () => (
+    <>
+      <path d="M38 31 L108 17 M38 31 L108 45" stroke="var(--wt-s1)" strokeWidth={1} strokeDasharray="3 3" />
+      <circle className="hA" cx={36} cy={31} r={6} fill="var(--wt-sub)" />
+      <circle className="hB" cx={36} cy={31} r={6} fill="var(--wt-sub)" />
+      <circle cx={30} cy={31} r={10} fill="var(--wt-mauve)" />
+      <Tiny x={150} y={20} end>Easy</Tiny>
+      <Tiny x={150} y={48} end>Hard</Tiny>
+    </>
+  ),
   help: () => (
     <>
       <rect x={16} y={18} width={128} height={26} rx={6} fill="var(--wt-mantle)" stroke="var(--wt-s2)" />
@@ -119,10 +130,18 @@ const CARDS: Array<[kind: keyof typeof MINIS, title: string, line: string, link:
   ['help', 'Help', 'Search for any of this, or reopen this tour', null],
 ];
 
+/**
+ * With one CLI there's nothing for Smart routing to choose between, so it has
+ * no scene in Orchestrators and gets a card here instead (#2814).
+ */
+const SMART_CARD: (typeof CARDS)[number] = ['smart', 'Smart routing', 'Picks a CLI and model for each helper, once you have more than one CLI', 'smartRouting'];
+
 function AlsoNewStage() {
+  const smartScene = useWelcomeTourStore((s) => s.smartRouting);
+  const cards = smartScene ? CARDS : [...CARDS.slice(0, 7), SMART_CARD, CARDS[7]];
   return (
-    <ul className="ag">
-      {CARDS.map(([kind, title, line, link], i) => (
+    <ul className={`ag${cards.length === 9 ? ' nine' : ''}`} data-cards={cards.length}>
+      {cards.map(([kind, title, line, link], i) => (
         <li key={kind} className={`agc n-g${i}`}>
           <svg viewBox="0 0 160 62" preserveAspectRatio="xMidYMid meet" aria-hidden="true">{MINIS[kind]()}</svg>
           <b>{title}</b>
@@ -141,5 +160,5 @@ export const alsoNew: SceneDef = {
   text: 'These are where you’d expect them. Help has a page for each one.',
   Stage: AlsoNewStage,
   tall: true,
-  play: (c) => CARDS.forEach((_, i) => c.on(80 + i * 90, `.n-g${i}`)),
+  play: (c) => c.qa('.agc').forEach((_, i) => c.on(80 + i * 90, `.n-g${i}`)),
 };

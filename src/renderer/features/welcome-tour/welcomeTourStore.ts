@@ -16,6 +16,7 @@ import {
   type TourPosition,
   type TourShape,
 } from './tour-model';
+import { readSmartRoutingScene } from './smart-routing-gate';
 
 /**
  * The welcome tour's open state (#2814). It covers the pane like the
@@ -114,15 +115,6 @@ function clearPane(): void {
   else if (ui.explorerTab.startsWith('plugin:app:')) ui.setExplorerTab('agents');
 }
 
-/**
- * Whether two or more Smart routing candidates are signed in, at least one with
- * a plan Clubhouse can read. Filled in by the Smart routing scene's gate; until
- * then the Orchestrators step has one scene.
- */
-async function readSmartRouting(): Promise<boolean> {
-  return false;
-}
-
 async function readSaved(): Promise<{ state: WelcomeTourState | null; earlierRun?: boolean }> {
   try {
     const { state, unreadable, earlierRun } = await window.clubhouse.app.getWelcomeTour();
@@ -163,7 +155,7 @@ export async function startWelcomeTourIfDue(): Promise<boolean> {
     const projectCount = useProjectStore.getState().projects.length;
     const decision = decideTourAtLaunch({ state, lastSeenVersion, currentVersion, projectCount, earlierRun });
     if (!decision.show) return false;
-    const smartRouting = await readSmartRouting();
+    const smartRouting = await readSmartRoutingScene();
     clearPane();
     useWelcomeTourStore.getState().openTour({ variant: decision.variant, hasProjects: projectCount > 0, smartRouting });
     log('info', 'Welcome tour opened at launch', { variant: decision.variant, reason: decision.reason });
@@ -181,7 +173,7 @@ export async function openWelcomeTour(): Promise<void> {
   if (!isNewChromeEnabled()) return;
   const saved = useWelcomeTourStore.getState().saved ?? (await readSaved()).state;
   const projectCount = useProjectStore.getState().projects.length;
-  const smartRouting = await readSmartRouting();
+  const smartRouting = await readSmartRoutingScene();
   clearPane();
   useWelcomeTourStore.getState().openTour({ variant: variantForReopen(saved, projectCount), hasProjects: projectCount > 0, smartRouting });
 }
