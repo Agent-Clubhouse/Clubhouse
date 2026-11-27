@@ -29,7 +29,7 @@ export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; labe
   { page: 'mcp', label: 'MCP servers' },
   { page: 'general', label: 'General' },
   { page: 'grants', label: 'Clubhouse permissions' },
-  { page: 'permissions', label: 'Permissions' },
+  { page: 'permissions', label: 'Allow and deny rules' },
   { page: 'helpers', label: 'Helpers' },
   { page: 'quick', label: 'Quick agent defaults' },
   { page: 'actions', label: 'Actions' },

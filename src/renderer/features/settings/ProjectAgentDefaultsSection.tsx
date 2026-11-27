@@ -31,7 +31,7 @@ function ProvenanceMeta({ item, isOrphan }: { item: ProvenancedConfigItem; isOrp
   }
   return (
     <span className={`text-xs ${isOrphan ? 'text-ctp-warning' : 'text-ctp-overlay1'}`}>
-      {isOrphan ? 'Orphaned plugin' : 'Plugin'} <span className="font-mono">{p.pluginId}</span>
+      {isOrphan ? 'Uninstalled plugin' : 'Plugin'} <span className="font-mono">{p.pluginId}</span>
     </span>
   );
 }
@@ -135,8 +135,8 @@ function OrphanBanner({
   return (
     <div data-testid="orphan-plugin-injections">
       <SettingsField
-        label={<span className="text-ctp-warning">Orphaned plugin injections</span>}
-        help="These uninstalled plugins left configs in your project defaults."
+        label={<span className="text-ctp-warning">Leftovers from uninstalled plugins</span>}
+        help="Plugins you uninstalled left these settings in your project defaults."
       >
         {orphanedPluginIds.length > 1 && (
           <Button onClick={handleCleanAll} disabled={cleaning !== null} kind="danger">
@@ -388,11 +388,11 @@ function ProjectAgentDefaultsEditor({ projectPath }: Props) {
         </SettingsField>
 
         <SettingsField
-          label="Turn off Auto provider here"
+          label="Turn off Smart routing here"
           help="Orchestrators here can’t let Clubhouse pick a helper’s provider. A project can turn this off, but not on."
         >
           <Toggle
-            aria-label="Turn off Auto provider in this project"
+            aria-label="Turn off Smart routing in this project"
             checked={values.helperAutoOff}
             onChange={(v) => setValue('helperAutoOff', v)}
             data-testid="project-helper-auto-off"

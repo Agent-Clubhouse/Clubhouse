@@ -195,45 +195,51 @@ describe('useCommandSource', () => {
     mockIsPreviewEligible.mockResolvedValue(false);
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    expect(findItem(result.current, 'action:toggle-annex-server')).toBeDefined();
-    expect(findItem(result.current, 'action:toggle-annex-client')).toBeDefined();
+    expect(findItem(result.current, 'action:toggle-annex-network')).toBeDefined();
+    expect(findItem(result.current, 'action:toggle-annex-server')).toBeUndefined();
+    expect(findItem(result.current, 'action:toggle-annex-client')).toBeUndefined();
     expect(findItem(result.current, 'action:annex-show-pin')).toBeDefined();
   });
 
-  it('includes toggle annex server action when preview-eligible', async () => {
+  it('offers one Annex Network command, worded like the Settings toggle (#2766)', async () => {
     annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    const item = findItem(result.current, 'action:toggle-annex-server');
+    const item = findItem(result.current, 'action:toggle-annex-network');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Enable Annex server');
+    expect(item.label).toBe('Turn Annex Network on');
     expect(item.category).toBe('Commands');
   });
 
-  it('includes toggle annex server action with Disable label when enableServer is true', async () => {
+  it('says off when either half is on, as Settings does', async () => {
     annexState.settings = { enableServer: true, enableClient: false, deviceName: 'Mac' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    const item = findItem(result.current, 'action:toggle-annex-server');
-    expect(item).toBeDefined();
-    expect(item.label).toBe('Disable Annex server');
+    expect(findItem(result.current, 'action:toggle-annex-network').label).toBe('Turn Annex Network off');
   });
 
-  it('toggle annex server calls saveSettings with toggled enableServer', async () => {
+  it('turning it on sets the server and the client and joins the network', async () => {
     annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    const item = findItem(result.current, 'action:toggle-annex-server');
-    item.execute();
-    expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enableServer: true, enableClient: false, deviceName: '' });
+    findItem(result.current, 'action:toggle-annex-network').execute();
+    expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enableServer: true, enableClient: true, networkEnabled: true, deviceName: '' });
   });
 
-  it('includes show annex PIN action when preview-eligible', async () => {
+  it('turning it off clears both halves, even when only one was on', async () => {
+    annexState.settings = { enableServer: false, enableClient: true, deviceName: 'Mac' };
+    const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    findItem(result.current, 'action:toggle-annex-network').execute();
+    expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+  });
+
+  it('includes the show one-time code action', async () => {
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Show Annex PIN');
+    expect(item.label).toBe('Show one-time code');
     expect(item.category).toBe('Commands');
   });
 
@@ -243,7 +249,7 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');
-    expect(item.detail).toBe('PIN: 1234');
+    expect(item.detail).toBe('One-time code: 1234');
   });
 
   it('show annex PIN has no detail when annex is disabled', async () => {

@@ -788,7 +788,7 @@ export function AgentSettingsView({ agent }: Props) {
   })();
   const skillsPathLabel = conventions ? `${skillsFolderOf(conventions)}/` : '.claude/skills/';
   const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
-  const permissionsPathLabel = conventions?.permissionRules === false ? 'Not supported by this provider' : conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
+  const permissionsPathLabel = conventions?.permissionRules === false ? 'Not supported by this CLI' : conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 
   const handleSaveQad = async () => {
     if (!projectPath) return;
@@ -1056,21 +1056,21 @@ export function AgentSettingsView({ agent }: Props) {
         {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
       </Field>
       {chatFlagEnabled && (
-        <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
+        <Field label="View" help="Chat or Terminal for this agent. Overrides the setting for its CLI." htmlFor="agent-settings-runtime">
           <select
             id="agent-settings-runtime"
-            aria-label="Runtime"
+            aria-label="View"
             value={runtimeMode}
             onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
             disabled={isRunning || runtimeSaving || runtimeLoadedTarget !== runtimeTarget}
             title={stopFirst}
             className={selectClass}
           >
-            <option value="">Provider default</option>
+            <option value="">CLI default</option>
             <option value="chat">Chat</option>
-            <option value="terminal">CLI</option>
+            <option value="terminal">Terminal</option>
           </select>
-          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved runtime. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading runtime</button></p>}
+          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved view. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading view</button></p>}
           {runtimeSaveFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't save that setting, so it wasn't changed. Try again.</p>}
         </Field>
       )}
@@ -1269,7 +1269,7 @@ export function AgentSettingsView({ agent }: Props) {
   );
 
   const permissionsEditor = conventions?.permissionRules === false ? (
-    <p>Allow and deny rules are not supported by this provider. Use its native access controls.</p>
+    <p>Allow and deny rules are not supported by this CLI. Use its native access controls.</p>
   ) : permLoaded && (
     <div className="mt-1.5">
       <FieldLabel htmlFor="agent-settings-perm-allow">Allowed tools, one per line</FieldLabel>
@@ -1418,7 +1418,7 @@ export function AgentSettingsView({ agent }: Props) {
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
       settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
       grants: undefined,
-      helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
+      helpers: `How ${agent.name} starts, runs and deletes helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for desktop quick runs with ${agent.name} as parent`,
       actions: `Actions that involve ${agent.name}`,
       preview: `What ${agent.name} gets at its next start`,
@@ -1496,7 +1496,7 @@ export function AgentSettingsView({ agent }: Props) {
         {instructionsEditor}
         {mcpSections}
         {grantsSection}
-        <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
+        <SectionHeading title="Allow and deny rules" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
         {permissionsEditor}
         {helpersSettings}
         <SectionHeading title="Quick agent defaults" sub={`Defaults for desktop quick runs with ${agent.name} as parent`} />

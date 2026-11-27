@@ -115,7 +115,7 @@ describe('Helpers settings page (#2232)', () => {
     render(<HelpersSettingsView />);
     await screen.findByTestId('helpers-orphans');
     fireEvent.click(screen.getByTestId('helpers-orphans-clear-all'));
-    expect(screen.getByText('Remove all 2 disposed helpers for good?')).toBeInTheDocument();
+    expect(screen.getByText('Remove all 2 deleted helpers for good?')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
     await waitFor(() => expect(window.clubhouse.agent.removeDisposedMany).toHaveBeenCalledWith([
       { projectPath: ALPHA, agentId: 'd2' }, { projectPath: BETA, agentId: 'd3' },

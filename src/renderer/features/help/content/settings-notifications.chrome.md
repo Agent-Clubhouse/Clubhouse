@@ -1,4 +1,4 @@
-# Notifications and badges
+# Notifications and alerts
 
 Clubhouse can tell you about agent activity while you're in another app. Open Settings with `⌘,` and pick **Notifications & alerts**.
 
@@ -9,8 +9,7 @@ Clubhouse can tell you about agent activity while you're in another app. Open Se
 | Switch | Notifies when |
 |--------|---------------|
 | **An agent needs permission** | An agent is waiting for approval. Leave this on so agents don't sit blocked. |
-| **An agent stops** | An agent has finished running |
-| **An agent is waiting for input** | An agent is idle and waiting on you |
+| **An agent goes idle** | An agent finished its turn |
 | **A tool call fails** | One of an agent's tool calls errors |
 | **An agent asks for me** | An agent calls the `notify_user` tool |
 

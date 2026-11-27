@@ -103,7 +103,7 @@ describe('HelperPresetsSection (#2671)', () => {
     app().getHelperRouting.mockResolvedValue({ ...settings(), autoBudget: { policy: null, invalid: true, editable: true } });
     render(<HelperPresetsSection />);
     await screen.findByText('Use legacy selection');
-    expect(screen.getByRole('alert').textContent).toContain('Auto starts are paused');
+    expect(screen.getByRole('alert').textContent).toContain('Smart routing starts are paused');
     fireEvent.click(screen.getByText('Use legacy selection'));
     await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', autoBudgetPolicy: { ...defaultAutoBudgetPolicy(), enabled: false } }));
   });
@@ -154,18 +154,18 @@ describe('HelperPresetsSection (#2671)', () => {
     render(<HelperPresetsSection />);
     expect((await screen.findByTestId('helper-presets-claude-code-status')).textContent).toBe('Disabled, Available');
     expect(screen.getByTestId('helper-presets-copilot-cli-status').textContent).toBe('Enabled, Available');
-    expect(screen.getByTestId('helper-presets-claude-code-inactive').textContent).toBe('Claude Code is turned off in Agents & providers. Its presets are saved for later, and Auto does not pick it until that changes.');
+    expect(screen.getByTestId('helper-presets-claude-code-inactive').textContent).toBe('Claude Code is turned off in Agents & CLIs. Its presets are saved for later, and Smart routing does not pick it until that changes.');
     expect(screen.queryByTestId('helper-presets-copilot-cli-inactive')).toBeNull();
     // Presets stay editable.
     expect(screen.getByTestId('helper-preset-claude-code-hard-model')).toBeTruthy();
-    expect(screen.getByText(/start a helper on Copilot, the only provider turned on and available/)).toBeTruthy();
+    expect(screen.getByText(/start a helper on Copilot, the only CLI turned on and available/)).toBeTruthy();
   });
 
   it('leaves Copilot out of the intro when its last-resort switch is off (#3605)', async () => {
     window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ ...settings(), copilotAuto: false }));
     render(<HelperPresetsSection />);
     await screen.findByTestId('helper-presets-claude-code');
-    expect(screen.getByText(/start a helper on Claude Code, the only provider that is turned on and available/)).toBeTruthy();
+    expect(screen.getByText(/start a helper on Claude Code, the only CLI that is turned on and available/)).toBeTruthy();
     expect(screen.queryByText(/with Copilot as a last resort/)).toBeNull();
   });
 
@@ -176,7 +176,7 @@ describe('HelperPresetsSection (#2671)', () => {
       providers: { ...shown.providers, 'claude-code': { ...shown.providers['claude-code'], enabled: false } } as HelperRoutingSettings['providers'],
     }));
     render(<HelperPresetsSection />);
-    expect(await screen.findByText(/Auto has nothing to pick right now/)).toBeTruthy();
+    expect(await screen.findByText(/Smart routing has nothing to pick right now/)).toBeTruthy();
   });
 
   it('shows no inactive note when the desktop does not report state', async () => {
@@ -184,7 +184,7 @@ describe('HelperPresetsSection (#2671)', () => {
     await screen.findByTestId('helper-presets-claude-code');
     expect(screen.queryByTestId('helper-presets-claude-code-status')).toBeNull();
     expect(screen.queryByTestId('helper-presets-claude-code-inactive')).toBeNull();
-    expect(screen.getByText(/start a helper on Claude Code, the only provider besides Copilot.*with Copilot as a last resort/)).toBeTruthy();
+    expect(screen.getByText(/start a helper on Claude Code, the only CLI besides Copilot.*with Copilot as a last resort/)).toBeTruthy();
   });
 
   it('orders preset CLIs first, then any other by id', () => {
@@ -470,7 +470,7 @@ describe('HelperPresetsSection (#2671)', () => {
       expect((screen.getByTestId('helper-preset-copilot-cli-minimum-model') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Same as Easy (Claude Sonnet 5.5)');
       expect((screen.getByTestId('helper-preset-copilot-cli-maximum-model') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Same as Hard (Claude Sonnet 5.5)');
       expect(screen.queryByTestId('helper-presets-copilot-cli-not-candidate')).toBeNull();
-      expect(screen.getByText(/Copilot's quota is unknown/).textContent).toContain('even if another provider');
+      expect(screen.getByText(/Copilot's quota is unknown/).textContent).toContain('even if another CLI');
       expect((screen.getByTestId('helper-preset-copilot-cli-hard-effort') as HTMLSelectElement).value).toBe('medium');
     });
 

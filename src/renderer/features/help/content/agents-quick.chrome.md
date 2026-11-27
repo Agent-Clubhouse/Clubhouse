@@ -21,7 +21,7 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 
 ## Access
 
-**Access** is the level the agent starts at. New quick agents start at **Default access** in **Settings > Agents & providers**, and you can pick another level in the dialog.
+**Access** is the level the agent starts at. New quick agents start at **Default access** in **Settings > Agents & CLIs**, and you can pick another level in the dialog.
 
 | Level | What the agent does |
 |-------|---------------------|
@@ -43,7 +43,7 @@ A quick agent's CLI gets a few tools allowed ahead of time, and for Claude Code 
 | **File edits and commands** | Applied right away | Need your approval |
 | **Speed** | Faster | Slower, since it waits for you |
 
-Set it with **Default quick agent mode** in **Settings > Agents & providers**, or **Quick agent mode** in a project's own **Agents & providers** page. Headless and Access are separate settings.
+Set it with **Default quick agent mode** in **Settings > Agents & CLIs**, or **Quick agent mode** in a project's own **Agents & CLIs** page. Headless and Access are separate settings.
 
 ## When it finishes
 

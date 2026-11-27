@@ -55,10 +55,10 @@ describe('OrchestratorSettingsView', () => {
   beforeEach(resetStores);
 
   describe('app-level settings (no projectId)', () => {
-    it('renders the Agents & providers heading', () => {
+    it('renders the Agents & CLIs heading', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Agents & providers')).toBeInTheDocument();
-      expect(screen.getByText('Configure agent providers and agent behavior.')).toBeInTheDocument();
+      expect(screen.getByText('Agents & CLIs')).toBeInTheDocument();
+      expect(screen.getByText('Configure CLIs and agent behavior.')).toBeInTheDocument();
     });
 
     it('renders Default quick agent mode dropdown', () => {
@@ -103,9 +103,9 @@ describe('OrchestratorSettingsView', () => {
       expect(quickAgents.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
     });
 
-    it('renders Agent providers section', () => {
+    it('renders the CLIs section', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Agent providers')).toBeInTheDocument();
+      expect(screen.getByText('CLIs')).toBeInTheDocument();
       expect(screen.getByText('Claude Code')).toBeInTheDocument();
     });
 
@@ -149,7 +149,7 @@ describe('OrchestratorSettingsView', () => {
           enabled: [],
         });
         render(<OrchestratorSettingsView />);
-        expect(screen.getByText('No agent providers registered.')).toBeInTheDocument();
+        expect(screen.getByText('No CLIs registered.')).toBeInTheDocument();
       });
 
       describe('toggle disabled state when not installed', () => {
@@ -217,7 +217,7 @@ describe('OrchestratorSettingsView', () => {
           const orchToggle = screen.getByRole('switch', { name: 'Claude Code' });
           expect(orchToggle).toHaveAttribute('aria-checked', 'true');
           expect(orchToggle).toBeDisabled();
-          expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'At least one agent provider must be enabled');
+          expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'At least one CLI must be turned on');
         });
       });
     });
@@ -275,7 +275,7 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       await screen.findByRole('switch', { name: 'Chat view' });
       expect(screen.getByText('Hook server')).toBeInTheDocument();
-      expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
+      expect(screen.queryByText('View')).not.toBeInTheDocument();
     });
 
     describe('the Chat section', () => {
@@ -290,7 +290,7 @@ describe('OrchestratorSettingsView', () => {
         await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ chat: true, goobers: true }));
         expect(toggle).toHaveAttribute('aria-checked', 'true');
         const row = await screen.findByTestId('runtime-mode-claude-code');
-        expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
+        expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
         expect(saveRuntimeSettings).not.toHaveBeenCalled();
       });
 
@@ -405,7 +405,7 @@ describe('OrchestratorSettingsView', () => {
         const row = await screen.findByTestId('runtime-mode-copilot-cli');
         await waitFor(() => expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true'));
         expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
-        fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
+        fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
         await waitFor(() => expect(saveRuntimeSettings).toHaveBeenCalledWith({ 'copilot-cli': { mode: 'terminal', driver: 'copilot_sdk' } }));
       });
 
@@ -422,7 +422,7 @@ describe('OrchestratorSettingsView', () => {
         saveRuntimeSettings.mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined);
         render(<OrchestratorSettingsView />);
         const row = await screen.findByTestId('runtime-mode-copilot-cli');
-        const cli = within(row).getByRole('radio', { name: 'CLI' });
+        const cli = within(row).getByRole('radio', { name: 'Terminal' });
         fireEvent.click(cli);
         expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
         expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
@@ -435,7 +435,7 @@ describe('OrchestratorSettingsView', () => {
         getRuntimeSettings.mockResolvedValueOnce({ 'copilot-cli': { mode: 'chat' } }).mockRejectedValueOnce(new Error('refused'));
         render(<OrchestratorSettingsView />);
         const row = await screen.findByTestId('runtime-mode-copilot-cli');
-        fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
+        fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
         expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
         expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
         expect(saveRuntimeSettings).not.toHaveBeenCalled();
@@ -448,7 +448,7 @@ describe('OrchestratorSettingsView', () => {
         saveRuntimeSettings.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
         render(<OrchestratorSettingsView />);
         const row = await screen.findByTestId('runtime-mode-copilot-cli');
-        fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
+        fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
         await waitFor(() => expect(saveRuntimeSettings).toHaveBeenCalledTimes(1));
         expect(within(row).getByRole('radio', { name: 'Chat' })).toBeDisabled();
         fireEvent.click(within(row).getByRole('radio', { name: 'Chat' }));
@@ -477,10 +477,10 @@ describe('OrchestratorSettingsView', () => {
       setChatFlag(true);
       render(<OrchestratorSettingsView />);
       const row = await screen.findByTestId('runtime-mode-claude-code');
-      expect(within(row).getByText('Runtime')).toBeInTheDocument();
-      expect(within(row).getByText(/Agents for this provider open in chat/)).toBeInTheDocument();
+      expect(within(row).getByText('View')).toBeInTheDocument();
+      expect(within(row).getByText(/Agents on this CLI open in Chat/)).toBeInTheDocument();
       expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
-      expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'false');
+      expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'false');
       // The hook server toggle is still there alongside it.
       expect(screen.getByText('Hook server')).toBeInTheDocument();
     });
@@ -491,7 +491,7 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       const row = await screen.findByTestId('runtime-mode-claude-code');
       await waitFor(() => {
-        expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
+        expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
       });
     });
 
@@ -503,7 +503,7 @@ describe('OrchestratorSettingsView', () => {
       });
       render(<OrchestratorSettingsView />);
       const row = await screen.findByTestId('runtime-mode-claude-code');
-      fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
+      fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
 
       await waitFor(() => {
         expect(saveRuntimeSettings).toHaveBeenCalledWith({
@@ -511,7 +511,7 @@ describe('OrchestratorSettingsView', () => {
           'claude-code': { mode: 'terminal', driver: 'claude_agent_sdk' },
         });
       });
-      expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
+      expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
     });
 
     it('shows for enabled orchestrators without hook support, without a hook server toggle', async () => {
@@ -593,7 +593,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('renders project-level description', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Configure the agent provider and agent behavior for this project.')).toBeInTheDocument();
+      expect(screen.getByText('Configure the CLI and agent behavior for this project.')).toBeInTheDocument();
     });
 
     it('renders Quick Agent Mode dropdown', () => {
@@ -608,7 +608,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('does not show orchestrator picker with single orchestrator', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.queryByText('Agents run on')).not.toBeInTheDocument();
+      expect(screen.queryByText('Runs on')).not.toBeInTheDocument();
     });
 
     it('shows orchestrator picker with multiple orchestrators', () => {
@@ -620,14 +620,14 @@ describe('OrchestratorSettingsView', () => {
         ],
       });
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Agents run on')).toBeInTheDocument();
+      expect(screen.getByText('Runs on')).toBeInTheDocument();
       expect(screen.queryByText('Default orchestrator')).not.toBeInTheDocument();
     });
 
     it('returns null for invalid project', () => {
       const { container: _container } = render(<OrchestratorSettingsView projectId="nonexistent" />);
       // Should still render the outer wrapper but ProjectAgentSettings returns null
-      expect(screen.getByText('Agents & providers')).toBeInTheDocument();
+      expect(screen.getByText('Agents & CLIs')).toBeInTheDocument();
       expect(screen.queryByText('Clubhouse Mode')).not.toBeInTheDocument();
     });
 
@@ -643,7 +643,7 @@ describe('OrchestratorSettingsView', () => {
 
       it('each project override select is labelled by its row', () => {
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        for (const name of ['Quick agent mode', 'Session name on quit']) {
+        for (const name of ['Quick agent mode', 'Session name when an agent sleeps']) {
           expect(screen.getByLabelText(name).tagName).toBe('SELECT');
         }
       });
@@ -670,7 +670,7 @@ describe('OrchestratorSettingsView', () => {
     });
     it('offers no Clubhouse Mode switch or wildcards app-wide', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Prompt for session name on quit')).toBeInTheDocument();
+      expect(screen.getByText('Prompt for session name when an agent sleeps')).toBeInTheDocument();
       expect(screen.queryByRole('switch', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
       expect(screen.queryByText('.clubhouse/clubhouse-mode.md')).not.toBeInTheDocument();
     });

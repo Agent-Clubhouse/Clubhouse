@@ -8,7 +8,7 @@ This page paraphrases Google's documentation as read on 2026-11-23. Google chang
 
 1. **Install it.** Follow Google's [getting started guide](https://antigravity.google/docs/getting-started/), then run `agy --version` in a terminal to check that it works.
 2. **Sign in once.** Run `agy` in a terminal and finish its sign-in. Chat reuses that sign-in. Over SSH or on a computer without a browser, run `agy acp --login` instead. Clubhouse does not sign in for you, and it never reads, copies or stores your Antigravity credentials.
-3. **Turn it on.** It takes two steps. First switch on **Antigravity CLI provider** in **Settings > Experimental** and restart Clubhouse. Until then Antigravity CLI is hidden. Then open **Settings > Agents & providers**, where it shows an Experimental badge, and switch it on once Clubhouse finds the `agy` command. A project or agent chooses it through its **Runs on** setting like any other provider. With both switches on, its agents open in chat; switch an agent to the CLI view if you'd rather use the terminal. Clubhouse never turns it on or picks it for you.
+3. **Turn it on.** It takes two steps. First switch on **Antigravity CLI** in **Settings > Experimental** and restart Clubhouse. Until then Antigravity CLI is hidden. Then open **Settings > Agents & CLIs**, where it shows an Experimental badge, and switch it on once Clubhouse finds the `agy` command. A project or agent chooses it through its **Runs on** setting like any other CLI. With both switches on, its agents open in chat; switch an agent to the CLI view if you'd rather use the terminal. Clubhouse never turns it on or picks it for you.
 
 Clubhouse does not change Antigravity's trust list. The first time `agy` opens a folder it has not seen, it asks whether you trust that folder. A new agent folder counts as a new folder, so answer the prompt in the agent's CLI view.
 
@@ -66,7 +66,7 @@ Clubhouse shows the models the `agy` server offers your account. Google's pages 
 
 Antigravity agents offer Plan, Ask first, Auto-accept edits and Full access, in chat and in the CLI view. There is no Auto level. Antigravity has its own Auto mode, which Google's [CLI reference](https://antigravity.google/docs/cli/reference/) says is not available for business or enterprise accounts, and Clubhouse does not map an Access level to it.
 
-Antigravity is opt-in for helper Auto and is not picked today. Ask for it by name when an agent starts a helper.
+Smart routing never picks Antigravity today. Ask for it by name when an agent starts a helper.
 
 ## Using an API key
 

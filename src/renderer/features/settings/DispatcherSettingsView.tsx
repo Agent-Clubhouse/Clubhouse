@@ -439,7 +439,7 @@ export function RoleModelRow({ role, pick, path, cliChoices }: {
         <p className={`${settingsHelp} mt-px mb-2`}>{help}</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
           <div>
-            <label htmlFor={`${id}-provider`} className={settingsLabel}>Provider</label>
+            <label htmlFor={`${id}-provider`} className={settingsLabel}>CLI</label>
             <select
               id={`${id}-provider`}
               className={`${SELECT_CLASS} w-full`}
@@ -552,8 +552,8 @@ export function ProviderPendingNote({ pending, name }: { pending: DispatcherProv
   const chatOnly = !pending.work;
   return (
     <SettingsField
-      label="New provider"
-      help={`${name} is still ${still}. The new provider applies when it restarts, with a new conversation. Its memory stays.`}
+      label="New CLI"
+      help={`${name} is still ${still}. The new CLI applies when it restarts, with a new conversation. Its memory stays.`}
       testId="dispatcher-provider-pending"
     >
       <Button
@@ -681,7 +681,7 @@ function OtherMachinesSection() {
   const presence = useDispatcherPresence();
   if (!presence || presence.remotes.length === 0) return null;
   return (
-    <SettingsSection title="Other machines">
+    <SettingsSection title="Other computers">
       <SettingsBlock>
         <OtherMachinesList remotes={presence.remotes} />
       </SettingsBlock>

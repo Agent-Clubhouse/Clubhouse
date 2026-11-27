@@ -200,7 +200,7 @@ describe('Templates page', () => {
     const save = vi.spyOn(m(), 'saveTemplate').mockResolvedValue({ ok: true, value: template('mine') });
     render(<TemplatesSettingsView />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Release lead' }));
-    const max = screen.getByLabelText('Most helpers at once');
+    const max = screen.getByLabelText('Helpers at once');
     fireEvent.change(max, { target: { value: '3' } });
     fireEvent.blur(max);
     fireEvent.click(screen.getByTestId('managed-template-save'));
@@ -208,7 +208,7 @@ describe('Templates page', () => {
     const dialog = await screen.findByTestId('managed-template-push-dialog');
     const next = { setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestration: { orchestrate: true, maxHelpers: 3 } } };
     expect(preview).toHaveBeenCalledWith('mine', next);
-    expect(within(dialog).getByTestId('managed-template-changes').textContent).toBe('+ Skill changelog-check− MCP server Playwright~ Helper limit 5 → 3');
+    expect(within(dialog).getByTestId('managed-template-changes').textContent).toBe('+ Skill changelog-check− MCP server Playwright~ Helpers at once 5 → 3');
     const targets = within(dialog).getByTestId('managed-template-targets');
     expect(targets.textContent).toContain('2 of 3 changes apply · already has no Playwright');
     expect(targets.textContent).toContain('3 of 3 changes apply · applies on restart');
@@ -257,7 +257,7 @@ describe('Templates page', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lead' } });
     // Without a CLI there is no model or effort to set.
     expect((screen.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'claude-code' } });
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'claude-code' } });
     await waitFor(() => expect((screen.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(false));
     fireEvent.change(screen.getByLabelText('Effort'), { target: { value: 'high' } });
     fireEvent.click(screen.getByRole('switch', { name: 'Orchestration' }));
@@ -288,7 +288,7 @@ describe('Templates page', () => {
 
   it('names an Access change by its levels (#2761)', () => {
     expect(changeText({ kind: 'setting', key: 'access', from: 'Ask first', to: 'Auto' })).toBe('~ Access Ask first → Auto');
-    expect(changeText({ kind: 'setting', key: 'orchestration.autoHelpers', from: 'Fixed', to: 'Smart' })).toBe('~ Smart selection Fixed → Smart');
+    expect(changeText({ kind: 'setting', key: 'orchestration.autoHelpers', from: 'Fixed', to: 'Smart' })).toBe('~ Smart routing Fixed → Smart');
     expect(noteText('access already Auto, orchestration.access already same, already has access-review'))
       .toBe('Access already Auto, Helper access already same, already has access-review');
   });
@@ -308,10 +308,10 @@ describe('Templates page', () => {
     expect(screen.getByText('Not set, so an agent made from it starts at the Default access.')).toBeTruthy();
     expect([...access.options].map((o) => o.textContent)).toEqual(['Not set', 'Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
     expect(screen.queryByText(/Free Agent/)).toBeNull();
-    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'other' } });
     expect(access.disabled).toBe(true);
     expect(screen.getByText("Other CLI doesn't support it.")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'claude-code' } });
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'claude-code' } });
     fireEvent.change(access, { target: { value: 'auto' } });
     expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeTruthy();
     fireEvent.click(screen.getByTestId('managed-template-save'));
@@ -348,7 +348,7 @@ describe('Helpers page with managed agents', () => {
     window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ revision: 'r0.0', serverTime: '2026-11-01T00:00:00.000Z', labels: HELPER_ROUTING_LABELS, providers: {}, auto: { effective: false, source: 'default', scopes: { app: { value: false, editable: true } } } })) as never;
   });
 
-  it('saves the default helper template, with Smart selection moved to its own page (#3186)', async () => {
+  it('saves the default helper template, with Smart routing moved to its own page (#3186)', async () => {
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('builtin-template-helper', { name: 'Helper', builtin: true }), template('qa', { name: 'Quality Assurance', builtin: true })] });
     const set = vi.spyOn(m(), 'setDefaultHelperTemplate').mockResolvedValue({ ok: true, value: undefined });
     render(<HelpersSettingsView />);
@@ -363,7 +363,7 @@ describe('Helpers page with managed agents', () => {
     expect(screen.queryByTestId('helper-presets-footer')).toBeNull();
   });
 
-  it('opens Helpers or Smart selection from the Orchestration page (#3186)', () => {
+  it('opens Helpers or Smart routing from the Orchestration page (#3186)', () => {
     render(<OrchestrationSettingsView />);
     fireEvent.click(screen.getByTestId('managed-orchestration-open-smart-selection'));
     expect(useUIStore.getState().settingsSubPage).toBe('smart-selection');
@@ -371,12 +371,12 @@ describe('Helpers page with managed agents', () => {
     expect(useUIStore.getState().settingsSubPage).toBe('helpers');
   });
 
-  it('shows Auto and the difficulty presets on Smart selection (#3186)', async () => {
+  it('shows Smart routing and the difficulty presets on its page (#3186)', async () => {
     render(<SmartSelectionSettingsView />);
-    expect(screen.getByRole('heading', { name: 'Smart selection' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Smart routing' })).toBeTruthy();
     expect(await screen.findByTestId('helper-presets-auto')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Auto and presets' })).toBeTruthy();
-    expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart selection balances load across your providers. Built-in templates ask orchestrators to use it.');
+    expect(screen.getByRole('heading', { name: 'Smart routing and presets' })).toBeTruthy();
+    expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart routing balances load across your CLIs. Built-in templates ask orchestrators to use it.');
   });
 
   it('offers no retired template for the default, but keeps one already chosen (D71)', async () => {

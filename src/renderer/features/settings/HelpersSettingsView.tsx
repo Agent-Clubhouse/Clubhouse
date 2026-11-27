@@ -255,12 +255,12 @@ export function HelpersSettingsView() {
 
       <DefaultHelperTemplateSection />
 
-      <SettingsSection title="Disposed helpers without an orchestrator" meta={orphans && orphans.length > 0 ? String(orphans.length) : undefined}>
+      <SettingsSection title="Deleted helpers without an orchestrator" meta={orphans && orphans.length > 0 ? String(orphans.length) : undefined}>
         <SettingsBlock>
           {orphans === null ? (
             <p className={settingsHelp}>Loading…</p>
           ) : orphans.length === 0 ? (
-            <p className={settingsHelp} data-testid="helpers-orphans-empty">None. Disposed helpers show in their orchestrator’s Helpers card until you remove them, and go when it’s deleted.</p>
+            <p className={settingsHelp} data-testid="helpers-orphans-empty">None. Deleted helpers show in their orchestrator’s Helpers card until you remove them, and go when it’s deleted.</p>
           ) : (
             <>
               <div className="flex items-center gap-2.5">
@@ -296,7 +296,7 @@ export function HelpersSettingsView() {
 
       <ConfirmDestructiveAction
         open={clearing === 'confirm'}
-        title={`Remove all ${orphans?.length ?? 0} disposed helpers for good?`}
+        title={`Remove all ${orphans?.length ?? 0} deleted helpers for good?`}
         description="Their folders are already gone. This removes them and their session lists from Clubhouse. It can’t be undone."
         confirmLabel="Clear all"
         onCancel={() => setClearing(null)}

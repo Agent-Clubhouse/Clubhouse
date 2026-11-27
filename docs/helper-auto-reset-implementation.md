@@ -4,7 +4,7 @@ Implemented on a task branch for review; not activated in anyone's saved setting
 
 ## User behavior
 
-Settings > Smart selection offers “Prefer useful work before quota resets.” Enabling it saves version1 plus both selected retained percentages; absence keeps the legacy weekly-use policy. It does not enable Auto itself or change the saved Copilot last-resort switch. Turning the preference off stores `enabled:false` with the selected percentages retained for a later opt-in. Mapping Reset resets mappings only.
+Settings > Smart routing offers “Prefer useful work before quota resets.” Enabling it saves version1 plus both selected retained percentages; absence keeps the legacy weekly-use policy. It does not enable Auto itself or change the saved Copilot last-resort switch. Turning the preference off stores `enabled:false` with the selected percentages retained for a later opt-in. Mapping Reset resets mappings only.
 
 For Claude Code and Codex, “Keep for me (%)” accepts whole percentages0–100 per provider. The percentage applies to the provider's shared local login across orchestrators, in every applicable reported window. It is not a separate allowance for each router, project, model or helper. A0% reserve is an explicit choice to admit below100%; a100% reserve admits no new measured-provider starts. Neither changes provider-reported hard limits. There is no relaxation field, button, implicit exception, scripting engine or mode that changes a reserve near reset.
 

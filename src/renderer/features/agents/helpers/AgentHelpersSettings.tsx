@@ -12,7 +12,7 @@ import { Field, SectionHeading, inputClass, selectClass } from '../agentSettings
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, HelperCountInput, accessNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AutoHelpersHelp, CrossProjectToggle, HelperCountInput, accessNote,
 } from './OrchestrationFields';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
@@ -52,7 +52,7 @@ export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
         />
       </Field>
       {orch.note && <p className="py-1.5 text-xs text-ctp-overlay1" data-testid="settings-orchestrate-note">{orch.note}</p>}
-      <Field label="Control" htmlFor={ids.control} help={controlHelp(policy.control, agent.name)}>
+      <Field label="Approvals" htmlFor={ids.control} help={controlHelp(policy.control, agent.name)}>
         <ControlSelect
           id={ids.control}
           value={policy.control}
@@ -91,7 +91,7 @@ export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
         </Field>
       )}
       {policy.orchestrate && (
-        <Field label="Auto provider" htmlFor={ids.auto} help={AUTO_HELPERS_HELP}>
+        <Field label="Smart routing" htmlFor={ids.auto} help={<AutoHelpersHelp />}>
           <AutoHelpersToggle
             id={ids.auto}
             policy={policy}

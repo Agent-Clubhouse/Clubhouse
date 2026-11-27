@@ -19,7 +19,7 @@ import { settingsAccess } from './create-managed-agent';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
 import { changedLine } from './attribution';
 import {
-  EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
+  EffortSelect, HelperSelectionHelp, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
   effortHelp, useModelEfforts,
 } from './settings-fields';
 import { AccessSelect, ControlSelect, DISPATCHER_HELP } from '../agents/helpers/OrchestrationFields';
@@ -211,7 +211,7 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
       </SettingsSection>
 
       <SettingsSection title="Settings">
-        <SettingsField label="CLI" htmlFor="managed-template-cli" help="Not set: an agent made from it runs on its project's CLI.">
+        <SettingsField label="Runs on" htmlFor="managed-template-cli" help="Not set: an agent made from it runs on its project's CLI.">
           <select
             id="managed-template-cli"
             className={selectClass}
@@ -275,7 +275,7 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
         <SettingsField label="Orchestration" help="Agents made from this template can start helpers.">
           <Toggle checked={orchestrate} onChange={(v) => setOrch({ orchestrate: v })} aria-label="Orchestration" data-testid="managed-template-orchestrate" />
         </SettingsField>
-        <SettingsField label="Most helpers at once" htmlFor="managed-template-max-helpers" disabled={!orchestrate}>
+        <SettingsField label="Helpers at once" htmlFor="managed-template-max-helpers" disabled={!orchestrate}>
           <input
             id="managed-template-max-helpers"
             type="number"
@@ -290,7 +290,7 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitMax(); } }}
           />
         </SettingsField>
-        <SettingsField label="Helper selection" htmlFor="managed-template-helper-selection" help={HELPER_SELECTION_HELP} disabled={!orchestrate}>
+        <SettingsField label="Helper selection" htmlFor="managed-template-helper-selection" help={<HelperSelectionHelp />} disabled={!orchestrate}>
           <HelperSelectionSelect
             id="managed-template-helper-selection"
             value={orch.autoHelpers}
@@ -425,7 +425,7 @@ export function TemplatesSettingsView() {
       <SettingsSection title="Yours" meta={yours.length > 0 ? String(yours.length) : undefined}>
         {templates === null && !error && <p className={`${settingsHelp} py-2`}>Loading…</p>}
         {templates !== null && yours.length === 0 && (
-          <p className={`${settingsHelp} py-2 border-t border-surface-0`}>None yet. Make a new one, copy a built-in, or use Save as template in any agent's builder.</p>
+          <p className={`${settingsHelp} py-2 border-t border-surface-0`}>None yet. Make a new one, copy a built-in, or use Save as template in an agent's settings, under General › Setup.</p>
         )}
         <ul data-testid="managed-templates-yours">
           {yours.map((t) => (

@@ -1,4 +1,4 @@
-# Display and themes
+# Display and UI
 
 Open Settings with `⌘,` and pick **Display & UI**.
 

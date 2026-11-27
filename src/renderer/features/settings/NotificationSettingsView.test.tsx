@@ -89,7 +89,19 @@ describe('NotificationSettingsView', () => {
     expect(screen.getByText('Notifications & alerts')).toBeInTheDocument();
     expect(screen.getByText('Desktop notifications')).toBeInTheDocument();
     expect(screen.getByText('An agent needs permission')).toBeInTheDocument();
-    expect(screen.getByText('An agent stops')).toBeInTheDocument();
+    expect(screen.getByText('An agent goes idle')).toBeInTheDocument();
+    // One switch for a finished turn: the two saved keys fire on the same event.
+    expect(screen.queryByText('An agent stops')).toBeNull();
+    expect(screen.queryByText('An agent is waiting for input')).toBeNull();
+  });
+
+  it('shows the idle switch on when either saved key is on, and sets both', () => {
+    resetStores();
+    render(<NotificationSettingsView />);
+    const idle = screen.getByLabelText('An agent goes idle');
+    expect(idle).toBeChecked();
+    fireEvent.click(idle);
+    expect(mockSaveSettings).toHaveBeenCalledWith({ agentIdle: false, agentStopped: false });
   });
 
   it('shows project rail badges only in the classic layout', () => {

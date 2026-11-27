@@ -112,7 +112,7 @@ describe('ProjectAgentDefaultsSection', () => {
       await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledWith('/project', { sourceControlProvider: 'github' }));
     });
 
-    it('saves turning Auto provider off', async () => {
+    it('saves turning Smart routing off', async () => {
       renderSection();
       fireEvent.click(await screen.findByTestId('project-helper-auto-off'));
       fireEvent.click(screen.getByText('Save'));

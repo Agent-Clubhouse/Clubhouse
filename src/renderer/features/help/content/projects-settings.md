@@ -1,6 +1,6 @@
 # Project Settings
 
-Configure how a project appears, which orchestrator it uses, and manage plugins.
+Configure how a project appears, which CLI it uses, and manage plugins.
 
 **Access:** Click the gear icon in the project header, or open Settings and switch to the project's **Project Settings** page.
 
@@ -12,21 +12,22 @@ Configure how a project appears, which orchestrator it uses, and manage plugins.
 | **Accent color** | Choose from 10+ colors for the project icon and UI accents. |
 | **Custom icon** | Upload a PNG, JPG, or SVG. Supports cropping during upload. Clear to revert to the default letter icon. |
 
-## Orchestrator
+## Runs on
 
-Select which AI backend powers agents in this project:
+Select which CLI new agents in this project run on:
 
-| Orchestrator | Status |
+| CLI | Status |
 |-------------|--------|
 | **Claude Code** | Stable |
-| **Copilot CLI** | Stable |
+| **Copilot CLI** | Beta |
 | **Codex CLI** | Beta |
+| **Antigravity CLI** | Experimental |
 
-The selected orchestrator applies to new and restarted agents. Only orchestrators enabled in global settings and detected on your system appear as options.
+The selected CLI applies to new and restarted agents. Only CLIs turned on in **Settings > Agents & CLIs** and installed on your system appear as options.
 
 ## Agent environment and legacy defaults
 
-**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Auto provider for helpers here.
+**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Smart routing for helpers here.
 
 **Legacy defaults** shows the instructions, permission rules, MCP servers and build, test and lint commands a project could set for new agents before Clubhouse-managed agents. They're read-only now and kept as they are:
 

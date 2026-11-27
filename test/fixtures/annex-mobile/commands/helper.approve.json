@@ -86,7 +86,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "no_valid_mapping",
-            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection."
+            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart routing."
           },
           "status": "rejected",
           "version": 1
@@ -109,7 +109,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "no_valid_mapping",
-            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection."
+            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart routing."
           },
           "status": "rejected",
           "version": 1
@@ -376,7 +376,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "auto_off",
-            "message": "Couldn’t start impl-ipc because Auto provider is off: This project turned it off."
+            "message": "Couldn’t start impl-ipc because Smart routing is off: This project turned it off."
           },
           "status": "rejected",
           "version": 1

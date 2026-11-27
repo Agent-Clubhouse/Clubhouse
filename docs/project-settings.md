@@ -15,7 +15,7 @@ The table in code is `src/shared/project-settings-ownership.ts`. A new
 |-------|----------|-------------------|-----------------|
 | Project environment | Agents run on (default CLI) | Project settings > Agents & providers | Every agent without its own CLI, at start. One source: `projects.json`, read by `readProjectOrchestrator` in main and `effectiveOrchestratorOf` in the renderer (#2975) |
 | Project environment | Quick agent mode, Session name on quit | Same page | Quick agents and session prompts, live |
-| Project environment | Source control provider, Command prefix, Turn off Auto provider here | Same page, Agent environment | Every agent, at start. The source control provider fills `@@SourceControlProvider` only for agents that aren't managed |
+| Project environment | Source control provider, Command prefix, Turn off Smart routing here | Same page, Agent environment | Every agent, at start. The source control provider fills `@@SourceControlProvider` only for agents that aren't managed |
 | Project environment | Launch wrapper | Project settings > General | Every agent, at start |
 | Project environment | Managed git excludes | Agents & providers | Managed delivery |
 | Managed template or agent | Instructions, skills, MCP servers, access, Clubhouse permissions, model, effort, runtime, context, helper policy, quick-run profile | The template, its parts, and the agent's own settings | Managed delivery at each start. Never the project's legacy defaults (#3243) |

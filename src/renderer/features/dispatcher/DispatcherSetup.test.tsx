@@ -119,7 +119,7 @@ describe('DispatcherSetup: Behavior and Runs on', () => {
     expect(options).toEqual(['Claude Code', 'Codex CLI']);
   });
 
-  it('offers Set up Auto when the provider has a mapping with nothing for the level, which opens Settings > Smart selection', async () => {
+  it('offers Set up Auto when the provider has a mapping with nothing for the level, which opens Settings > Smart routing', async () => {
     d.checkBehavior = vi.fn(async () => ({ ready: false as const, code: 'no_valid_mapping' as const }));
     renderSetup();
     next();

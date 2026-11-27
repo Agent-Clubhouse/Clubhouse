@@ -75,7 +75,7 @@ An agent can ask to be told when something happens, for example "tell me when ma
 
 ## Working across computers
 
-Computers in your Annex Network connect their Dispatchers automatically. **Settings > Dispatcher > Other machines** shows each one's name, computer and whether it is working, asleep, offline or off. An offline computer shows when it was last seen. A sleeping Dispatcher can wake for a message; one switched off cannot take new work.
+Computers in your Annex Network connect their Dispatchers automatically. **Settings > Dispatcher > Other computers** shows each one's name, computer and whether it is working, asleep, offline or off. An offline computer shows when it was last seen. A sleeping Dispatcher can wake for a message; one switched off cannot take new work.
 
 Ask your Dispatcher to have another computer handle part of a task. That computer's Dispatcher decides whether to start now, hold it for a check-in, ask you, or decline. It uses that computer's own permissions. Requests and replies name their computer and agent. A delivery receipt means the request arrived, not that the work finished. Messages and files are news; a Handoff agreement is a separate offer that its receiver must explicitly accept.
 

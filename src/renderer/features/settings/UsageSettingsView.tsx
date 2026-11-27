@@ -40,7 +40,7 @@ export function UsageSettingsView() {
   return (
     <SettingsPage
       title="Usage"
-      description="Plan limits as each provider reports them, and the tokens your agents used. Read from this computer only."
+      description="Plan limits as each CLI reports them, and the tokens your agents used. Read from this computer only."
       testId="usage-settings"
     >
       {error && <p className={settingsError}>{error}</p>}

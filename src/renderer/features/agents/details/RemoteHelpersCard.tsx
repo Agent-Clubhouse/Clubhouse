@@ -12,7 +12,7 @@ import { openRemoteHelper, remoteHelperOpenUnavailable } from './remote-helper-n
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
 const statusLabel: Record<RemoteHelperRow['status'], string> = { disposed: 'Disposed', 'handed-off': 'Handed off', creating: 'Starting', failed: 'Failed', running: 'Running', 'needs-you': 'Needs you', waking: 'Starting', 'not-running': 'Not running', unknown: 'Runtime state unavailable' };
 const message = (status: Result['status']) => status === 'forbidden' ? 'The host does not allow this helper read.' : status === 'offline' ? 'Host offline. Reconnect to read helpers.' : status === 'unavailable' ? 'This host does not support selected helper pages.' : status === 'error' ? 'Couldn’t read this helper page. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading helpers from the host…';
-const policyLabels = new Set(['Orchestration', 'Helpers get', 'Control', 'At once', 'App-wide limit', 'Cross-project helpers', 'Auto provider', 'Helper access ceiling']);
+const policyLabels = new Set(['Orchestration', 'Helpers get', 'Control', 'At once', 'App-wide limit', 'Cross-project helpers', 'Smart routing', 'Auto provider', 'Helper access ceiling']);
 export function RemoteHelpersCard({ agent, details, status, freshnessKey, open, onToggle, onRefused }: {
   agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; onToggle(): void; onRefused?(): void;
 }) {

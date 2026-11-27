@@ -1,4 +1,4 @@
-# Display & Themes
+# Display & UI
 
 Customize how Clubhouse looks: themes, terminal colors, and display preferences.
 

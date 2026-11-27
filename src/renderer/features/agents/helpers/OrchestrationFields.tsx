@@ -18,6 +18,7 @@ import { AUTO_LOCKED_NOTES } from '../../../../shared/helper-policy-display';
 import { Toggle } from '../../../components/Toggle';
 import { ACCESS_LEVEL_LABELS, CONTROL_LABELS, aboveCeiling, accessLabel } from './helper-model';
 import { parseHelperCount } from './orchestration-hooks';
+import { autoPickSentence, useAutoPick } from '../../settings/helper-auto-pick';
 
 /**
  * The help line under the "Connect to Dispatcher" default on templates and New
@@ -28,7 +29,12 @@ export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get it
 
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
-export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. This balances plan use, not cost.';
+
+/** The help line under the Smart routing switch, with what it can pick right now (#3896). */
+export function AutoHelpersHelp() {
+  const pick = useAutoPick();
+  return <>{autoPickSentence(pick, 'Let Clubhouse')} This balances plan use, not cost.</>;
+}
 
 export { accessNote } from '../../../../shared/helper-policy-display';
 

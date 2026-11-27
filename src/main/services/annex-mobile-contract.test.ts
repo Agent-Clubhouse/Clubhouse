@@ -699,7 +699,7 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
       if (W.helperStart === 'refused') return { ok: false, message: 'A helper named impl-ipc already exists.' };
       if (W.helperStart === 'no_valid_mapping') {
         W.helperStartRefusals++;
-        return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection.' };
+        return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart routing.' };
       }
       if (W.helperStart === 'warned') {
         return { ok: true, helperId: 'durable_helper_new', message: 'Started', warning: { code: 'quota_near_limit', asOf: new Date(NOW).toISOString(), message: 'codex-cli is close to its plan limit. The helper is started on it anyway, as asked.' } };
@@ -708,7 +708,7 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
         return { ok: false, code: 'no_candidate', message: 'Couldn’t start impl-ipc because no provider can take a hard task right now (claude-code: Close to its limit; codex-cli: The provider reports its limit reached).' };
       }
       if (W.helperStart === 'auto_off') {
-        return { ok: false, code: 'auto_off', message: 'Couldn’t start impl-ipc because Auto provider is off: This project turned it off.' };
+        return { ok: false, code: 'auto_off', message: 'Couldn’t start impl-ipc because Smart routing is off: This project turned it off.' };
       }
       return { ok: true, helperId: 'durable_helper_new', message: 'Started' };
     },
@@ -1651,7 +1651,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const held = helperStart();
     const removal = await connect();
     removal.send.mockClear();
-    const NO_MAPPING_MESSAGE = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection.';
+    const NO_MAPPING_MESSAGE = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart routing.';
     const noMapping = await command('no_valid_mapping', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping' });
     expect(noMapping).toEqual({ status: 409, body: {
       version: 1, commandId: 'cmd_no_mapping', epoch, status: 'rejected', error: { code: 'no_valid_mapping', message: NO_MAPPING_MESSAGE },

@@ -3,7 +3,7 @@
  * from it may do through Clubhouse, over the defaults for what the template
  * makes (an orchestrator or not). Each row is Off, Ask first or Allow; a row
  * set back to its default is dropped, so the template only carries what it
- * changes. Starting and removing helpers follow Helper control above.
+ * changes. Starting and removing helpers follow Approvals above.
  */
 
 import { useMemo } from 'react';
@@ -47,7 +47,7 @@ export function TemplateGrantsSection({ settings, onChange }: {
               key={grantKey(row)}
               row={row}
               targetLabel={group.label}
-              note={isHelperControlRow(row) ? 'Follows Helper control.' : undefined}
+              note={isHelperControlRow(row) ? 'Follows Approvals.' : undefined}
               mode={row.mode}
               disabled={false}
               error={undefined}

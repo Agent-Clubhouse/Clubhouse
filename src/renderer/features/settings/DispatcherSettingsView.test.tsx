@@ -484,7 +484,7 @@ describe('DispatcherSettingsView', () => {
     it('says which job still runs on which provider, and offers a new chat for the chat alone through its confirm', async () => {
       await renderWithHosts({ ...ON, providerPending: { chat: 'claude-code', work: null } });
       const note = screen.getByTestId('dispatcher-provider-pending');
-      expect(note).toHaveTextContent('Rosie is still talking with you on Claude Code. The new provider applies when it restarts, with a new conversation. Its memory stays.');
+      expect(note).toHaveTextContent('Rosie is still talking with you on Claude Code. The new CLI applies when it restarts, with a new conversation. Its memory stays.');
       // Nothing restarts until the person confirms.
       fireEvent.click(within(note).getByRole('button', { name: 'Start new chat…' }));
       expect(window.clubhouse.dispatcher.clearChat).not.toHaveBeenCalled();
@@ -563,8 +563,8 @@ describe('DispatcherSettingsView', () => {
       expect(chat.getByText('Talking with you')).toBeInTheDocument();
       expect(work.getByText('Working in the background')).toBeInTheDocument();
       await waitFor(() => expect((chat.getByLabelText('Model') as HTMLSelectElement).disabled).toBe(false));
-      expect((chat.getByLabelText('Provider') as HTMLSelectElement).value).toBe('claude-code');
-      expect([...(chat.getByLabelText('Provider') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['claude-code', 'codex-cli']);
+      expect((chat.getByLabelText('CLI') as HTMLSelectElement).value).toBe('claude-code');
+      expect([...(chat.getByLabelText('CLI') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['claude-code', 'codex-cli']);
       expect((chat.getByLabelText('Model') as HTMLSelectElement).value).toBe('opus');
       expect([...(chat.getByLabelText('Model') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['default', 'sonnet', 'opus']);
       await waitFor(() => expect([...(chat.getByLabelText('Effort') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['', 'low', 'medium', 'high']));
@@ -598,7 +598,7 @@ describe('DispatcherSettingsView', () => {
       await waitFor(() => expect((chat.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(false));
       await act(async () => { fireEvent.change(chat.getByLabelText('Effort'), { target: { value: '' } }); });
       expect(window.clubhouse.dispatcher.setModels).toHaveBeenLastCalledWith({ role: 'chat', effort: null });
-      await act(async () => { fireEvent.change(work.getByLabelText('Provider'), { target: { value: 'claude-code' } }); });
+      await act(async () => { fireEvent.change(work.getByLabelText('CLI'), { target: { value: 'claude-code' } }); });
       expect(window.clubhouse.dispatcher.setModels).toHaveBeenLastCalledWith({ role: 'work', provider: 'claude-code' });
       await waitFor(() => expect(work.getByLabelText('Context')).toBeInTheDocument());
       await act(async () => { fireEvent.change(work.getByLabelText('Context'), { target: { value: '' } }); });
@@ -610,7 +610,7 @@ describe('DispatcherSettingsView', () => {
       window.clubhouse.dispatcher.setModels = vi.fn().mockRejectedValue(new Error('gpt-9 isn’t a model Codex CLI lists.'));
       await renderOn(BY_HAND);
       const work = within(screen.getByTestId('dispatcher-models-work'));
-      await act(async () => { fireEvent.change(work.getByLabelText('Provider'), { target: { value: 'claude-code' } }); });
+      await act(async () => { fireEvent.change(work.getByLabelText('CLI'), { target: { value: 'claude-code' } }); });
       expect((await work.findByTestId('dispatcher-models-work-error')).textContent).toBe('Couldn’t save. gpt-9 isn’t a model Codex CLI lists.');
       expect(screen.queryByTestId('dispatcher-models-chat-error')).toBeNull();
     });

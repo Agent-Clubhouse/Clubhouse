@@ -5,7 +5,7 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 | Page | What's there |
 |------|--------------|
 | **General** | Name, icon, color, launch wrapper, and closing or resetting the project |
-| **Agents & providers** | The project's default agent provider, its agent environment and its legacy defaults |
+| **Agents & CLIs** | The project's default CLI, its agent environment and its legacy defaults |
 | **Notifications & alerts** | Badge and sound overrides for this project |
 | **Plugins** | Which plugins are on in this project |
 
@@ -18,17 +18,17 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 | **Color** | The project's color in the sidebar and title bar. |
 | **Launch wrapper** | Runs agents through a wrapper command, when your setup needs one. |
 
-## Agents & providers
+## Agents & CLIs
 
 Each setting here can follow the app-wide value or override it for this project:
 
-- **Agents run on**, the CLI for new agents. Only CLIs that are turned on and installed are listed.
+- **Runs on**, the CLI for new agents. Only CLIs that are turned on and installed are listed.
 - **Quick agent mode**: interactive or headless.
-- **Session name on quit**.
+- **Session name when an agent sleeps**.
 
-New agents start at **Default access** in **Settings > Agents & providers**. Projects don't override it.
+New agents start at **Default access** in **Settings > Agents & CLIs**. Projects don't override it.
 
-**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Auto provider for helpers here.
+**Agent environment** holds what every agent in the project runs under, managed or not: the source control provider, a command prefix run before the agent's CLI, and turning off Smart routing for helpers here.
 
 **Legacy defaults** shows the instructions, permission rules, MCP servers and build, test and lint commands a project could set for new agents before Clubhouse-managed agents. They're read-only now and kept as they are:
 

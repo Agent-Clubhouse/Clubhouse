@@ -11,6 +11,7 @@ import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep, resolv
 import { effortWord } from '../agents/chat/Composer';
 import { useAppIdleMinutes } from '../agents/details/AutoSleepRow';
 import { managed, unwrap, useManagedTemplates } from './managedApi';
+import { autoPickSentence, useAutoPick } from '../settings/helper-auto-pick';
 
 /**
  * The effort levels each model of a CLI takes, read from its model list.
@@ -66,7 +67,7 @@ export function EffortSelect({ id, value, levels, disabled, className, onChange,
   );
 }
 
-/** "Helper selection": Smart is Auto (#2671). Unset follows the app setting. */
+/** "Helper selection": Auto is Smart routing (#2671). Unset follows the app setting. */
 export function HelperSelectionSelect({ id, value, disabled, className, onChange, testId }: {
   id?: string;
   value: boolean | undefined;
@@ -87,13 +88,17 @@ export function HelperSelectionSelect({ id, value, disabled, className, onChange
       data-testid={testId}
     >
       <option value="app">App setting</option>
-      <option value="smart">Smart</option>
+      <option value="smart">Auto</option>
       <option value="fixed">Fixed</option>
     </select>
   );
 }
 
-export const HELPER_SELECTION_HELP = 'Smart lets Clubhouse pick between Claude Code and Codex for each helper, favoring the CLI that has used less of its plan limit. This balances plan use, not cost. Fixed keeps the CLI the agent names.';
+/** The help line under Helper selection, with what Smart routing can pick right now (#3896). */
+export function HelperSelectionHelp() {
+  const pick = useAutoPick();
+  return <>{autoPickSentence(pick, 'Auto lets Smart routing')} This balances plan use, not cost. Fixed keeps the CLI the agent names.</>;
+}
 
 /** The app's default helper template id, or null until read. */
 export function useDefaultHelperTemplate(): string | null {
@@ -136,7 +141,7 @@ export function HelperTemplateSelect({ id, value, disabled, className, onChange,
   );
 }
 
-export const HELPER_TEMPLATE_HELP = 'What its helpers start from when it names no template. App default follows Settings › Managed agents › Helpers.';
+export const HELPER_TEMPLATE_HELP = 'What its helpers start from when it names no template. App default follows the Helpers page in Settings.';
 
 /** "Auto-sleep": this agent's idle timeout, or the app's. Only chat sessions sleep. */
 export function IdleSleepSelect({ id, value, disabled, className, onChange, testId }: {
