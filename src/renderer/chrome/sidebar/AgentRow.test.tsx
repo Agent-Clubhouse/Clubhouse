@@ -365,15 +365,16 @@ describe('AgentRow hover card for a chat agent (#2197)', () => {
     fireEvent.focus(focusable);
     act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
     expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Working for 41m');
-    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Stop');
+    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
   });
 
-  it('keeps Stop for an agent in the terminal', () => {
+  it('says Sleep for a durable agent in the terminal too, since Stop never means sleep (#2764)', () => {
     vi.useFakeTimers();
     const { focusable } = setup(durable({ status: 'running' }));
     fireEvent.focus(focusable);
     act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
-    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Stop');
+    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
+    expect(screen.getByTestId('hover-stop')).not.toHaveTextContent('Stop');
   });
 });
 

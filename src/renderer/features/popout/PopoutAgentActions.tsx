@@ -10,7 +10,7 @@ import { wakeDurableAgent } from '../agents/wake-durable-agent';
 import { useLocalProject } from '../dispatcher/dispatcherStore';
 
 /**
- * Show in main window and Stop (Wake while sleeping) on the right of a popout
+ * Show in main window and Sleep (Stop for a quick agent, Wake while sleeping) on the right of a popout
  * agent's title bar (#2018). They used to sit in a bar of their own that
  * repeated the agent's name and, over a terminal, covered its Bottom button.
  * Below 640px wide they are icons with tooltips.
@@ -57,10 +57,11 @@ export function PopoutAgentActions({ agentId, projectId }: { agentId: string; pr
       if (agent?.projectId ?? projectId) await window.clubhouse.agent.killAgent(agentId, (await resolveProject()).path);
       else await window.clubhouse.pty.kill(agentId);
     } catch (err) {
-      useToastStore.getState().addToast(`Couldn't stop the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      const what = agent?.kind === 'durable' ? "Couldn't put the agent to sleep" : "Couldn't stop the agent";
+      useToastStore.getState().addToast(`${what}: ${err instanceof Error ? err.message : String(err)}`, 'error');
       reportChromeActionFailed('agent_stop', err);
     }
-  }, [agentId, agent?.projectId, projectId, resolveProject]);
+  }, [agentId, agent?.projectId, agent?.kind, projectId, resolveProject]);
 
   const handleWake = useCallback(async () => {
     if (!agent || agent.kind !== 'durable') return;
@@ -98,7 +99,10 @@ export function PopoutAgentActions({ agentId, projectId }: { agentId: string; pr
   return (
     <span className="no-drag flex items-center gap-1 flex-shrink-0" data-testid="popout-actions">
       {action('popout-view-button', 'Show in main window', 'quiet', <ShowIcon />, handleView)}
-      {isRunning && action('popout-stop-button', 'Stop agent', 'danger', <StopGlyph />, () => { void handleKill(); }, 'Stop')}
+      {/* A durable agent's CLI ends and the agent sleeps; only a quick agent's run stops (#2764). */}
+      {isRunning && (agent.kind === 'durable'
+        ? action('popout-stop-button', 'Sleep agent', 'danger', <StopGlyph />, () => { void handleKill(); }, 'Sleep')
+        : action('popout-stop-button', 'Stop agent', 'danger', <StopGlyph />, () => { void handleKill(); }, 'Stop'))}
       {!isRunning && agent.kind === 'durable' && action('popout-wake-button', 'Wake agent', 'quiet', <WakeGlyph />, () => { void handleWake(); }, 'Wake')}
     </span>
   );

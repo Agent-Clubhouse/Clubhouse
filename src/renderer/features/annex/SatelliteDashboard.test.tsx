@@ -311,7 +311,8 @@ describe('SatelliteDashboard', () => {
 
     render(<SatelliteDashboard activeHostId="sat-1" />);
 
-    expect(screen.getByTestId('satellite-action-stop')).toBeTruthy();
+    // Ending a durable agent's CLI puts it to sleep, so the button says Sleep (#2764).
+    expect(screen.getByTestId('satellite-action-stop')).toHaveAttribute('title', 'Sleep');
   });
 
   it('falls back to "Other computer" name when the computer is not in the store', () => {
