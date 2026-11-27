@@ -2,12 +2,12 @@
 
 An action is a small workflow built into Clubhouse. When its trigger fires, it does one to three steps in order.
 
-Actions run whenever Clubhouse is open, even with no window or project open. They run on this machine only.
+Actions run whenever Clubhouse is open, even with no window or project open. They run on the computer they were made on, except that a group project's actions run on the computer that hosts the group. **Settings > Actions** lists actions on your other computers under **Actions on other computers**, read-only.
 
 ## Triggers
 
 - **On a schedule:** every day, weekdays, every week or every hour at a time you pick. **Custom (cron)** takes a five-part schedule line for anything else. The form shows the schedule in plain words and lists the next three runs. Schedules use your local time.
-- **After something happens:** an agent wakes, goes to sleep, is created or deleted, finishes a turn, has a turn fail, goes idle for a while, waits on you, hits an error or compacts its context; a quick agent finishes; one of its helpers finishes; a new commit, a branch switch, or a push, pull or fetch; Clubhouse starts; a project is added or removed. Pick one agent, or any agent in a project.
+- **After something happens:** an agent wakes, goes to sleep, is created or deleted, finishes a turn, has a turn fail, goes idle for a while, waits on you, hits an error or compacts its context; a quick agent finishes; one of its helpers finishes; a new commit, a branch switch, or a push, pull or fetch; Clubhouse starts or returns to use; a project is added or removed; a device comes online or goes offline; and in a group project, a message is posted, a member joins or leaves, or the board is idle. Pick one agent, or any agent in a project.
 - **Once, at a time:** runs at that time and then deletes itself. If Clubhouse is closed then, it runs when Clubhouse next opens.
 
 ### Waiting first
@@ -24,7 +24,7 @@ A delay is a trailing debounce in whole **seconds or minutes**, up to one week. 
 
 **Goes idle for** works the same way: the time counts from the end of the agent's last turn, a new turn resets it, and the action runs once per idle stretch.
 
-Terminal turn events depend on the CLI's hooks. Claude reports prompt starts, completed and failed turns, and compaction. Codex reports prompt starts, completed and interrupted turns, and compaction. Claude interruptions have no hook, and Copilot has no per-turn completion hook. Tool errors and session exits are not turn failures or turn completions.
+Terminal turn events depend on the CLI's hooks. Claude reports prompt starts, completed and failed turns, and compaction. Codex reports prompt starts, completed and interrupted turns, and compaction. Copilot reports completed turns only, with no failed or interrupted turns. Claude interruptions have no hook. Tool errors and session exits are not turn failures or turn completions.
 
 A turn reports one ending, the first the provider sends; a failure reported after a completed ending isn't shown.
 
@@ -35,7 +35,7 @@ Headless quick agents report one turn end per run, including empty output, proce
 
 **A quick agent finishes** (`agent.quick_finished`) fires once when its run ends, with a completed, failed or cancelled outcome. The app event includes its name, starter (you, an agent or an Action), parent when present, project and duration. It does not include prompts or output. Watching a quick agent uses `agent.read` on that quick agent, including for project sources. Its parent counts as the `my_helper` relation, as with durable helpers. Actions you create use your own access. Minimal quick-run identity and permission scope stay available locally for up to one week so delayed delivery can recheck access, and are not saved in actions.json. Delayed waits keep the source agent's id so the read check still applies after relaunch.
 
-Quick-source names in messages and missions are marked as untrusted event data, including when a wake step has no prompt. Names and event summaries lose control characters and line breaks before delivery.
+Quick-source names in messages and tasks are marked as untrusted event data, including when a wake step has no task. Names and event summaries lose control characters and line breaks before delivery.
 
 ### Grouping events and throttling
 
@@ -85,13 +85,16 @@ Agent-owned device actions require `device.read` set to Allow when admitted and 
 
 ## Steps
 
-- **Wake an agent**, with an optional prompt. It resumes the agent's last session, the same as waking it by hand.
+- **Wake an agent**, with an optional **Task**. It resumes the agent's last session, the same as waking it by hand.
 - **Message an agent.** If it is busy, **Queue for the next turn** is the default. **Steer the current turn** uses the same mid-turn delivery path as your own messages. When the provider cannot steer, it falls back to queue. A sleeping agent is woken with the message.
 - **Start a quick agent** in a project folder or in another agent's worktree. It shows in the sidebar named after the action. Agent steps run with Full access and without a window, even if the project starts quick agents in a terminal, so a scheduled run never stops to ask. An agent can have actions that start quick agents only if it runs with Full access itself and is allowed to start helpers. The Dispatcher's actions can't start them.
 - **Put an agent to sleep.** A chat agent in the middle of a turn gets up to 10 minutes to finish first.
 - **Notify me.** A Clubhouse notification, following Settings > Notifications & alerts.
+- **Post to the group board** and **Tap a group member**, for an action a group project owns.
 
-Steps stop at the first one that couldn't run.
+An action has at most three steps. Steps stop at the first one that couldn't run.
+
+A message step can also go to a durable agent on another computer in your Annex Network, shown as the agent's name and its computer. That works for an action an agent or the Dispatcher owns, over an active connection that allows sending messages, with the owner's permission to message connected agents set to **Allow**. Steering, **Keep only the latest queued message** and a maximum wait aren't available for it, and the run records that the other computer accepted the message, not that the agent read it.
 
 A quick-agent step can use **Auto** with easy, medium or hard difficulty (medium by default). It uses the same provider selection, quota checks and model mappings as helpers in **Settings > Smart routing**. Its routing receipt appears in recent runs. If Smart routing is off or no provider can run it, the step says why and does not start. An explicit provider stays explicit. Steps saved without a provider still use the project's provider.
 
@@ -109,11 +112,17 @@ If an agent an action uses is deleted, the action turns off and says why.
 
 ## Who made it
 
-You, the Dispatcher and agents can all make actions. An action's usage counts toward whoever made it. Agents manage their own actions through Clubhouse, and a helper's actions are deleted with the helper.
+You, the Dispatcher, agents and group projects can all own actions. An action's usage counts toward its owner, and the form says which. Agents manage their own actions through Clubhouse, and a helper's actions are deleted with the helper. An agent can own up to 20 actions, a helper 5 and the Dispatcher 50. You have no limit.
+
+When you make a new action, **Owner** picks you or one of your group projects.
 
 When the Dispatcher creates or changes an action through Clubhouse, its chat shows the name, trigger, steps and on or off state. **Open** opens it in Settings. **Turn off** is your control, using the same path as the switch in Settings.
 
 An agent's action can do only what the agent itself may. Its steps and what it watches follow the agent's Clubhouse permissions, so turning a permission off reaches its actions too. A permission set to Ask first counts as no, because nobody is there to ask when an action runs.
+
+### Group project actions
+
+A group project's actions belong to the group, not to the agent that made them, and stay with it if that agent leaves. They run on the computer that hosts the group. They can watch only that group's own board, and their steps reach only its members and the projects they're in. The group's **Permissions** section turns them on or off with **Run group project Actions**, next to **Tell members about new posts** and **Wake sleeping members**. All three are on by default.
 
 ### Being told when something happens
 
