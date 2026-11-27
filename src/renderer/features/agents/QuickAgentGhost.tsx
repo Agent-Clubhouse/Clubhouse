@@ -181,7 +181,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
       <span
         className={`w-2 h-2 rounded-full flex-shrink-0 ${failed ? 'bg-ctp-error' : 'bg-ctp-info'}`}
         role="img"
-        aria-label={failed ? 'Error' : 'Done'}
+        aria-label={failed ? 'Error' : 'Finished'}
       />
       <button
         type="button"

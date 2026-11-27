@@ -7,11 +7,13 @@ export { chatDetailedStatus, isMidTurn, type ChatStatus };
 /**
  * One status vocabulary for agents (#2018): the sidebar's 8px dot and one
  * word, used by the sidebar, the pane toolbar, popouts, dashboards and the
- * avatar rings. Working, Needs you, Error, Sleeping and Done are the five
+ * avatar rings. Working, Needs you, Error, Sleeping and Idle are the five
  * states; Starting covers the moment between spawn and the first event.
+ * Idle is a durable agent between turns, waiting for your next message
+ * (#2763). A quick agent that has ended says Finished instead.
  */
 
-/** What an agent's status dot shows. `idle` is an agent between turns, shown as Done. */
+/** What an agent's status dot shows. `idle` is an agent between turns, shown as Idle. */
 export type AgentDot = 'working' | 'idle' | 'needs' | 'error' | 'sleeping' | 'starting';
 
 type DetailedLike = Pick<AgentDetailedStatus, 'state'> & Partial<Pick<AgentDetailedStatus, 'message'>>;
@@ -74,12 +76,15 @@ export function withChatStatus(
 
 export const DOT_LABEL: Record<AgentDot, string> = {
   working: 'Working',
-  idle: 'Done',
+  idle: 'Idle',
   needs: 'Needs you',
   error: 'Error',
   sleeping: 'Sleeping',
   starting: 'Starting',
 };
+
+/** The word for a quick agent or run that has ended (#2763). Durable agents are Idle between turns. */
+export const FINISHED_LABEL = 'Finished';
 
 export const DOT_CLASS: Record<AgentDot, string> = {
   working: 'bg-ctp-success',

@@ -137,7 +137,7 @@ describe('notificationStore', () => {
 
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Worker is idle',
-          'It finished its turn.',
+          'Waiting for your next message.',
           false,
           undefined,
           undefined,
@@ -152,7 +152,7 @@ describe('notificationStore', () => {
 
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Worker is idle',
-          'It finished its turn.',
+          'Waiting for your next message.',
           false,
           undefined,
           undefined,

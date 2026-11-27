@@ -53,7 +53,7 @@ describe('PoppedOutPlaceholder', () => {
       live: { a1: true },
     });
     render(<PoppedOutPlaceholder type="agent" agentId="a1" windowId={3} />);
-    expect(screen.getByTestId('popped-out-status')).toHaveTextContent('Done');
+    expect(screen.getByTestId('popped-out-status')).toHaveTextContent('Idle');
     expect(screen.getByTestId('popped-out-latest')).toHaveTextContent('Now updating HoverCard.tsx.');
     await waitFor(() => expect(screen.getByTestId('popped-out-changes')).toHaveTextContent('2 files changed+18 −41'));
     expect(window.clubhouse.chat.getChanges).toHaveBeenCalledWith('a1', { sessionId: 's1' });

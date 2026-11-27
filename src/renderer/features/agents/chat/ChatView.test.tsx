@@ -423,7 +423,7 @@ describe('ChatView conversation', () => {
     expect(screen.getAllByTestId('chat-agent-message')).toHaveLength(2);
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('Turn 1');
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('1m 12s');
-    expect(screen.getByTestId('pane-status')).toHaveTextContent('Done');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Idle');
     expect(screen.getByTestId('pane-usage')).toHaveTextContent(/\d+%/);
   });
 

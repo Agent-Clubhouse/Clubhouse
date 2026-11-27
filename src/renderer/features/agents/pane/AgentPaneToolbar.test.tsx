@@ -229,7 +229,7 @@ describe('the Dispatcher\'s pane header (#3220)', () => {
     expect(screen.getByText('Working on your request')).toBeInTheDocument();
   });
 
-  it('shows Done once nothing is under way', () => {
+  it('shows Idle once nothing is under way', () => {
     useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, chatAgentId: 'a1', requestsUnderWay: 0 } });
     render(<ChatHeader agent={agent} state={{ ...createChatViewState(), state: 'idle' }} />);
     expect(dotOf()).toBe('idle');

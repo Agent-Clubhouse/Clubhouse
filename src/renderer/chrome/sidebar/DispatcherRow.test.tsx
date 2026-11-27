@@ -34,7 +34,7 @@ describe('the Dispatcher\'s row status (#3220)', () => {
     expect(dot()).toBe('working');
   });
 
-  it('shows Done with nothing under way, and Sleeping when its chat sleeps', () => {
+  it('shows Idle with nothing under way, and Sleeping when its chat sleeps', () => {
     const { unmount } = render(<DispatcherRow agent={chat()} detailed={between} active={false} onSelect={() => {}} />);
     expect(dot()).toBe('idle');
     unmount();

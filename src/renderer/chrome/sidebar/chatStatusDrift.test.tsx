@@ -64,7 +64,7 @@ describe('rail status for a chat agent mid-turn (#2197)', () => {
     expect(railDot().dot).toBe('working');
   });
 
-  it('shows Needs you while a permission or question waits, and Done after the turn ends', () => {
+  it('shows Needs you while a permission or question waits, and Idle after the turn ends', () => {
     useChatStore.getState().applyEvent(ev('session_state', { state: 'waiting_input' }));
     expect(railDot().dot).toBe('needs');
 
