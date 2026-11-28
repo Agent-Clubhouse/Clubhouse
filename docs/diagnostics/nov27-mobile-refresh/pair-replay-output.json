@@ -1,0 +1,573 @@
+{
+  "generatedAt": "2026-11-28T01:39:19.939Z",
+  "node": "v25.8.1",
+  "typescript": "5.9.3",
+  "platform": "darwin/arm64",
+  "singleProcess": true,
+  "repetitions": 3,
+  "limit": 50,
+  "releases": {
+    "beta7": {
+      "revision": "dc8e82236eb2ae8dadb6bd309297d0c157caaba4",
+      "packageVersion": "0.43.0-beta.7",
+      "loadedSourceSha256": {
+        "src/main/services/agent-runtime/chat-transcript.ts": "374fc381bf8b03897842c04e351876681c799cbeef79af6e742cc313f51032f5",
+        "src/shared/chat/index.ts": "7f7b90adb323058f8c498179ad44df33494df8007f78980e5d4b5fab91090283",
+        "src/shared/chat/events.ts": "d29f816929fe3eeb0b94a265a6a50e08db98a0e807effc06f72cbf9a6dcfc705",
+        "src/shared/chat/capabilities.ts": "624368892a16b95e046ef78d897c1500b27e19ba6566094db1ef78d103d1da4b",
+        "src/shared/chat/runtime.ts": "3d35cb5f4781435752a4c94d4b90632468a80d93ee5fb38f07444150c4234ac0",
+        "src/shared/chat/attachments.ts": "8e1cbea1996a555eaca781b3eb8ce1aafcf8406af8e6382b5f5c9b206c6c3bbb",
+        "src/shared/chat/sessions.ts": "068c50a4603ab4f3aea89ad844ed0906aa6cc9ae79a9bc60bcd870b240d13de8",
+        "src/shared/chat/media.ts": "dbae5ce5304e97adb1c85fe0a6f3a2b4923de536df033406c47dfcd2f7125804",
+        "src/shared/chat/coalesce.ts": "2d7ae0f80a96b39332fb93741af027ffee7ee3d4d47368b8eec3581155fac11c",
+        "src/shared/chat/message-routing.ts": "360d07109ad3020cefcd4768c4e67e202a19d34449ee7e9ff9e03e045aa4f25d",
+        "src/shared/chat/provider-skills.ts": "7013c77f9c321998eed78fde482bea4d3c12a38f55ac782936a93de9041d8145",
+        "src/shared/chat/provider-inventory.ts": "b3d1df0aa87f706274817e3acdd74f2356b50787146ca422e745178a35c60e86",
+        "src/main/services/annex-chat-pages.ts": "4fea125d951b02d974e2b8ea00bdd2a4feaebca89e812a96b76d9bff76ccef7d",
+        "src/main/services/annex-chat-bounds.ts": "cd88c795ff059eced9f5571df150c16a276c35b63a6edb3c97d6a7c57f129c05",
+        "src/main/services/annex-chat-echo.ts": "8adedadad69a185175b8d1d198b9edab03e2cca15803e89ac8ac80fc7758e186",
+        "src/shared/dispatcher-group-chat.ts": "f94838ec14b17f5fd9bcc53b50e67196fdd41376757709c15bc3c985819282d0",
+        "src/shared/dispatcher-chat-noise.ts": "236dd3a3af5c974fb9dd5a8b3d3614d1826263a0278e26bb424c79308f3a4157"
+      },
+      "cases": [
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "ordinary",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 0.346,
+              "filterPageMs": 0.333,
+              "totalMs": 0.679,
+              "inputBytes": 41274,
+              "responseBytes": 20896,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.21,
+              "filterPageMs": 0.063,
+              "totalMs": 0.272,
+              "inputBytes": 41274,
+              "responseBytes": 20896,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.185,
+              "filterPageMs": 0.058,
+              "totalMs": 0.243,
+              "inputBytes": 41274,
+              "responseBytes": 20896,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "ordinary",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 0.174,
+              "filterPageMs": 0.047,
+              "totalMs": 0.221,
+              "inputBytes": 41274,
+              "responseBytes": 20456,
+              "returnedEvents": 49
+            },
+            {
+              "readParseMs": 0.185,
+              "filterPageMs": 0.055,
+              "totalMs": 0.24,
+              "inputBytes": 41274,
+              "responseBytes": 20456,
+              "returnedEvents": 49
+            },
+            {
+              "readParseMs": 0.207,
+              "filterPageMs": 0.067,
+              "totalMs": 0.274,
+              "inputBytes": 41274,
+              "responseBytes": 20456,
+              "returnedEvents": 49
+            }
+          ]
+        },
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "dispatcher",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 0.185,
+              "filterPageMs": 0.758,
+              "totalMs": 0.944,
+              "inputBytes": 41274,
+              "responseBytes": 20836,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.217,
+              "filterPageMs": 0.156,
+              "totalMs": 0.374,
+              "inputBytes": 41274,
+              "responseBytes": 20836,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.172,
+              "filterPageMs": 0.159,
+              "totalMs": 0.331,
+              "inputBytes": 41274,
+              "responseBytes": 20836,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "dispatcher",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 0.179,
+              "filterPageMs": 0.113,
+              "totalMs": 0.292,
+              "inputBytes": 41274,
+              "responseBytes": 10122,
+              "returnedEvents": 24
+            },
+            {
+              "readParseMs": 0.185,
+              "filterPageMs": 0.135,
+              "totalMs": 0.32,
+              "inputBytes": 41274,
+              "responseBytes": 10122,
+              "returnedEvents": 24
+            },
+            {
+              "readParseMs": 0.182,
+              "filterPageMs": 0.131,
+              "totalMs": 0.313,
+              "inputBytes": 41274,
+              "responseBytes": 10122,
+              "returnedEvents": 24
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "ordinary",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 16.594,
+              "filterPageMs": 0.592,
+              "totalMs": 17.186,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 14.531,
+              "filterPageMs": 0.499,
+              "totalMs": 15.03,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 19.385,
+              "filterPageMs": 0.695,
+              "totalMs": 20.08,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "ordinary",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 15.917,
+              "filterPageMs": 0.764,
+              "totalMs": 16.681,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.44,
+              "filterPageMs": 0.524,
+              "totalMs": 13.963,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.351,
+              "filterPageMs": 0.464,
+              "totalMs": 13.814,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "dispatcher",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 19.694,
+              "filterPageMs": 12.722,
+              "totalMs": 32.417,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 14.411,
+              "filterPageMs": 12.42,
+              "totalMs": 26.831,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 19.78,
+              "filterPageMs": 11.407,
+              "totalMs": 31.187,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "dispatcher",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 14.509,
+              "filterPageMs": 13.216,
+              "totalMs": 27.726,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 16.411,
+              "filterPageMs": 11.538,
+              "totalMs": 27.95,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.633,
+              "filterPageMs": 11.637,
+              "totalMs": 25.27,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            }
+          ]
+        }
+      ]
+    },
+    "beta8": {
+      "revision": "30fd3ab0fdca6dbe75aed0b91e4c9878eded9b71",
+      "packageVersion": "0.43.0-beta.8",
+      "loadedSourceSha256": {
+        "src/main/services/agent-runtime/chat-transcript.ts": "374fc381bf8b03897842c04e351876681c799cbeef79af6e742cc313f51032f5",
+        "src/shared/chat/index.ts": "7f7b90adb323058f8c498179ad44df33494df8007f78980e5d4b5fab91090283",
+        "src/shared/chat/events.ts": "eb459ae5602f93c8da7cafa9c8fc5b1dea94520241e5990141adb9e346d41ccb",
+        "src/shared/chat/capabilities.ts": "d0478ce9dbb1dd0a1ed5196494a16355b3cafd2497b0dd86df3a39c1427706ee",
+        "src/shared/chat/runtime.ts": "73b27dde94d6e8b447a6fd001e40994798d67d35de6fc6171be89261291c48ef",
+        "src/shared/chat/attachments.ts": "8e1cbea1996a555eaca781b3eb8ce1aafcf8406af8e6382b5f5c9b206c6c3bbb",
+        "src/shared/chat/sessions.ts": "068c50a4603ab4f3aea89ad844ed0906aa6cc9ae79a9bc60bcd870b240d13de8",
+        "src/shared/chat/media.ts": "dbae5ce5304e97adb1c85fe0a6f3a2b4923de536df033406c47dfcd2f7125804",
+        "src/shared/chat/coalesce.ts": "2d7ae0f80a96b39332fb93741af027ffee7ee3d4d47368b8eec3581155fac11c",
+        "src/shared/chat/message-routing.ts": "360d07109ad3020cefcd4768c4e67e202a19d34449ee7e9ff9e03e045aa4f25d",
+        "src/shared/chat/provider-skills.ts": "7013c77f9c321998eed78fde482bea4d3c12a38f55ac782936a93de9041d8145",
+        "src/shared/chat/provider-inventory.ts": "b3d1df0aa87f706274817e3acdd74f2356b50787146ca422e745178a35c60e86",
+        "src/main/services/annex-chat-pages.ts": "4fea125d951b02d974e2b8ea00bdd2a4feaebca89e812a96b76d9bff76ccef7d",
+        "src/main/services/annex-chat-bounds.ts": "cd88c795ff059eced9f5571df150c16a276c35b63a6edb3c97d6a7c57f129c05",
+        "src/main/services/annex-chat-echo.ts": "8adedadad69a185175b8d1d198b9edab03e2cca15803e89ac8ac80fc7758e186",
+        "src/shared/dispatcher-group-chat.ts": "f94838ec14b17f5fd9bcc53b50e67196fdd41376757709c15bc3c985819282d0",
+        "src/shared/dispatcher-chat-noise.ts": "236dd3a3af5c974fb9dd5a8b3d3614d1826263a0278e26bb424c79308f3a4157"
+      },
+      "cases": [
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "ordinary",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 0.287,
+              "filterPageMs": 0.307,
+              "totalMs": 0.593,
+              "inputBytes": 41274,
+              "responseBytes": 20896,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.18,
+              "filterPageMs": 0.055,
+              "totalMs": 0.235,
+              "inputBytes": 41274,
+              "responseBytes": 20896,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.15,
+              "filterPageMs": 0.041,
+              "totalMs": 0.191,
+              "inputBytes": 41274,
+              "responseBytes": 20896,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "ordinary",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 0.157,
+              "filterPageMs": 0.046,
+              "totalMs": 0.202,
+              "inputBytes": 41274,
+              "responseBytes": 20456,
+              "returnedEvents": 49
+            },
+            {
+              "readParseMs": 0.156,
+              "filterPageMs": 0.048,
+              "totalMs": 0.204,
+              "inputBytes": 41274,
+              "responseBytes": 20456,
+              "returnedEvents": 49
+            },
+            {
+              "readParseMs": 0.162,
+              "filterPageMs": 0.048,
+              "totalMs": 0.21,
+              "inputBytes": 41274,
+              "responseBytes": 20456,
+              "returnedEvents": 49
+            }
+          ]
+        },
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "dispatcher",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 0.132,
+              "filterPageMs": 0.323,
+              "totalMs": 0.455,
+              "inputBytes": 41274,
+              "responseBytes": 20836,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 3.122,
+              "filterPageMs": 0.185,
+              "totalMs": 3.308,
+              "inputBytes": 41274,
+              "responseBytes": 20836,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 0.201,
+              "filterPageMs": 0.154,
+              "totalMs": 0.354,
+              "inputBytes": 41274,
+              "responseBytes": 20836,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "small",
+          "rawEvents": 100,
+          "view": "dispatcher",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 0.144,
+              "filterPageMs": 0.124,
+              "totalMs": 0.268,
+              "inputBytes": 41274,
+              "responseBytes": 10122,
+              "returnedEvents": 24
+            },
+            {
+              "readParseMs": 0.134,
+              "filterPageMs": 0.121,
+              "totalMs": 0.255,
+              "inputBytes": 41274,
+              "responseBytes": 10122,
+              "returnedEvents": 24
+            },
+            {
+              "readParseMs": 0.139,
+              "filterPageMs": 0.122,
+              "totalMs": 0.262,
+              "inputBytes": 41274,
+              "responseBytes": 10122,
+              "returnedEvents": 24
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "ordinary",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 16.388,
+              "filterPageMs": 0.579,
+              "totalMs": 16.967,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 14.875,
+              "filterPageMs": 0.487,
+              "totalMs": 15.362,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 14.751,
+              "filterPageMs": 0.475,
+              "totalMs": 15.225,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "ordinary",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 18.604,
+              "filterPageMs": 0.463,
+              "totalMs": 19.068,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.633,
+              "filterPageMs": 0.469,
+              "totalMs": 14.102,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.402,
+              "filterPageMs": 0.496,
+              "totalMs": 13.898,
+              "inputBytes": 8386678,
+              "responseBytes": 21298,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "dispatcher",
+          "page": "latest",
+          "samples": [
+            {
+              "readParseMs": 13.447,
+              "filterPageMs": 16.859,
+              "totalMs": 30.306,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.887,
+              "filterPageMs": 11.776,
+              "totalMs": 25.663,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.964,
+              "filterPageMs": 11.586,
+              "totalMs": 25.55,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            }
+          ]
+        },
+        {
+          "session": "long",
+          "rawEvents": 20000,
+          "view": "dispatcher",
+          "page": "older",
+          "samples": [
+            {
+              "readParseMs": 16.686,
+              "filterPageMs": 11.563,
+              "totalMs": 28.248,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 13.471,
+              "filterPageMs": 11.468,
+              "totalMs": 24.939,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            },
+            {
+              "readParseMs": 15.753,
+              "filterPageMs": 11.511,
+              "totalMs": 27.265,
+              "inputBytes": 8386678,
+              "responseBytes": 21248,
+              "returnedEvents": 50
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
