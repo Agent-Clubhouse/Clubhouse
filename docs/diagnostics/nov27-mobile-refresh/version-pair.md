@@ -28,12 +28,12 @@ node docs/diagnostics/nov27-mobile-refresh/handler-race.cjs
 node docs/diagnostics/nov27-mobile-refresh/permission-refresh.cjs
 ```
 
-The JSON carries the desktop commit and SHA-256 of every consumed desktop recording. Each case supplies a connect snapshot, capabilities, network, projects, 14 per-project agent responses, agent state, selected Dispatcher history and seven sequenced chat frames. The role, history and visible reply come from release fixtures. The generator composes them into one synthetic exchange, expanding the two-project catalog with 12 empty projects and aligning the snapshot baseline to the first event. The selection is a sleeping Dispatcher with retained readable history. “On it.” is the expected visible reply. Snapshot data, successful history read, and that reply becoming available in the selected client store are separate checkpoints.
+The JSON carries the desktop commit and SHA-256 of every consumed desktop recording. Each case supplies a connect snapshot, capabilities, network, projects, 14 per-project agent responses, agent state, selected Dispatcher history and seven sequenced chat frames. The role, history and visible reply come from release fixtures. The generator composes them into one synthetic exchange, expanding the two-project catalog with 12 empty projects, aligning Dispatcher capabilities to the enabled selected role, and aligning the snapshot baseline to the first event. The selection is a sleeping Dispatcher with retained readable history. “On it.” is the expected visible reply. Snapshot data, successful history read, and that reply becoming available in the selected client store are separate checkpoints.
 
 | Export | SHA-256 |
 |---|---|
-| Beta.7 | 6d7846bfb9f8ecb447febe2024c8159ca0bb8b2baa4d0697e2e52f1747048052 |
-| Beta.8 | 8b78c7c732f7b82e507920203a850058eeecc148067205f6158af3bb95fb140e |
+| Beta.7 | 7701517bba5982cd4a16a9e4fc766701c3c605cbf1788684d3babfb749b35a93 |
+| Beta.8 | 6eb12004ef1ee104b0fa236ee0402f45545e5baba42cd3c4d56a6f911517e509 |
 
 The Go owner runs the old/new client stores with these releases. Both exports passed host-side shape and content checks. Device installation, actual network recovery, UI rendering and today's phone experience require separate evidence.
 

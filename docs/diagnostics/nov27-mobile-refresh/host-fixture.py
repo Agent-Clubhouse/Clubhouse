@@ -56,7 +56,17 @@ def export(commit):
     assert [f["seq"] for f in frames] == list(range(payload["lastSeq"] + 1, payload["lastSeq"] + 1 + len(frames)))
     assert all(f["payload"]["agentId"] == selected for f in frames)
     assert all(f["payload"]["event"]["sessionId"] == body["sessionId"] for f in frames)
-    for entry in [fixture("capabilities"), fixture("network-list")["member"], catalog["projects"], state, history]:
+    capabilities = fixture("capabilities")
+    cap_body = capabilities["response"]["body"]
+    # The generic capability recording was made with Dispatcher disabled.
+    # Use the role from the selected scenario across both surfaces.
+    cap_role = cap_body["dispatcher"]
+    for field in ["flagOn", "enabled", "projectId", "requestsUnderWay"]:
+        cap_role[field] = role["value"][field]
+    assert cap_role["enabled"] and cap_role["projectId"] == role["agentStateRow"]["projectId"]
+    assert cap_body["epoch"] == state["response"]["body"]["epoch"] == body["epoch"]
+    assert all(f["payload"]["event"]["agentId"] == selected for f in frames)
+    for entry in [capabilities, fixture("network-list")["member"], catalog["projects"], state, history]:
         assert entry["request"]["method"] == "GET" and entry["response"]["status"] == 200
         routes[entry["request"]["path"]] = entry["response"]
     assert len(routes) == 19
